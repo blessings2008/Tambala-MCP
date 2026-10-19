@@ -202,4 +202,90 @@ export function registerTambalaTools(server: McpServer): void {
       completed_at: datetime.optional(),
     },
   }, async ({ id, ...input }) => text(await updateRow('tasks', id, input)));
+
+  server.registerTool('get_business_summary', {
+    description: 'Get a live high-level summary of Tambala clients, leads, projects, tasks, services, and products.',
+    inputSchema: {},
+  }, async () => {
+    const [clients, leads, projects, tasks, services, products] = await Promise.all([
+      supabaseSelect('clients'),
+      supabaseSelect('leads'),
+      supabaseSelect('projects'),
+      supabaseSelect('tasks'),
+      supabaseSelect('services'),
+      supabaseSelect('products'),
+    ]);
+
+    const countBy = (rows: Array<Record<string, unknown>>, field: string) => rows.reduce<Record<string, number>>((acc, row) => {
+      const value = String(row[field] ?? 'unknown');
+      acc[value] = (acc[value] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    return text({
+      generated_at: new Date().toISOString(),
+      totals: {
+        clients: clients.length,
+        leads: leads.length,
+        projects: projects.length,
+        tasks: tasks.length,
+        active_services: services.filter((row) => row.active === true).length,
+        products: products.length,
+      },
+      by_status: {
+        clients: countBy(clients, 'status'),
+        leads: countBy(leads, 'status'),
+        projects: countBy(projects, 'status'),
+        tasks: countBy(tasks, 'status'),
+      },
+    });
+  });
+
+  server.registerTool('get_active_projects', {
+    description: 'Get projects currently active or waiting on a client, ordered by due date.',
+    inputSchema: {},
+  }, async () => text(await supabaseSelect('projects', 'select=*&status=in.(active,waiting_client,review,on_hold)&order=due_date.asc.nullslast')));
+
+  server.registerTool('get_overdue_tasks', {
+    description: 'Get unfinished tasks whose due time has passed.',
+    inputSchema: {},
+  }, async () => {
+    const now = new Date().toISOString();
+    const query = `select=*&due_at=lt.${encodeURIComponent(now)}&status=not.in.(done,cancelled)&order=due_at.asc`;
+    return text(await supabaseSelect('tasks', query));
+  });
+
+  server.registerTool('get_follow_ups_due', {
+    description: 'Get sales leads whose follow-up time is due or overdue, excluding won and lost leads.',
+    inputSchema: {},
+  }, async () => {
+    const now = new Date().toISOString();
+    const query = `select=*&next_follow_up_at=not.is.null&next_follow_up_at=lte.${encodeURIComponent(now)}&status=not.in.(won,lost)&order=next_follow_up_at.asc`;
+    return text(await supabaseSelect('leads', query));
+  });
+
+  server.registerTool('get_sales_pipeline', {
+    description: 'Summarize the current sales pipeline by lead status and return the underlying leads.',
+    inputSchema: {},
+  }, async () => {
+    const leads = await supabaseSelect('leads');
+    const byStatus = leads.reduce<Record<string, number>>((acc, lead) => {
+      const status = String(lead.status ?? 'unknown');
+      acc[status] = (acc[status] ?? 0) + 1;
+      return acc;
+    }, {});
+    return text({ total_leads: leads.length, by_status: byStatus, leads });
+  });
+
+  server.registerTool('get_client_summary', {
+    description: 'Get a client together with their projects and tasks.',
+    inputSchema: { id: uuid.describe('Client UUID') },
+  }, async ({ id }) => {
+    const [client, projects, tasks] = await Promise.all([
+      getById('clients', id),
+      supabaseSelect('projects', `select=*&client_id=eq.${encodeURIComponent(id)}&order=due_date.asc.nullslast`),
+      supabaseSelect('tasks', `select=*&client_id=eq.${encodeURIComponent(id)}&order=due_at.asc.nullslast`),
+    ]);
+    return text({ client, projects, tasks });
+  });
 }
