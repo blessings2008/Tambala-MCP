@@ -5,7 +5,7 @@ import { getById, updateRow } from '../lib/database.js';
 const uuid = z.string().uuid();
 
 function text(value: unknown): { content: [{ type: 'text'; text: string }] } {
-  return { content: [{ type: 'text'; text: JSON.stringify(value, null, 2) }] };
+  return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
 }
 
 export function registerClientActionTools(server: McpServer): void {
