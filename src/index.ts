@@ -13,11 +13,9 @@ export function createServer(): McpServer {
   return server;
 }
 
-// Local MCP clients can still run this server over stdio.
 if (process.env.MCP_TRANSPORT === 'stdio') {
   void serveStdio(createServer);
   console.error('Tambala MCP server running on stdio');
 }
 
-// HTTP handler for remote MCP deployments.
 export const mcpHandler = createMcpHandler(createServer);
