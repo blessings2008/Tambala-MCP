@@ -8,11 +8,27 @@ function getServiceRoleKey(): string {
   return key;
 }
 
+async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Supabase request timed out after 10 seconds');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function supabaseSelect<T>(table: string, query = 'select=*'): Promise<T[]> {
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
+  const key = getServiceRoleKey();
+  const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
     headers: {
-      apikey: getServiceRoleKey(),
-      Authorization: `Bearer ${getServiceRoleKey()}`,
+      apikey: key,
+      Authorization: `Bearer ${key}`,
     },
   });
 
