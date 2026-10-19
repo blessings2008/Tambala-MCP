@@ -1,7 +1,7 @@
 import * as z from 'zod/v4';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { supabaseSelect } from '../lib/supabase.js';
-import { insertRow } from '../lib/database.js';
+import { getById, insertRow } from '../lib/database.js';
 
 type DbRow = Record<string, unknown>;
 
@@ -41,5 +41,27 @@ export function registerActivityTools(server: McpServer): void {
     const query = `select=*&${filters.length ? `${filters.join('&')}&` : ''}order=created_at.desc&limit=${limit}`;
     const activities = await supabaseSelect<DbRow>('activity_log', query);
     return text({ count: activities.length, activities });
+  });
+
+  server.registerTool('get_client_context', {
+    description: 'Build one live context view for a Tambala client, combining the client profile, related leads, projects, tasks, and activity history.',
+    inputSchema: { id: uuid.describe('Client UUID') },
+  }, async ({ id }) => {
+    const client = await getById<DbRow>('clients', id);
+    if (!client) return text({ found: false, client_id: id, message: 'Client not found' });
+    const name = String(client.name ?? '');
+    const business = String(client.business_name ?? '');
+    const pattern = encodeURIComponent(`*${business || name}*`);
+    const now = Date.now();
+    const [leads, projects, tasks, activities] = await Promise.all([
+      supabaseSelect<DbRow>('leads', `select=*&or=(name.ilike.${pattern},business_name.ilike.${pattern})&order=created_at.desc`),
+      supabaseSelect<DbRow>('projects', `select=*&client_id=eq.${encodeURIComponent(id)}&order=due_date.asc.nullslast`),
+      supabaseSelect<DbRow>('tasks', `select=*&client_id=eq.${encodeURIComponent(id)}&order=due_at.asc.nullslast`),
+      supabaseSelect<DbRow>('activity_log', `select=*&entity_type=eq.client&entity_id=eq.${encodeURIComponent(id)}&order=created_at.desc&limit=100`),
+    ]);
+    const openTasks = tasks.filter(t => !['done', 'cancelled'].includes(String(t.status)));
+    const overdueTasks = openTasks.filter(t => typeof t.due_at === 'string' && Date.parse(t.due_at) < now);
+    const activeProjects = projects.filter(p => !['completed', 'cancelled'].includes(String(p.status)));
+    return text({ found: true, generated_at: new Date().toISOString(), client, leads, projects: { total: projects.length, active: activeProjects.length, items: projects }, tasks: { total: tasks.length, open: openTasks.length, overdue: overdueTasks.length, items: tasks }, activity: { total: activities.length, items: activities }, attention: overdueTasks.map(t => ({ priority: 'high', type: 'overdue_task', title: `Overdue task: ${String(t.title ?? 'Untitled task')}`, id: t.id })).concat(activeProjects.filter(p => p.status === 'waiting_client').map(p => ({ priority: 'medium', type: 'waiting_client', title: `Waiting on client: ${String(p.name ?? 'Untitled project')}`, id: p.id }))) });
   });
 }
