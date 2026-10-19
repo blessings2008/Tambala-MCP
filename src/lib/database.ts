@@ -109,3 +109,13 @@ export async function updateRow<T>(table: string, id: string, data: Record<strin
   await recordAutomaticActivity(table, 'UPDATED', rows[0] as DbRow, Object.keys(data));
   return rows[0];
 }
+
+export async function deleteRow(table: string, id: string): Promise<void> {
+  const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: authHeaders({ Prefer: 'return=minimal' }),
+  });
+  if (!response.ok) {
+    throw new Error(`Supabase delete failed (${response.status}): ${await response.text()}`);
+  }
+}
