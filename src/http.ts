@@ -63,8 +63,10 @@ const server = createHttpServer(async (req, res) => {
     return;
   }
 
+  // Compatibility: both the existing Render root URL and the canonical /mcp path
+  // serve the authenticated MCP endpoint. This keeps existing AI connectors working.
   const requestPath = req.url?.split('?')[0];
-  if (requestPath === '/mcp') {
+  if (requestPath === '/' || requestPath === '/mcp') {
     try {
       if (!isAuthorized(req.headers)) {
         unauthorized(res);
