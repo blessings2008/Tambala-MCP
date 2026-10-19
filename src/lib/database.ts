@@ -50,3 +50,14 @@ export async function insertRow<T>(table: string, data: Record<string, unknown>)
   if (!rows[0]) throw new Error('Supabase insert returned no row');
   return rows[0];
 }
+
+export async function updateRow<T>(table: string, id: string, data: Record<string, unknown>): Promise<T> {
+  const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: authHeaders({ 'Content-Type': 'application/json', Prefer: 'return=representation' }),
+    body: JSON.stringify({ ...data, updated_at: new Date().toISOString() }),
+  });
+  const rows = await read<T[]>(response);
+  if (!rows[0]) throw new Error(`No ${table} record found with id ${id}`);
+  return rows[0];
+}
