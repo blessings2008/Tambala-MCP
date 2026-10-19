@@ -75,7 +75,7 @@ export function registerTambalaTools(server: McpServer): void {
           text: JSON.stringify(services, null, 2),
         },
       ],
-    })),
+    }),
   );
 
   server.registerTool(
@@ -91,6 +91,6 @@ export function registerTambalaTools(server: McpServer): void {
           text: JSON.stringify(products, null, 2),
         },
       ],
-    })),
+    }),
   );
 }
