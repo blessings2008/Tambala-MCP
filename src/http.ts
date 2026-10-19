@@ -63,7 +63,10 @@ const server = createHttpServer(async (req, res) => {
     return;
   }
 
-  if (req.url?.split('?')[0] === '/mcp') {
+  // Temporary compatibility: accept MCP traffic at both / and /mcp.
+  // This lets an already-configured MCP client using the Render root URL connect.
+  const requestPath = req.url?.split('?')[0];
+  if (requestPath === '/' || requestPath === '/mcp') {
     try {
       if (!isAuthorized(req.headers)) {
         unauthorized(res);
