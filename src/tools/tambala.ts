@@ -59,7 +59,7 @@ export function registerTambalaTools(server: McpServer): void {
           ),
         },
       ],
-    })),
+    }),
   );
 
   server.registerTool(
