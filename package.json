@@ -1,14 +1,16 @@
 {
   "name": "tambala-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Model Context Protocol server for Tambala Technologies.",
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.ts",
+    "start": "tsx src/http.ts",
+    "start:stdio": "tsx src/index.ts",
     "inspect": "npx @modelcontextprotocol/inspector npx tsx src/index.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/node": "latest",
     "@modelcontextprotocol/server": "latest",
     "zod": "latest"
   },
