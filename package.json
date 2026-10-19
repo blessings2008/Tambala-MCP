@@ -5,7 +5,8 @@
   "description": "Model Context Protocol server for Tambala Technologies.",
   "type": "module",
   "scripts": {
-    "start": "tsx src/http.ts",
+    "build": "tsc",
+    "start": "node dist/http.js",
     "start:stdio": "tsx src/index.ts",
     "inspect": "npx @modelcontextprotocol/inspector npx tsx src/index.ts"
   },
