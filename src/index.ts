@@ -1,14 +1,16 @@
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { registerTambalaTools } from './tools/tambala.js';
+import { registerActivityTools } from './tools/activity.js';
 
 export function createServer(): McpServer {
   const server = new McpServer({
     name: 'tambala-mcp',
-    version: '0.3.0',
+    version: '0.4.0',
   });
 
   registerTambalaTools(server);
+  registerActivityTools(server);
 
   return server;
 }
