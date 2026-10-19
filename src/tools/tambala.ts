@@ -95,4 +95,25 @@ export function registerTambalaTools(server: McpServer): void {
       sales_pipeline: { total: leads.length, by_status: countBy(leads, 'status') },
     });
   });
+
+  server.registerTool('get_next_actions', {
+    description: 'Return prioritized, read-only recommended next actions based on overdue tasks, due lead follow-ups, blocked tasks, and projects waiting on clients.',
+    inputSchema: {},
+  }, async () => {
+    const now = new Date().toISOString();
+    const [overdueTasks, dueFollowUps, blockedTasks, waitingProjects] = await Promise.all([
+      supabaseSelect<DbRow>('tasks', `select=*&due_at=lt.${encodeURIComponent(now)}&status=not.in.(done,cancelled)&order=priority.desc,due_at.asc&limit=20`),
+      supabaseSelect<DbRow>('leads', `select=*&next_follow_up_at=not.is.null&next_follow_up_at=lte.${encodeURIComponent(now)}&status=not.in.(won,lost)&order=next_follow_up_at.asc&limit=20`),
+      supabaseSelect<DbRow>('tasks', 'select=*&status=eq.blocked&order=priority.desc,due_at.asc&limit=20'),
+      supabaseSelect<DbRow>('projects', 'select=*&status=eq.waiting_client&order=due_date.asc.nullslast&limit=20'),
+    ]);
+    const actions: DbRow[] = [];
+    for (const row of overdueTasks) actions.push({ priority: row.priority === 'urgent' ? 'critical' : 'high', type: 'overdue_task', title: `Complete overdue task: ${String(row.title ?? 'Untitled task')}`, task_id: row.id, due_at: row.due_at });
+    for (const row of dueFollowUps) actions.push({ priority: 'high', type: 'lead_follow_up', title: `Follow up with ${String(row.business_name ?? row.name ?? 'lead')}`, lead_id: row.id, next_follow_up_at: row.next_follow_up_at });
+    for (const row of blockedTasks) actions.push({ priority: row.priority === 'urgent' ? 'critical' : 'medium', type: 'blocked_task', title: `Unblock task: ${String(row.title ?? 'Untitled task')}`, task_id: row.id });
+    for (const row of waitingProjects) actions.push({ priority: 'medium', type: 'waiting_client', title: `Check in on client for project: ${String(row.name ?? 'Untitled project')}`, project_id: row.id, due_date: row.due_date });
+    const rank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+    actions.sort((a, b) => (rank[String(a.priority)] ?? 9) - (rank[String(b.priority)] ?? 9));
+    return text({ generated_at: now, total_actions: actions.length, actions: actions.slice(0, 30) });
+  });
 }
