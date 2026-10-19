@@ -69,4 +69,30 @@ export function registerTambalaTools(server: McpServer): void {
   server.registerTool('get_follow_ups_due', { description: 'Get sales leads whose follow-up time is due or overdue, excluding won and lost leads.', inputSchema: {} }, async () => { const now = new Date().toISOString(); return text(await supabaseSelect('leads', `select=*&next_follow_up_at=not.is.null&next_follow_up_at=lte.${encodeURIComponent(now)}&status=not.in.(won,lost)&order=next_follow_up_at.asc`)); });
   server.registerTool('get_sales_pipeline', { description: 'Summarize the current sales pipeline by lead status and return the underlying leads.', inputSchema: {} }, async () => { const leads = await supabaseSelect<DbRow>('leads'); const byStatus = leads.reduce<Record<string, number>>((acc, lead) => { const status = String(lead.status ?? 'unknown'); acc[status] = (acc[status] ?? 0) + 1; return acc; }, {}); return text({ total_leads: leads.length, by_status: byStatus, leads }); });
   server.registerTool('get_client_summary', { description: 'Get a client together with their projects and tasks.', inputSchema: { id: uuid.describe('Client UUID') } }, async ({ id }) => { const [client, projects, tasks] = await Promise.all([getById('clients', id), supabaseSelect('projects', `select=*&client_id=eq.${encodeURIComponent(id)}&order=due_date.asc.nullslast`), supabaseSelect('tasks', `select=*&client_id=eq.${encodeURIComponent(id)}&order=due_at.asc.nullslast`)]); return text({ client, projects, tasks }); });
+
+  server.registerTool('get_command_center', {
+    description: 'Get one live operational dashboard for Tambala: summary, active projects, overdue tasks, due follow-ups, and sales pipeline.',
+    inputSchema: {},
+  }, async () => {
+    const now = new Date().toISOString();
+    const [clients, leads, projects, tasks, services, products, activeProjects, overdueTasks, dueFollowUps] = await Promise.all([
+      supabaseSelect<DbRow>('clients'),
+      supabaseSelect<DbRow>('leads'),
+      supabaseSelect<DbRow>('projects'),
+      supabaseSelect<DbRow>('tasks'),
+      supabaseSelect<DbRow>('services'),
+      supabaseSelect<DbRow>('products'),
+      supabaseSelect<DbRow>('projects', 'select=*&status=in.(active,waiting_client,review,on_hold)&order=due_date.asc.nullslast&limit=20'),
+      supabaseSelect<DbRow>('tasks', `select=*&due_at=lt.${encodeURIComponent(now)}&status=not.in.(done,cancelled)&order=due_at.asc&limit=20`),
+      supabaseSelect<DbRow>('leads', `select=*&next_follow_up_at=not.is.null&next_follow_up_at=lte.${encodeURIComponent(now)}&status=not.in.(won,lost)&order=next_follow_up_at.asc&limit=20`),
+    ]);
+    const countBy = (rows: DbRow[], field: string) => rows.reduce<Record<string, number>>((acc, row) => { const value = String(row[field] ?? 'unknown'); acc[value] = (acc[value] ?? 0) + 1; return acc; }, {});
+    return text({
+      generated_at: now,
+      summary: { clients: clients.length, leads: leads.length, projects: projects.length, tasks: tasks.length, services: services.length, products: products.length },
+      status: { clients: countBy(clients, 'status'), leads: countBy(leads, 'status'), projects: countBy(projects, 'status'), tasks: countBy(tasks, 'status') },
+      attention: { active_projects: activeProjects, overdue_tasks: overdueTasks, follow_ups_due: dueFollowUps },
+      sales_pipeline: { total: leads.length, by_status: countBy(leads, 'status') },
+    });
+  });
 }
