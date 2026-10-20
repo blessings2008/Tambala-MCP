@@ -39,22 +39,12 @@ async function findLeadBySubject(subject: string): Promise<DbRow | null> {
     `select=*&or=(business_name.ilike.${pattern},name.ilike.${pattern})&limit=5`,
   );
   if (rows.length === 1) return rows[0];
-
-  // Prefer an exact business/name match if multiple partial matches exist.
   const lower = cleaned.toLowerCase();
-  return rows.find((row) =>
+  return rows.find((row: DbRow) =>
     [row.business_name, row.name]
       .filter(Boolean)
       .some((value) => String(value).trim().toLowerCase() === lower),
   ) ?? rows[0] ?? null;
-}
-
-async function resolveLead(subject?: string, id?: string): Promise<DbRow | undefined> {
-  if (id) return getLeadContext(id);
-  if (!subject?.trim()) return undefined;
-  const lead = await findLeadBySubject(subject);
-  if (!lead?.id) return { found: false, lookup_subject: subject };
-  return getLeadContext(String(lead.id));
 }
 
 async function findClientBySubject(subject: string): Promise<DbRow | null> {
@@ -67,19 +57,11 @@ async function findClientBySubject(subject: string): Promise<DbRow | null> {
   );
   if (rows.length === 1) return rows[0];
   const lower = cleaned.toLowerCase();
-  return rows.find((row) =>
+  return rows.find((row: DbRow) =>
     [row.business_name, row.name]
       .filter(Boolean)
       .some((value) => String(value).trim().toLowerCase() === lower),
   ) ?? rows[0] ?? null;
-}
-
-async function resolveClient(subject?: string, id?: string): Promise<DbRow | undefined> {
-  if (id) return getClientContext(id);
-  if (!subject?.trim()) return undefined;
-  const client = await findClientBySubject(subject);
-  if (!client?.id) return { found: false, lookup_subject: subject };
-  return getClientContext(String(client.id));
 }
 
 async function getLeadContext(id: string): Promise<DbRow> {
@@ -94,15 +76,7 @@ async function getLeadContext(id: string): Promise<DbRow> {
     supabaseSelect<DbRow>('projects', `select=*&or=(name.ilike.${pattern},description.ilike.${pattern},notes.ilike.${pattern})&order=created_at.desc&limit=20`),
     supabaseSelect<DbRow>('tasks', `select=*&or=(title.ilike.${pattern},description.ilike.${pattern})&order=created_at.desc&limit=20`),
   ]);
-  return {
-    found: true,
-    generated_at: new Date().toISOString(),
-    lead,
-    activity: activities,
-    matching_clients: matchingClients,
-    related_projects: relatedProjects,
-    related_tasks: relatedTasks,
-  };
+  return { found: true, generated_at: new Date().toISOString(), lead, activity: activities, matching_clients: matchingClients, related_projects: relatedProjects, related_tasks: relatedTasks };
 }
 
 async function getClientContext(id: string): Promise<DbRow> {
@@ -114,6 +88,24 @@ async function getClientContext(id: string): Promise<DbRow> {
     supabaseSelect<DbRow>('activity_log', `select=*&entity_type=eq.client&entity_id=eq.${encodeURIComponent(id)}&order=created_at.desc&limit=100`),
   ]);
   return { found: true, generated_at: new Date().toISOString(), client, projects, tasks, activity: activities };
+}
+
+async function resolveLead(subject?: string, id?: string): Promise<DbRow | undefined> {
+  if (id) return getLeadContext(id);
+  if (!subject?.trim()) return undefined;
+  const lead = await findLeadBySubject(subject);
+  const leadId = typeof lead?.id === 'string' ? lead.id : null;
+  if (!leadId) return { found: false, lookup_subject: subject };
+  return getLeadContext(leadId);
+}
+
+async function resolveClient(subject?: string, id?: string): Promise<DbRow | undefined> {
+  if (id) return getClientContext(id);
+  if (!subject?.trim()) return undefined;
+  const client = await findClientBySubject(subject);
+  const clientId = typeof client?.id === 'string' ? client.id : null;
+  if (!clientId) return { found: false, lookup_subject: subject };
+  return getClientContext(clientId);
 }
 
 async function getVerifiedCompanyContext(): Promise<DbRow> {
@@ -130,15 +122,12 @@ async function getVerifiedCompanyContext(): Promise<DbRow> {
   };
 }
 
-function crmStatus(lead?: DbRow, client?: DbRow): { lead_id: string | null; client_id: string | null; crm_loaded: boolean; match_found: boolean } {
-  const leadId = lead?.lead?.id ? String(lead.lead.id) : null;
-  const clientId = client?.client?.id ? String(client.client.id) : null;
-  return {
-    lead_id: leadId,
-    client_id: clientId,
-    crm_loaded: Boolean(leadId || clientId),
-    match_found: Boolean(lead?.found || client?.found),
-  };
+function crmStatus(lead?: DbRow, client?: DbRow) {
+  const leadValue = lead?.lead;
+  const clientValue = client?.client;
+  const leadId = leadValue && typeof leadValue === 'object' && 'id' in leadValue ? String((leadValue as DbRow).id) : null;
+  const clientId = clientValue && typeof clientValue === 'object' && 'id' in clientValue ? String((clientValue as DbRow).id) : null;
+  return { lead_id: leadId, client_id: clientId, crm_loaded: Boolean(leadId || clientId), match_found: Boolean(lead?.found || client?.found) };
 }
 
 export function registerAITools(server: McpServer): void {
@@ -146,32 +135,16 @@ export function registerAITools(server: McpServer): void {
     description: 'Ask a Tambala AI specialist for read-only analysis or drafting. Supply lead_id/client_id when known, or subject to let the server automatically find the matching CRM record.',
     inputSchema: {
       agent: agent.describe('AI specialist'),
-      request: z.string().trim().min(1).max(10000).describe('What you want the AI specialist to do'),
-      subject: z.string().trim().min(1).max(500).optional().describe('Lead/client business name or contact name. Used to automatically load CRM context.'),
-      lead_id: uuid.optional().describe('Optional sales lead UUID'),
-      client_id: uuid.optional().describe('Optional client UUID'),
+      request: z.string().trim().min(1).max(10000),
+      subject: z.string().trim().min(1).max(500).optional(),
+      lead_id: uuid.optional(),
+      client_id: uuid.optional(),
     },
   }, async ({ agent: agentName, request, subject, lead_id, client_id }) => {
-    const [company, lead, client] = await Promise.all([
-      getVerifiedCompanyContext(),
-      resolveLead(subject, lead_id),
-      resolveClient(subject, client_id),
-    ]);
+    const [company, lead, client] = await Promise.all([getVerifiedCompanyContext(), resolveLead(subject, lead_id), resolveClient(subject, client_id)]);
     const status = crmStatus(lead, client);
-    const result = await askTambalaAI(agentName as AgentName, request, {
-      company,
-      lead,
-      client,
-      grounding_rules: GROUNDING_RULES,
-      context_status: status,
-    });
-    return text({
-      agent: agentName,
-      model: getAgentModel(agentName as AgentName),
-      context_used: { ...status, lookup_subject: subject ?? null },
-      response: result,
-      requires_approval: true,
-    });
+    const result = await askTambalaAI(agentName as AgentName, request, { company, lead, client, grounding_rules: GROUNDING_RULES, context_status: status });
+    return text({ agent: agentName, model: getAgentModel(agentName as AgentName), context_used: { ...status, lookup_subject: subject ?? null }, response: result, requires_approval: true });
   });
 
   server.registerTool('draft_outreach', {
@@ -180,62 +153,30 @@ export function registerAITools(server: McpServer): void {
       prospect: z.string().trim().min(1).max(5000),
       goal: z.string().trim().min(1).max(2000),
       channel: z.enum(['email', 'sms', 'chat']).default('email'),
-      lead_id: uuid.optional().describe('Optional sales lead UUID'),
-      client_id: uuid.optional().describe('Optional existing client UUID'),
+      lead_id: uuid.optional(),
+      client_id: uuid.optional(),
     },
   }, async ({ prospect, goal, channel, lead_id, client_id }) => {
-    const [company, lead, client] = await Promise.all([
-      getVerifiedCompanyContext(),
-      resolveLead(prospect, lead_id),
-      resolveClient(prospect, client_id),
-    ]);
+    const [company, lead, client] = await Promise.all([getVerifiedCompanyContext(), resolveLead(prospect, lead_id), resolveClient(prospect, client_id)]);
     const status = crmStatus(lead, client);
-    const result = await askTambalaAI('outreach', `Draft a ${channel} message for the stated goal. Use only verified facts in the CRM and company context. Do not invent links, promises, contact details, meetings, travel, shipments, project claims, client claims, or previous conversations. If a link is needed but not verified, use [REAL LINK NEEDED]. Do not add an email subject unless channel=email. Keep the draft natural and concise. Goal: ${goal}.`, {
-      company,
-      lead,
-      client,
-      supplied_prospect: prospect,
-      grounding_rules: GROUNDING_RULES,
-      context_status: status,
-    });
-    return text({
-      channel,
-      draft: result,
-      requires_approval: true,
-      context_used: { ...status, lookup_subject: prospect },
-    });
+    const result = await askTambalaAI('outreach', `Draft a ${channel} message for the stated goal. Use only verified facts in the CRM and company context. Do not invent links, promises, contact details, meetings, travel, shipments, project claims, client claims, or previous conversations. If a link is needed but not verified, use [REAL LINK NEEDED]. Do not add an email subject unless channel=email. Keep the draft natural and concise. Goal: ${goal}.`, { company, lead, client, supplied_prospect: prospect, grounding_rules: GROUNDING_RULES, context_status: status });
+    return text({ channel, draft: result, requires_approval: true, context_used: { ...status, lookup_subject: prospect } });
   });
 
   server.registerTool('analyze_followup', {
     description: 'Analyze a follow-up using live CRM/activity context. Supply lead_id/client_id when known, or subject to automatically find the record. It never sends anything.',
     inputSchema: {
-      subject: z.string().trim().min(1).max(500).describe('Lead/client business name or contact name used to find the CRM record'),
+      subject: z.string().trim().min(1).max(500),
       history: z.string().trim().min(1).max(10000).optional(),
       goal: z.string().trim().min(1).max(2000),
       channel: z.enum(['email', 'sms', 'chat']).default('chat'),
-      lead_id: uuid.optional().describe('Optional sales lead UUID'),
-      client_id: uuid.optional().describe('Optional existing client UUID'),
+      lead_id: uuid.optional(),
+      client_id: uuid.optional(),
     },
   }, async ({ subject, history, goal, channel, lead_id, client_id }) => {
-    const [company, lead, client] = await Promise.all([
-      getVerifiedCompanyContext(),
-      resolveLead(subject, lead_id),
-      resolveClient(subject, client_id),
-    ]);
+    const [company, lead, client] = await Promise.all([getVerifiedCompanyContext(), resolveLead(subject, lead_id), resolveClient(subject, client_id)]);
     const status = crmStatus(lead, client);
-    const result = await askTambalaAI('followup', `Analyze this ${channel} follow-up. Use CRM/activity context and supplied history only. Recommend timing and the safest next action, then provide a draft in the requested channel. Do not invent links, promises, meetings, travel, shipments, contact details, project claims, client claims, or previous events. If a link is needed but not verified, use [REAL LINK NEEDED]. Do not add an email subject unless channel=email. Goal: ${goal}. Supplied history: ${history ?? '[No additional manual history provided; rely on CRM context.]'}`, {
-      company,
-      lead,
-      client,
-      supplied_history: history ?? null,
-      grounding_rules: GROUNDING_RULES,
-      context_status: status,
-    });
-    return text({
-      channel,
-      recommendation: result,
-      requires_approval: true,
-      context_used: { ...status, lookup_subject: subject },
-    });
+    const result = await askTambalaAI('followup', `Analyze this ${channel} follow-up. Use CRM/activity context and supplied history only. Recommend timing and the safest next action, then provide a draft in the requested channel. Do not invent links, promises, meetings, travel, shipments, contact details, project claims, client claims, or previous events. If a link is needed but not verified, use [REAL LINK NEEDED]. Do not add an email subject unless channel=email. Goal: ${goal}. Supplied history: ${history ?? '[No additional manual history provided; rely on CRM context.]'}`, { company, lead, client, supplied_history: history ?? null, grounding_rules: GROUNDING_RULES, context_status: status });
+    return text({ channel, recommendation: result, requires_approval: true, context_used: { ...status, lookup_subject: subject } });
   });
 }
