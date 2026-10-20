@@ -15,9 +15,11 @@ const GROUNDING_RULES = [
   'Never expose internal notes, phase labels, addresses, UUIDs, or private pipeline metadata in prospect-facing text.',
   'A demo/test/staging site is not a completed live project.',
   'A lead status such as demo_sent does not prove a demo was actually delivered; activity history must support that claim.',
+  'Requested is not shared. Never say an example, demo, link, proposal, message, or other item was shared/sent/provided unless activity history explicitly records that it happened.',
   'If a link is needed but not verified, use [LINK].',
   'Never use a lead/client phone number as the sender phone. Sender details come only from verified sender configuration or placeholders.',
   'Only describe Tambala services that appear in the verified services context. Never add booking systems, payment systems, apps, or other services unless explicitly listed.',
+  'Do not claim Tambala has worked with other lodges, hospitality partners, or completed projects unless those exact claims are verified in context.',
   'All communication drafts require human approval and are never sent by these tools.',
 ];
 const EXCLUDED_STATUSES = new Set(['archived', 'cancelled', 'canceled', 'deleted']);
@@ -99,13 +101,17 @@ async function getBusinessSummary(): Promise<DbRow> {
   const activeLeads = leads.filter((r) => !isExcluded(r));
   const activeClients = clients.filter((r) => !isExcluded(r));
   const activeProjects = projects.filter((r) => !EXCLUDED_STATUSES.has(String(r.status ?? '').trim().toLowerCase()) && !/test/i.test(String(r.name ?? '')));
-  // Count all open operational tasks, including tasks with no client/project relationship.
   const activeTasks = tasks.filter((r) => {
     const status = String(r.status ?? '').trim().toLowerCase();
     return !CLOSED_TASK_STATUSES.has(status) && !/test/i.test(String(r.title ?? ''));
   });
   const countBy = (rows: DbRow[]) => rows.reduce<Record<string, number>>((a, r) => { const s = String(r.status ?? 'unknown'); a[s] = (a[s] ?? 0) + 1; return a; }, {});
-  return { company_type: 'one-person business', default_outreach_channel: 'WhatsApp/chat', location: 'Lilongwe, Malawi', excluded_records: 'Archived, cancelled/canceled, deleted, and clearly test-named records are excluded from this operational snapshot.', leads_total: activeLeads.length, leads_by_status: countBy(activeLeads), clients_total: activeClients.length, clients_by_status: countBy(activeClients), projects_total: activeProjects.length, projects_by_status: countBy(activeProjects), tasks_total: activeTasks.length, open_tasks_total: activeTasks.length, tasks_by_status: countBy(activeTasks), calculation_rule: 'When reporting percentages, calculate numerator / denominator * 100 and show the numerator and denominator. Do not estimate. Open task counts include unassigned/unlinked tasks; do not filter tasks by client_id or project_id.' };
+  const taskAges = activeTasks.map((r) => {
+    const created = new Date(String(r.created_at ?? ''));
+    const due = r.due_at ? new Date(String(r.due_at)) : null;
+    return { title: r.title, created_at: r.created_at, due_at: r.due_at, age_days: Number.isFinite(created.getTime()) ? Math.max(0, (Date.now() - created.getTime()) / 86400000) : null, overdue: Boolean(due && Number.isFinite(due.getTime()) && due.getTime() < Date.now()) };
+  });
+  return { company_type: 'one-person business', default_outreach_channel: 'WhatsApp/chat', location: 'Lilongwe, Malawi', excluded_records: 'Archived, cancelled/canceled, deleted, and clearly test-named records are excluded from this operational snapshot.', leads_total: activeLeads.length, leads_by_status: countBy(activeLeads), clients_total: activeClients.length, clients_by_status: countBy(activeClients), projects_total: activeProjects.length, projects_by_status: countBy(activeProjects), tasks_total: activeTasks.length, open_tasks_total: activeTasks.length, tasks_by_status: countBy(activeTasks), task_details: taskAges, calculation_rule: 'Open task counts include unassigned/unlinked tasks. Do not call open tasks a bottleneck merely because none are completed; assess age and due dates first. Do not recommend changing task status merely to improve metrics.' };
 }
 function crmStatus(lead?: DbRow, client?: DbRow) {
   const lv = lead?.lead; const cv = client?.client;
@@ -114,25 +120,18 @@ function crmStatus(lead?: DbRow, client?: DbRow) {
   return { lead_id: leadId, client_id: clientId, crm_loaded: Boolean(leadId || clientId), match_found: Boolean(lead?.found || client?.found) };
 }
 function requestSubject(request: string, knownNames: string[] = []) {
-  const raw = request.trim();
-  const lower = raw.toLowerCase();
+  const raw = request.trim(); const lower = raw.toLowerCase();
   const matched = knownNames.filter((name) => lower.includes(name.toLowerCase())).sort((a, b) => b.length - a.length)[0];
   return matched ?? (raw.length <= 120 ? raw : undefined);
 }
 async function findSubjectInCRM(request: string) {
-  const [leads, clients] = await Promise.all([
-    supabaseSelect<DbRow>('leads', 'select=id,name,business_name,status'),
-    supabaseSelect<DbRow>('clients', 'select=id,name,business_name,status'),
-  ]);
+  const [leads, clients] = await Promise.all([supabaseSelect<DbRow>('leads', 'select=id,name,business_name,status'), supabaseSelect<DbRow>('clients', 'select=id,name,business_name,status')]);
   const names = [...leads, ...clients].filter((r) => !isExcluded(r)).flatMap(candidateNames);
   return requestSubject(request, [...new Set(names)]);
 }
 
 export function registerAITools(server: McpServer): void {
-  server.registerTool('ask_tambala_ai', {
-    description: 'Ask a Tambala AI specialist. The server can find a CRM record from subject, lead_id/client_id, or a request containing a lead/client name.',
-    inputSchema: { agent: agent.describe('AI specialist'), request: z.string().trim().min(1).max(10000), subject: z.string().trim().min(1).max(500).optional(), lead_id: uuid.optional(), client_id: uuid.optional() },
-  }, async ({ agent: agentName, request, subject, lead_id, client_id }) => {
+  server.registerTool('ask_tambala_ai', { description: 'Ask a Tambala AI specialist. The server can find a CRM record from subject, lead_id/client_id, or a request containing a lead/client name.', inputSchema: { agent: agent.describe('AI specialist'), request: z.string().trim().min(1).max(10000), subject: z.string().trim().min(1).max(500).optional(), lead_id: uuid.optional(), client_id: uuid.optional() } }, async ({ agent: agentName, request, subject, lead_id, client_id }) => {
     const resolvedSubject = subject ?? await findSubjectInCRM(request);
     const [company, summary, lead, client] = await Promise.all([getVerifiedCompanyContext(), getBusinessSummary(), resolveLead(resolvedSubject, lead_id), resolveClient(resolvedSubject, client_id)]);
     const status = crmStatus(lead, client);
@@ -140,23 +139,17 @@ export function registerAITools(server: McpServer): void {
     return text({ agent: agentName, model: getAgentModel(agentName as AgentName), context_used: { ...status, lookup_subject: resolvedSubject ?? null }, response: result, requires_approval: true });
   });
 
-  server.registerTool('draft_outreach', {
-    description: 'Draft a personalized prospect message using live CRM context. Default channel is WhatsApp/chat. The draft is never sent.',
-    inputSchema: { prospect: z.string().trim().min(1).max(5000), goal: z.string().trim().min(1).max(2000), channel: z.enum(['email', 'sms', 'chat']).default('chat'), lead_id: uuid.optional(), client_id: uuid.optional() },
-  }, async ({ prospect, goal, channel, lead_id, client_id }) => {
+  server.registerTool('draft_outreach', { description: 'Draft a personalized prospect message using live CRM context. Default channel is WhatsApp/chat. The draft is never sent.', inputSchema: { prospect: z.string().trim().min(1).max(5000), goal: z.string().trim().min(1).max(2000), channel: z.enum(['email', 'sms', 'chat']).default('chat'), lead_id: uuid.optional(), client_id: uuid.optional() } }, async ({ prospect, goal, channel, lead_id, client_id }) => {
     const [company, lead, client] = await Promise.all([getVerifiedCompanyContext(), resolveLead(prospect, lead_id), resolveClient(prospect, client_id)]);
     const status = crmStatus(lead, client);
     const result = await askTambalaAI('outreach', `Draft a ${channel} message for the goal. Use only verified CRM facts and company context. Match the requested channel exactly; if channel is chat, write a WhatsApp-style message, not an email. Never expose internal notes, phase labels, addresses, statuses, UUIDs, or database metadata. Only say something was sent/shared/completed if activity history confirms it. If a link is needed but not verified, use [LINK]. Never use the prospect's phone number as the sender phone. Use configured sender details or placeholders. Only mention services explicitly listed in verified company context. Do not describe portfolio work, partnerships, experience, or completed projects unless explicitly verified in context. Goal: ${goal}.`, { company, lead, client, supplied_prospect: prospect, grounding_rules: GROUNDING_RULES, context_status: status });
     return text({ channel, draft: result, requires_approval: true, context_used: { ...status, lookup_subject: prospect } });
   });
 
-  server.registerTool('analyze_followup', {
-    description: 'Analyze a follow-up using live CRM/activity context. Default channel is WhatsApp/chat. It never sends anything.',
-    inputSchema: { subject: z.string().trim().min(1).max(500), history: z.string().trim().min(1).max(10000).optional(), goal: z.string().trim().min(1).max(2000), channel: z.enum(['email', 'sms', 'chat']).default('chat'), lead_id: uuid.optional(), client_id: uuid.optional() },
-  }, async ({ subject, history, goal, channel, lead_id, client_id }) => {
+  server.registerTool('analyze_followup', { description: 'Analyze a follow-up using live CRM/activity context. Default channel is WhatsApp/chat. It never sends anything.', inputSchema: { subject: z.string().trim().min(1).max(500), history: z.string().trim().min(1).max(10000).optional(), goal: z.string().trim().min(1).max(2000), channel: z.enum(['email', 'sms', 'chat']).default('chat'), lead_id: uuid.optional(), client_id: uuid.optional() } }, async ({ subject, history, goal, channel, lead_id, client_id }) => {
     const [company, lead, client] = await Promise.all([getVerifiedCompanyContext(), resolveLead(subject, lead_id), resolveClient(subject, client_id)]);
     const status = crmStatus(lead, client);
-    const result = await askTambalaAI('followup', `Analyze this ${channel} follow-up using CRM/activity context and supplied history only. The lead's notes and activity history are authoritative. Recommend timing relative to the current time and any verified follow-up due date. Distinguish requested demos/examples from demos/examples actually sent. Do not infer delivery from lead status alone. Never say a demo, example, sample, proposal, message, link, or other item was shared/sent/provided unless the activity history explicitly records that it happened. Never invent links, promises, meetings, travel, shipments, contact details, project claims, client claims, previous events, or vague claims about Tambala's experience. If a link is needed but not verified, use [LINK]. Only mention services explicitly listed in verified company context. Match the requested channel exactly; if channel is chat, produce a WhatsApp-style draft, not an email. Goal: ${goal}. Supplied history: ${history ?? '[No additional manual history provided.]'}`, { company, lead, client, supplied_history: history ?? null, grounding_rules: GROUNDING_RULES, context_status: status, current_time_africa_blantyre: new Date().toLocaleString('en-GB', { timeZone: 'Africa/Blantyre', dateStyle: 'full', timeStyle: 'long' }) });
-    return text({ channel, recommendation: result, requires_approval: true, context_used: { ...status, lookup_subject: subject } });
+    const result = await askTambalaAI('followup', `Analyze this ${channel} follow-up using CRM/activity context and supplied history only. The lead's notes and activity history are authoritative. Recommend timing relative to the current time and any verified follow-up due date. Distinguish requested demos/examples from demos/examples actually sent. Do not infer delivery from lead status alone. Never say a demo, example, sample, proposal, message, link, or other item was shared/sent/provided unless the activity history explicitly records that it happened. Never invent links, promises, meetings, travel, shipments, contact details, project claims, client claims, previous events, or vague claims about Tambala's experience. Do not claim Tambala has other lodge clients unless the CRM explicitly verifies them. Use only services listed in verified company context. Do not invent completed projects. Write the final draft in the requested channel; for chat, do not use an email subject line. Goal: ${goal}. ${history ? `Additional user-supplied history (may supplement but never override CRM): ${history}` : ''}`, { company, lead, client, grounding_rules: GROUNDING_RULES, context_status: status, current_time_africa_blantyre: new Date().toLocaleString('en-GB', { timeZone: 'Africa/Blantyre', dateStyle: 'full', timeStyle: 'long' }) });
+    return text({ channel, analysis: result, requires_approval: true, context_used: { ...status, lookup_subject: subject } });
   });
 }
