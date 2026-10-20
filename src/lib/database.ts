@@ -35,31 +35,23 @@ async function read<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
+export async function supabaseSelect<T extends DbRow = DbRow>(
+  table: string,
+  params: Record<string, string> = {},
+): Promise<T[]> {
+  const query = new URLSearchParams({ select: '*', ...params });
+  const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?${query}`, { headers: authHeaders() });
+  return read<T[]>(response);
+}
+
 const entityTypes: Record<string, string> = {
-  clients: 'client',
-  leads: 'lead',
-  projects: 'project',
-  tasks: 'task',
-  services: 'service',
-  products: 'product',
+  clients: 'client', leads: 'lead', projects: 'project', tasks: 'task', services: 'service', products: 'product',
 };
 
-async function recordAutomaticActivity(
-  table: string,
-  action: 'CREATED' | 'UPDATED',
-  row: DbRow,
-  changedFields?: string[],
-): Promise<void> {
+async function recordAutomaticActivity(table: string, action: 'CREATED' | 'UPDATED', row: DbRow, changedFields?: string[]): Promise<void> {
   if (table === 'activity_log' || !entityTypes[table] || !row.id) return;
-
   const entityType = entityTypes[table];
   const name = String(row.name ?? row.title ?? row.business_name ?? row.id);
-  const metadata: DbRow = {
-    source: 'automatic_database_activity',
-    table,
-  };
-  if (changedFields?.length) metadata.changed_fields = changedFields;
-
   try {
     await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/activity_log`, {
       method: 'POST',
@@ -68,30 +60,20 @@ async function recordAutomaticActivity(
         activity_type: `${entityType.toUpperCase()}_${action}`,
         title: `${entityType} ${action.toLowerCase()}: ${name}`,
         description: changedFields?.length ? `Updated fields: ${changedFields.join(', ')}` : undefined,
-        entity_type: entityType,
-        entity_id: row.id,
-        actor: 'mcp',
-        metadata,
+        entity_type: entityType, entity_id: row.id, actor: 'mcp',
+        metadata: { source: 'automatic_database_activity', table, ...(changedFields?.length ? { changed_fields: changedFields } : {}) },
       }),
     });
-  } catch (error) {
-    console.error('Activity logging failed:', error);
-  }
+  } catch (error) { console.error('Activity logging failed:', error); }
 }
 
 export async function getById<T>(table: string, id: string): Promise<T | null> {
-  const query = new URLSearchParams({ select: '*', id: `eq.${id}`, limit: '1' });
-  const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?${query}`, { headers: authHeaders() });
-  const rows = await read<T[]>(response);
+  const rows = await supabaseSelect<T>(table, { id: `eq.${id}`, limit: '1' });
   return rows[0] ?? null;
 }
 
 export async function insertRow<T>(table: string, data: Record<string, unknown>): Promise<T> {
-  const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}`, {
-    method: 'POST',
-    headers: authHeaders({ 'Content-Type': 'application/json', Prefer: 'return=representation' }),
-    body: JSON.stringify(data),
-  });
+  const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}`, { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json', Prefer: 'return=representation' }), body: JSON.stringify(data) });
   const rows = await read<T[]>(response);
   if (!rows[0]) throw new Error('Supabase insert returned no row');
   await recordAutomaticActivity(table, 'CREATED', rows[0] as DbRow);
@@ -99,11 +81,7 @@ export async function insertRow<T>(table: string, data: Record<string, unknown>)
 }
 
 export async function updateRow<T>(table: string, id: string, data: Record<string, unknown>): Promise<T> {
-  const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    headers: authHeaders({ 'Content-Type': 'application/json', Prefer: 'return=representation' }),
-    body: JSON.stringify({ ...data, updated_at: new Date().toISOString() }),
-  });
+  const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: authHeaders({ 'Content-Type': 'application/json', Prefer: 'return=representation' }), body: JSON.stringify({ ...data, updated_at: new Date().toISOString() }) });
   const rows = await read<T[]>(response);
   if (!rows[0]) throw new Error(`No ${table} record found with id ${id}`);
   await recordAutomaticActivity(table, 'UPDATED', rows[0] as DbRow, Object.keys(data));
@@ -111,11 +89,6 @@ export async function updateRow<T>(table: string, id: string, data: Record<strin
 }
 
 export async function deleteRow(table: string, id: string): Promise<void> {
-  const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-    headers: authHeaders({ Prefer: 'return=minimal' }),
-  });
-  if (!response.ok) {
-    throw new Error(`Supabase delete failed (${response.status}): ${await response.text()}`);
-  }
+  const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders({ Prefer: 'return=minimal' }) });
+  if (!response.ok) throw new Error(`Supabase delete failed (${response.status}): ${await response.text()}`);
 }
