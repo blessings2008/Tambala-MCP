@@ -1,9 +1,6 @@
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
-import { registerTambalaTools } from './tools/tambala.js';
-import { registerActivityTools } from './tools/activity.js';
-import { registerClientActionTools } from './tools/client-actions.js';
-import { registerAITools } from './tools/ai-actions.js';
+import { registerAllTools } from './tools/registry.js';
 
 export function createServer(): McpServer {
   const server = new McpServer({
@@ -11,11 +8,7 @@ export function createServer(): McpServer {
     version: '0.5.0',
   });
 
-  registerTambalaTools(server);
-  registerActivityTools(server);
-  registerClientActionTools(server);
-  registerAITools(server);
-
+  registerAllTools(server);
   return server;
 }
 
