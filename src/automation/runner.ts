@@ -5,9 +5,13 @@ import type { AutomationMode, AutomationRunResult } from './types.js';
 
 type Row = Record<string, unknown>;
 
+function runKeyFor(date: Date, mode: AutomationMode): string {
+  return `${date.toISOString().slice(0, 10)}:${mode}`;
+}
+
 export async function runAutomation(mode: AutomationMode = 'prepare_only'): Promise<AutomationRunResult> {
   const started = new Date();
-  const runKey = `${started.toISOString().slice(0, 10)}:${mode}`;
+  const runKey = runKeyFor(started, mode);
   const existing = await supabaseSelect<Row>('automation_runs', { run_key: `eq.${runKey}`, limit: '1' });
 
   if (existing[0]?.status === 'completed') {
@@ -48,15 +52,32 @@ export async function runAutomation(mode: AutomationMode = 'prepare_only'): Prom
       });
     }
 
+    for (const task of overdueTasks) {
+      const taskId = typeof task.id === 'string' ? task.id : null;
+      const actionKey = `overdue_task:${taskId ?? String(task.title ?? 'unknown')}`;
+      const found = await supabaseSelect<Row>('automation_actions', {
+        run_id: `eq.${runId}`, action_key: `eq.${actionKey}`, limit: '1',
+      });
+      if (found.length) continue;
+      await insertRow<Row>('automation_actions', {
+        run_id: runId, action_key: actionKey, action_type: 'flag_overdue_task',
+        task_id: taskId, status: 'prepared',
+        payload: { title: task.title ?? null, due_at: task.due_at ?? task.due_date ?? null },
+      });
+    }
+
+    const warnings: string[] = [];
+    if (mode === 'send') warnings.push('Send mode is not enabled; no prospect messages were sent.');
+
     const completed = new Date();
     const result: AutomationRunResult = {
       run_id: runId, mode, started_at: started.toISOString(), completed_at: completed.toISOString(),
-      followups_prepared: actionable.length, reports_sent: 0, tasks_flagged: overdueTasks.length, warnings: [],
+      followups_prepared: actionable.length, reports_sent: 0, tasks_flagged: overdueTasks.length, warnings,
     };
     await updateRow<Row>('automation_runs', runId, {
       status: 'completed', completed_at: completed.toISOString(),
       followups_prepared: result.followups_prepared, reports_sent: 0,
-      tasks_flagged: result.tasks_flagged, warnings: [],
+      tasks_flagged: result.tasks_flagged, warnings,
     });
     return result;
   } catch (error) {
