@@ -40,8 +40,8 @@ function scoreLead(lead: Row, activity: Row[]) {
 
 export async function rankLeads(limit = 10): Promise<Row[]> {
   const [leads, activities] = await Promise.all([
-    supabaseSelect<Row>('leads', 'select=*'),
-    supabaseSelect<Row>('activity_log', 'select=id,entity_id,entity_type,created_at,title,activity_type&entity_type=eq.lead&order=created_at.desc&limit=500'),
+    supabaseSelect<Row>('leads', { select: '*' }),
+    supabaseSelect<Row>('activity_log', { select: 'id,entity_id,entity_type,created_at,title,activity_type', entity_type: 'eq.lead', order: 'created_at.desc', limit: '500' }),
   ]);
   return leads.filter((lead) => !EXCLUDED.has(String(lead.status ?? '').toLowerCase()) && !isTest(lead)).map((lead) => {
     const leadActivities = activities.filter((a) => String(a.entity_id ?? '') === String(lead.id));
