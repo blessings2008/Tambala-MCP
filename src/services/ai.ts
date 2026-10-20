@@ -3,11 +3,12 @@ import OpenAI from 'openai';
 const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 
 // Models are intentionally fixed in code so agent behavior is predictable.
-// Groq currently supports these production models for tool/agent workflows.
+// These are current Groq production models. The older Llama 3.1/3.3 IDs
+// were deprecated by Groq on August 16, 2026.
 const AGENT_MODELS = {
   orchestrator: 'openai/gpt-oss-120b',
-  outreach: 'llama-3.3-70b-versatile',
-  followup: 'llama-3.1-8b-instant',
+  outreach: 'openai/gpt-oss-120b',
+  followup: 'openai/gpt-oss-20b',
 } as const;
 
 export type AgentName = keyof typeof AGENT_MODELS;
