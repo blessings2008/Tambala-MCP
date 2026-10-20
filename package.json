@@ -8,7 +8,9 @@
     "build": "tsc",
     "start": "node dist/http.js",
     "start:stdio": "tsx src/index.ts",
-    "inspect": "npx @modelcontextprotocol/inspector npx tsx src/index.ts"
+    "inspect": "npx @modelcontextprotocol/inspector npx tsx src/index.ts",
+    "automation": "node dist/automation/job.js",
+    "daily-report": "node dist/daily-report-job.js"
   },
   "dependencies": {
     "@modelcontextprotocol/node": "latest",
