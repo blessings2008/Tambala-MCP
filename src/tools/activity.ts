@@ -64,4 +64,38 @@ export function registerActivityTools(server: McpServer): void {
     const activeProjects = projects.filter(p => !['completed', 'cancelled'].includes(String(p.status)));
     return text({ found: true, generated_at: new Date().toISOString(), client, leads, projects: { total: projects.length, active: activeProjects.length, items: projects }, tasks: { total: tasks.length, open: openTasks.length, overdue: overdueTasks.length, items: tasks }, activity: { total: activities.length, items: activities }, attention: overdueTasks.map(t => ({ priority: 'high', type: 'overdue_task', title: `Overdue task: ${String(t.title ?? 'Untitled task')}`, id: t.id })).concat(activeProjects.filter(p => p.status === 'waiting_client').map(p => ({ priority: 'medium', type: 'waiting_client', title: `Waiting on client: ${String(p.name ?? 'Untitled project')}`, id: p.id }))) });
   });
+
+  server.registerTool('get_lead_context', {
+    description: 'Build one live context view for a sales lead, combining the lead record, matching client, related projects/tasks, and full lead activity history. Use this before AI outreach or follow-up work when a lead ID is available.',
+    inputSchema: { id: uuid.describe('Lead UUID') },
+  }, async ({ id }) => {
+    const lead = await getById<DbRow>('leads', id);
+    if (!lead) return text({ found: false, lead_id: id, message: 'Lead not found' });
+
+    const name = String(lead.name ?? '');
+    const business = String(lead.business_name ?? '');
+    const pattern = encodeURIComponent(`*${business || name}*`);
+
+    const [clients, projects, tasks, activities] = await Promise.all([
+      supabaseSelect<DbRow>('clients', `select=*&or=(name.ilike.${pattern},business_name.ilike.${pattern})&order=created_at.desc&limit=10`),
+      supabaseSelect<DbRow>('projects', `select=*&or=(name.ilike.${pattern},description.ilike.${pattern},notes.ilike.${pattern})&order=created_at.desc&limit=20`),
+      supabaseSelect<DbRow>('tasks', `select=*&or=(title.ilike.${pattern},description.ilike.${pattern})&order=created_at.desc&limit=20`),
+      supabaseSelect<DbRow>('activity_log', `select=*&entity_type=eq.lead&entity_id=eq.${encodeURIComponent(id)}&order=created_at.desc&limit=100`),
+    ]);
+
+    return text({
+      found: true,
+      generated_at: new Date().toISOString(),
+      lead,
+      matching_clients: clients,
+      related_projects: projects,
+      related_tasks: tasks,
+      activity: { total: activities.length, items: activities },
+      grounding_rules: [
+        'Treat lead and activity records as the source of truth for what has actually happened.',
+        'Do not invent URLs, contact details, promises, meetings, travel arrangements, shipments, or prior conversations.',
+        'If a required fact is missing, mark it as unknown or use a placeholder rather than guessing.',
+      ],
+    });
+  });
 }
