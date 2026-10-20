@@ -1,162 +1,47 @@
 import * as z from 'zod/v4';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { supabaseSelect } from '../lib/supabase.js';
-import { getById } from '../lib/database.js';
 import { askTambalaAI, getAgentModel, type AgentName } from '../services/ai.js';
+import { GROUNDING_RULES } from '../services/ai/rules.js';
+import { crmStatus, findSubjectInCRM, getBusinessSummary, getVerifiedCompanyContext, resolveClient, resolveLead } from '../services/ai/context.js';
 
 type DbRow = Record<string, unknown>;
-function text(value: unknown) { return { content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] }; }
 const agent = z.enum(['orchestrator', 'outreach', 'followup']);
 const uuid = z.string().uuid();
-const GROUNDING_RULES = [
-  'CRM records and activity history are the source of truth for what happened.',
-  'Only state business-specific facts explicitly present in supplied CRM or verified company context.',
-  'Never invent URLs, phone numbers, email addresses, social profiles, prices, promises, meetings, travel, shipments, project claims, client claims, or previous conversations.',
-  'Never expose internal notes, phase labels, addresses, UUIDs, or private pipeline metadata in prospect-facing text.',
-  'A demo/test/staging site is not a completed live project.',
-  'Lead status and notes are valid secondary evidence when activity history is empty, but do not pretend an automatic activity event exists.',
-  'If status says demo_sent but there is no delivery activity, say the CRM records the lead as demo_sent rather than inventing a delivery event.',
-  'Requested is not shared. Never say an example, demo, link, proposal, message, or other item was shared/sent/provided unless activity history or explicit notes record that it happened.',
-  'If a link is needed but not verified, use [LINK].',
-  'Never use a lead/client phone number as the sender phone. Sender details come only from verified sender configuration or placeholders.',
-  'Only describe Tambala services that appear in the verified services context. Never add booking systems, payment systems, apps, or other services unless explicitly listed.',
-  'Do not claim Tambala has worked with other lodges, hospitality partners, or completed projects unless those exact claims are verified in context.',
-  'Only suggest actions possible for a one-person business using the supplied tools and services.',
-  'Do not calculate or invent currency conversions.',
-  'Do not treat clients divided by leads as a conversion rate unless a verified conversion cohort is supplied.',
-  'All communication drafts require human approval and are never sent by these tools.',
-];
-const EXCLUDED_STATUSES = new Set(['archived', 'cancelled', 'canceled', 'deleted']);
-const CLOSED_TASK_STATUSES = new Set(['done', 'completed', 'archived', 'cancelled', 'canceled', 'deleted']);
-function isExcluded(row: DbRow) {
-  const status = String(row.status ?? '').trim().toLowerCase();
-  const name = `${row.name ?? ''} ${row.business_name ?? ''}`.toLowerCase();
-  return EXCLUDED_STATUSES.has(status) || /(^|\s)test(\s|$)|test[-_]/i.test(name);
-}
-function normalizeSubject(value: string) { return value.split(',')[0].trim().replace(/\s+/g, ' '); }
-function candidateNames(row: DbRow) { return [row.business_name, row.name].filter((v) => typeof v === 'string' && v.trim()).map((v) => String(v).trim()); }
-async function findLeadBySubject(subject: string): Promise<DbRow | null> {
-  const raw = subject.trim(); if (!raw) return null;
-  const cleaned = normalizeSubject(raw);
-  const rows = await supabaseSelect<DbRow>('leads', 'select=*');
-  const active = rows.filter((row) => !isExcluded(row));
-  const needle = cleaned.toLowerCase(); const rawNeedle = raw.toLowerCase();
-  const matches = active.filter((row) => candidateNames(row).some((name) => {
-    const n = name.toLowerCase(); return n === needle || n.includes(needle) || rawNeedle.includes(n);
-  }));
-  if (matches.length === 1) return matches[0];
-  if (matches.length > 1) return { ambiguous: true, lookup_subject: subject, candidates: matches.map((row) => ({ id: row.id, name: row.name, business_name: row.business_name, status: row.status })) };
-  return null;
-}
-async function findClientBySubject(subject: string): Promise<DbRow | null> {
-  const raw = subject.trim(); if (!raw) return null;
-  const cleaned = normalizeSubject(raw);
-  const rows = await supabaseSelect<DbRow>('clients', 'select=*');
-  const active = rows.filter((row) => !isExcluded(row));
-  const needle = cleaned.toLowerCase(); const rawNeedle = raw.toLowerCase();
-  const matches = active.filter((row) => candidateNames(row).some((name) => {
-    const n = name.toLowerCase(); return n === needle || n.includes(needle) || rawNeedle.includes(n);
-  }));
-  if (matches.length === 1) return matches[0];
-  if (matches.length > 1) return { ambiguous: true, lookup_subject: subject, candidates: matches.map((row) => ({ id: row.id, name: row.name, business_name: row.business_name, status: row.status })) };
-  return null;
-}
-async function getLeadContext(id: string): Promise<DbRow> {
-  const lead = await getById<DbRow>('leads', id); if (!lead) return { found: false, lead_id: id };
-  const name = String(lead.name ?? ''); const business = String(lead.business_name ?? ''); const pattern = encodeURIComponent(`*${business || name}*`);
-  const [activities, matchingClients, relatedProjects, relatedTasks] = await Promise.all([
-    supabaseSelect<DbRow>('activity_log', `select=*&entity_type=eq.lead&entity_id=eq.${encodeURIComponent(id)}&order=created_at.desc&limit=100`),
-    supabaseSelect<DbRow>('clients', `select=*&or=(name.ilike.${pattern},business_name.ilike.${pattern})&order=created_at.desc&limit=10`),
-    supabaseSelect<DbRow>('projects', `select=*&or=(name.ilike.${pattern},description.ilike.${pattern},notes.ilike.${pattern})&order=created_at.desc&limit=20`),
-    supabaseSelect<DbRow>('tasks', `select=*&or=(title.ilike.${pattern},description.ilike.${pattern})&order=created_at.desc&limit=20`),
-  ]);
-  return { found: true, generated_at: new Date().toISOString(), lead, activity: activities, matching_clients: matchingClients, related_projects: relatedProjects, related_tasks: relatedTasks };
-}
-async function getClientContext(id: string): Promise<DbRow> {
-  const client = await getById<DbRow>('clients', id); if (!client) return { found: false, client_id: id };
-  const [projects, tasks, activities] = await Promise.all([
-    supabaseSelect<DbRow>('projects', `select=*&client_id=eq.${encodeURIComponent(id)}&order=due_date.asc.nullslast`),
-    supabaseSelect<DbRow>('tasks', `select=*&client_id=eq.${encodeURIComponent(id)}&order=due_at.asc.nullslast`),
-    supabaseSelect<DbRow>('activity_log', `select=*&entity_type=eq.client&entity_id=eq.${encodeURIComponent(id)}&order=created_at.desc&limit=100`),
-  ]);
-  return { found: true, generated_at: new Date().toISOString(), client, projects, tasks, activity: activities };
-}
-async function resolveLead(subject?: string, id?: string): Promise<DbRow | undefined> {
-  if (id) return getLeadContext(id); if (!subject?.trim()) return undefined; const lead = await findLeadBySubject(subject);
-  if (!lead) return { found: false, lookup_subject: subject }; if (lead.ambiguous) return { found: false, ambiguous: true, lookup_subject: subject, candidates: lead.candidates };
-  return typeof lead.id === 'string' ? getLeadContext(lead.id) : { found: false, lookup_subject: subject };
-}
-async function resolveClient(subject?: string, id?: string): Promise<DbRow | undefined> {
-  if (id) return getClientContext(id); if (!subject?.trim()) return undefined; const client = await findClientBySubject(subject);
-  if (!client) return { found: false, lookup_subject: subject }; if (client.ambiguous) return { found: false, ambiguous: true, lookup_subject: subject, candidates: client.candidates };
-  return typeof client.id === 'string' ? getClientContext(client.id) : { found: false, lookup_subject: subject };
-}
-async function getVerifiedCompanyContext(): Promise<DbRow> {
-  const [services, products] = await Promise.all([supabaseSelect<DbRow>('services'), supabaseSelect<DbRow>('products')]);
-  return { company: { name: 'Tambala Technologies', country: 'Malawi', base: 'Lilongwe, Malawi' }, services, products, sender: { name: process.env.TAMBALA_SENDER_NAME?.trim() || '[SENDER NAME]', phone: process.env.TAMBALA_SENDER_PHONE?.trim() || '[SENDER PHONE]' }, verified_portfolio_links: [], rules: GROUNDING_RULES };
-}
-async function getBusinessSummary(): Promise<DbRow> {
-  const [leads, clients, projects, tasks] = await Promise.all([
-    supabaseSelect<DbRow>('leads', 'select=id,name,business_name,status,next_follow_up_at,created_at'),
-    supabaseSelect<DbRow>('clients', 'select=id,name,business_name,status,created_at'),
-    supabaseSelect<DbRow>('projects', 'select=id,name,status,client_id,due_date,created_at'),
-    supabaseSelect<DbRow>('tasks', 'select=id,title,status,due_at,client_id,project_id,created_at'),
-  ]);
-  const activeLeads = leads.filter((r) => !isExcluded(r));
-  const activeClients = clients.filter((r) => !isExcluded(r));
-  const activeProjects = projects.filter((r) => !EXCLUDED_STATUSES.has(String(r.status ?? '').trim().toLowerCase()) && !/test/i.test(String(r.name ?? '')));
-  const activeTasks = tasks.filter((r) => {
-    const status = String(r.status ?? '').trim().toLowerCase();
-    return !CLOSED_TASK_STATUSES.has(status) && !/test/i.test(String(r.title ?? ''));
-  });
-  const countBy = (rows: DbRow[]) => rows.reduce<Record<string, number>>((a, r) => { const s = String(r.status ?? 'unknown'); a[s] = (a[s] ?? 0) + 1; return a; }, {});
-  const taskAges = activeTasks.map((r) => {
-    const created = new Date(String(r.created_at ?? ''));
-    const due = r.due_at ? new Date(String(r.due_at)) : null;
-    return { title: r.title, created_at: r.created_at, due_at: r.due_at, age_days: Number.isFinite(created.getTime()) ? Math.max(0, (Date.now() - created.getTime()) / 86400000) : null, overdue: Boolean(due && Number.isFinite(due.getTime()) && due.getTime() < Date.now()) };
-  });
-  return { company_type: 'one-person business', default_outreach_channel: 'WhatsApp/chat', location: 'Lilongwe, Malawi', excluded_records: 'Archived, cancelled/canceled, deleted, and clearly test-named records are excluded from this operational snapshot.', leads_total: activeLeads.length, leads_by_status: countBy(activeLeads), clients_total: activeClients.length, clients_by_status: countBy(activeClients), projects_total: activeProjects.length, projects_by_status: countBy(activeProjects), tasks_total: activeTasks.length, open_tasks_total: activeTasks.length, tasks_by_status: countBy(activeTasks), task_details: taskAges, calculation_rule: 'Open task counts include unassigned/unlinked tasks. Do not call open tasks a bottleneck merely because none are completed; assess age, due dates, priority and blocked status first. Do not recommend changing task status merely to improve metrics. Do not calculate client-to-lead conversion without a verified cohort definition.' };
-}
-function crmStatus(lead?: DbRow, client?: DbRow) {
-  const lv = lead?.lead; const cv = client?.client;
-  const leadId = lv && typeof lv === 'object' && 'id' in lv ? String((lv as DbRow).id) : null;
-  const clientId = cv && typeof cv === 'object' && 'id' in cv ? String((cv as DbRow).id) : null;
-  return { lead_id: leadId, client_id: clientId, crm_loaded: Boolean(leadId || clientId), match_found: Boolean(lead?.found || client?.found) };
-}
-function requestSubject(request: string, knownNames: string[] = []) {
-  const raw = request.trim(); const lower = raw.toLowerCase();
-  const matched = knownNames.filter((name) => lower.includes(name.toLowerCase())).sort((a, b) => b.length - a.length)[0];
-  return matched ?? (raw.length <= 120 ? raw : undefined);
-}
-async function findSubjectInCRM(request: string) {
-  const [leads, clients] = await Promise.all([supabaseSelect<DbRow>('leads', 'select=id,name,business_name,status'), supabaseSelect<DbRow>('clients', 'select=id,name,business_name,status')]);
-  const names = [...leads, ...clients].filter((r) => !isExcluded(r)).flatMap(candidateNames);
-  return requestSubject(request, [...new Set(names)]);
-}
+const blantyreTime = () => new Date().toLocaleString('en-GB', { timeZone: 'Africa/Blantyre', dateStyle: 'full', timeStyle: 'long' });
+const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
 
 export function registerAITools(server: McpServer): void {
-  server.registerTool('ask_tambala_ai', { description: 'Ask a Tambala AI specialist. The server can find a CRM record from subject, lead_id/client_id, or a request containing a lead/client name.', inputSchema: { agent: agent.describe('AI specialist'), request: z.string().trim().min(1).max(10000), subject: z.string().trim().min(1).max(500).optional(), lead_id: uuid.optional(), client_id: uuid.optional() } }, async ({ agent: agentName, request, subject, lead_id, client_id }) => {
+  server.registerTool('ask_tambala_ai', {
+    description: 'Ask a Tambala AI specialist using live CRM and business context.',
+    inputSchema: { agent: agent.describe('AI specialist'), request: z.string().trim().min(1).max(10000), subject: z.string().trim().min(1).max(500).optional(), lead_id: uuid.optional(), client_id: uuid.optional() },
+  }, async ({ agent: agentName, request, subject, lead_id, client_id }) => {
     const resolvedSubject = subject ?? await findSubjectInCRM(request);
     const [company, summary, lead, client] = await Promise.all([getVerifiedCompanyContext(), getBusinessSummary(), resolveLead(resolvedSubject, lead_id), resolveClient(resolvedSubject, client_id)]);
-    const status = crmStatus(lead, client);
-    const result = await askTambalaAI(agentName as AgentName, request, { company, business_summary: summary, lead, client, grounding_rules: GROUNDING_RULES, context_status: status, current_time_africa_blantyre: new Date().toLocaleString('en-GB', { timeZone: 'Africa/Blantyre', dateStyle: 'full', timeStyle: 'long' }) });
-    return text({ agent: agentName, model: getAgentModel(agentName as AgentName), context_used: { ...status, lookup_subject: resolvedSubject ?? null }, response: result, requires_approval: true });
+    const context_status = crmStatus(lead, client);
+    const response = await askTambalaAI(agentName as AgentName, request, { company, business_summary: summary, lead, client, grounding_rules: GROUNDING_RULES, context_status, current_time_africa_blantyre: blantyreTime() });
+    return text({ agent: agentName, model: getAgentModel(agentName as AgentName), context_used: { ...context_status, lookup_subject: resolvedSubject ?? null }, response, requires_approval: true });
   });
 
-  server.registerTool('draft_outreach', { description: 'Draft a personalized prospect message using live CRM context. Default channel is WhatsApp/chat. The draft is never sent.', inputSchema: { prospect: z.string().trim().min(1).max(5000), goal: z.string().trim().min(1).max(2000), channel: z.enum(['email', 'sms', 'chat']).default('chat'), lead_id: uuid.optional(), client_id: uuid.optional() } }, async ({ prospect, goal, channel, lead_id, client_id }) => {
+  server.registerTool('draft_outreach', {
+    description: 'Draft a personalized prospect message using live CRM context. Default channel is WhatsApp/chat. The draft is never sent.',
+    inputSchema: { prospect: z.string().trim().min(1).max(5000), goal: z.string().trim().min(1).max(2000), channel: z.enum(['email', 'sms', 'chat']).default('chat'), lead_id: uuid.optional(), client_id: uuid.optional() },
+  }, async ({ prospect, goal, channel, lead_id, client_id }) => {
     const [company, lead, client] = await Promise.all([getVerifiedCompanyContext(), resolveLead(prospect, lead_id), resolveClient(prospect, client_id)]);
-    const status = crmStatus(lead, client);
-    const result = await askTambalaAI('outreach', `Draft a ${channel} message for the goal. Use only verified CRM facts and company context. Match the requested channel exactly; if channel is chat, write a WhatsApp-style message, not an email. Never expose internal notes, phase labels, addresses, statuses, UUIDs, or database metadata. Only say something was sent/shared/completed if activity history or explicit CRM notes confirms it. If a link is needed but not verified, use [LINK]. Never use the prospect's phone number as the sender phone. Use configured sender details or placeholders. Only mention services explicitly listed in verified company context. Do not describe portfolio work, partnerships, experience, or completed projects unless explicitly verified in context. Goal: ${goal}.`, { company, lead, client, supplied_prospect: prospect, grounding_rules: GROUNDING_RULES, context_status: status });
-    return text({ channel, draft: result, requires_approval: true, context_used: { ...status, lookup_subject: prospect } });
+    const context_status = crmStatus(lead, client);
+    const response = await askTambalaAI('outreach', `Draft a ${channel} message for the goal below. Write as Bless/Tambala, never as a CRM system. Match the requested channel exactly. For chat, write a natural WhatsApp-style message, not an email. Never expose internal notes, statuses, phase labels, follow-up dates, UUIDs or database metadata. Only say something was sent, shared or completed when CRM activity or explicit notes confirms it. Use [LINK] when a verified link is unavailable. Use configured sender details or placeholders; never use the prospect's number as the sender. Only mention verified services. Never invent portfolio work, partnerships, experience or completed projects. Goal: ${goal}.`, { company, lead, client, supplied_prospect: prospect, grounding_rules: GROUNDING_RULES, context_status });
+    return text({ channel, draft: response, requires_approval: true, context_used: { ...context_status, lookup_subject: prospect } });
   });
 
-  server.registerTool('analyze_followup', { description: 'Analyze a follow-up using live CRM/activity context. Default channel is WhatsApp/chat. It never sends anything.', inputSchema: { subject: z.string().trim().min(1).max(500), history: z.string().trim().min(1).max(10000).optional(), goal: z.string().trim().min(1).max(2000), channel: z.enum(['email', 'sms', 'chat']).default('chat'), lead_id: uuid.optional(), client_id: uuid.optional() } }, async ({ subject, history, goal, channel, lead_id, client_id }) => {
+  server.registerTool('analyze_followup', {
+    description: 'Analyze a follow-up using live CRM/activity context. Default channel is WhatsApp/chat. It never sends anything.',
+    inputSchema: { subject: z.string().trim().min(1).max(500), history: z.string().trim().min(1).max(10000).optional(), goal: z.string().trim().min(1).max(2000), channel: z.enum(['email', 'sms', 'chat']).default('chat'), lead_id: uuid.optional(), client_id: uuid.optional() },
+  }, async ({ subject, history, goal, channel, lead_id, client_id }) => {
     const [company, lead, client] = await Promise.all([getVerifiedCompanyContext(), resolveLead(subject, lead_id), resolveClient(subject, client_id)]);
-    const status = crmStatus(lead, client);
-    const currentTime = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Blantyre', dateStyle: 'full', timeStyle: 'long' });
+    const context_status = crmStatus(lead, client);
+    const currentTime = blantyreTime();
     const leadRecord = lead?.lead as DbRow | undefined;
-    const dueAt = leadRecord?.next_follow_up_at ?? null;
-    const result = await askTambalaAI('followup', `Analyze this ${channel} follow-up using CRM/activity context and supplied history only. The lead's notes and activity history are authoritative, with lead status/notes usable as secondary evidence when the activity log is empty. Recommend timing relative to the current Africa/Blantyre time and the verified follow-up due date. Distinguish requested demos/examples from demos/examples actually sent. If status is demo_sent but there is no delivery activity, state that the CRM status is demo_sent while the activity log does not record delivery; do not claim a delivery event. Never say examples were shared unless activity or explicit notes says they were shared. Never invent links, promises, meetings, travel, shipments, contact details, project claims, client claims, previous events, or vague claims about Tambala's experience. Do not claim Tambala has other lodge clients unless the CRM explicitly verifies them. Use only services listed in verified company context. Do not invent completed projects. Write the final draft in the requested channel; for chat, do not use an email subject line. Goal: ${goal}. ${history ? `Additional user-supplied history (may supplement but never override CRM): ${history}` : ''}`, { company, lead, client, grounding_rules: GROUNDING_RULES, context_status: status, current_time_africa_blantyre: currentTime });
-    return text({ channel, analysis: result, timing: { current_time_africa_blantyre: currentTime, follow_up_due_at: dueAt, timing_basis: 'Use the verified due date and current Africa/Blantyre time; do not invent a different deadline.' }, requires_approval: true, context_used: { ...status, lookup_subject: subject } });
+    const followUpDue = leadRecord?.next_follow_up_at ?? null;
+    const response = await askTambalaAI('followup', `Analyze this ${channel} follow-up using CRM/activity context and supplied history only. Lead notes and activity history are authoritative, with status/notes as secondary evidence when activity is empty. Use the current Africa/Blantyre time and verified follow-up due time. Distinguish requested items from items actually sent/shared. If status is demo_sent but there is no delivery activity, distinguish that status from the missing delivery record; do not say the demo was definitely delivered. Never expose CRM wording or internal schedules to the prospect. Write the final draft as Bless/Tambala speaking naturally in the requested channel. For chat, do not use an email subject. Never invent links, promises, meetings, travel, shipments, contacts, project claims, clients or experience. Use only verified services. Goal: ${goal}.${history ? ` Additional user-supplied history (supplement only): ${history}` : ''}`, { company, lead, client, grounding_rules: GROUNDING_RULES, context_status, current_time_africa_blantyre: currentTime });
+    return text({ channel, analysis: response, timing: { current_time_africa_blantyre: currentTime, follow_up_due_at: followUpDue, timing_basis: 'Use the verified due date and current Africa/Blantyre time; do not invent a different deadline.' }, requires_approval: true, context_used: { ...context_status, lookup_subject: subject } });
   });
 }
