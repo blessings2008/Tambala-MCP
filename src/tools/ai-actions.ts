@@ -21,13 +21,13 @@ const GROUNDING_RULES = [
   'All communication drafts require human approval and are never sent by these tools.',
 ];
 const EXCLUDED_STATUSES = new Set(['archived', 'cancelled', 'canceled', 'deleted']);
+const CLOSED_TASK_STATUSES = new Set(['done', 'completed', 'archived', 'cancelled', 'canceled', 'deleted']);
 function isExcluded(row: DbRow) {
   const status = String(row.status ?? '').trim().toLowerCase();
   const name = `${row.name ?? ''} ${row.business_name ?? ''}`.toLowerCase();
   return EXCLUDED_STATUSES.has(status) || /(^|\s)test(\s|$)|test[-_]/i.test(name);
 }
 function normalizeSubject(value: string) { return value.split(',')[0].trim().replace(/\s+/g, ' '); }
-function searchTerm(value: string) { return encodeURIComponent(value.trim().replace(/[%(),]/g, '')); }
 function candidateNames(row: DbRow) { return [row.business_name, row.name].filter((v) => typeof v === 'string' && v.trim()).map((v) => String(v).trim()); }
 async function findLeadBySubject(subject: string): Promise<DbRow | null> {
   const raw = subject.trim(); if (!raw) return null;
@@ -94,14 +94,18 @@ async function getBusinessSummary(): Promise<DbRow> {
     supabaseSelect<DbRow>('leads', 'select=id,name,business_name,status,next_follow_up_at,created_at'),
     supabaseSelect<DbRow>('clients', 'select=id,name,business_name,status,created_at'),
     supabaseSelect<DbRow>('projects', 'select=id,name,status,client_id,due_date,created_at'),
-    supabaseSelect<DbRow>('tasks', 'select=id,title,status,due_at,client_id,project_id'),
+    supabaseSelect<DbRow>('tasks', 'select=id,title,status,due_at,client_id,project_id,created_at'),
   ]);
   const activeLeads = leads.filter((r) => !isExcluded(r));
   const activeClients = clients.filter((r) => !isExcluded(r));
   const activeProjects = projects.filter((r) => !EXCLUDED_STATUSES.has(String(r.status ?? '').trim().toLowerCase()) && !/test/i.test(String(r.name ?? '')));
-  const activeTasks = tasks.filter((r) => !EXCLUDED_STATUSES.has(String(r.status ?? '').trim().toLowerCase()) && !/test/i.test(String(r.title ?? '')));
+  // Count all open operational tasks, including tasks with no client/project relationship.
+  const activeTasks = tasks.filter((r) => {
+    const status = String(r.status ?? '').trim().toLowerCase();
+    return !CLOSED_TASK_STATUSES.has(status) && !/test/i.test(String(r.title ?? ''));
+  });
   const countBy = (rows: DbRow[]) => rows.reduce<Record<string, number>>((a, r) => { const s = String(r.status ?? 'unknown'); a[s] = (a[s] ?? 0) + 1; return a; }, {});
-  return { company_type: 'one-person business', default_outreach_channel: 'WhatsApp/chat', location: 'Lilongwe, Malawi', excluded_records: 'Archived, cancelled/canceled, deleted, and clearly test-named records are excluded from this operational snapshot.', leads_total: activeLeads.length, leads_by_status: countBy(activeLeads), clients_total: activeClients.length, clients_by_status: countBy(activeClients), projects_total: activeProjects.length, projects_by_status: countBy(activeProjects), tasks_total: activeTasks.length, tasks_by_status: countBy(activeTasks), calculation_rule: 'When reporting percentages, calculate numerator / denominator * 100 and show the numerator and denominator. Do not estimate.' };
+  return { company_type: 'one-person business', default_outreach_channel: 'WhatsApp/chat', location: 'Lilongwe, Malawi', excluded_records: 'Archived, cancelled/canceled, deleted, and clearly test-named records are excluded from this operational snapshot.', leads_total: activeLeads.length, leads_by_status: countBy(activeLeads), clients_total: activeClients.length, clients_by_status: countBy(activeClients), projects_total: activeProjects.length, projects_by_status: countBy(activeProjects), tasks_total: activeTasks.length, open_tasks_total: activeTasks.length, tasks_by_status: countBy(activeTasks), calculation_rule: 'When reporting percentages, calculate numerator / denominator * 100 and show the numerator and denominator. Do not estimate. Open task counts include unassigned/unlinked tasks; do not filter tasks by client_id or project_id.' };
 }
 function crmStatus(lead?: DbRow, client?: DbRow) {
   const lv = lead?.lead; const cv = client?.client;
@@ -152,7 +156,7 @@ export function registerAITools(server: McpServer): void {
   }, async ({ subject, history, goal, channel, lead_id, client_id }) => {
     const [company, lead, client] = await Promise.all([getVerifiedCompanyContext(), resolveLead(subject, lead_id), resolveClient(subject, client_id)]);
     const status = crmStatus(lead, client);
-    const result = await askTambalaAI('followup', `Analyze this ${channel} follow-up using CRM/activity context and supplied history only. Recommend timing relative to the current time and any verified follow-up due date. Distinguish requested demos/examples from demos/examples actually sent. Do not infer delivery from lead status alone. Only claim a past event if supported by activity history. Never invent links, promises, meetings, travel, shipments, contact details, project claims, client claims, previous events, or vague claims about Tambala's experience. If a link is needed but not verified, use [LINK]. Only mention services explicitly listed in verified company context. Match the requested channel exactly; if channel is chat, produce a WhatsApp-style draft, not an email. Goal: ${goal}. Supplied history: ${history ?? '[No additional manual history provided.]'}`, { company, lead, client, supplied_history: history ?? null, grounding_rules: GROUNDING_RULES, context_status: status, current_time_africa_blantyre: new Date().toLocaleString('en-GB', { timeZone: 'Africa/Blantyre', dateStyle: 'full', timeStyle: 'long' }) });
+    const result = await askTambalaAI('followup', `Analyze this ${channel} follow-up using CRM/activity context and supplied history only. The lead's notes and activity history are authoritative. Recommend timing relative to the current time and any verified follow-up due date. Distinguish requested demos/examples from demos/examples actually sent. Do not infer delivery from lead status alone. Never say a demo, example, sample, proposal, message, link, or other item was shared/sent/provided unless the activity history explicitly records that it happened. Never invent links, promises, meetings, travel, shipments, contact details, project claims, client claims, previous events, or vague claims about Tambala's experience. If a link is needed but not verified, use [LINK]. Only mention services explicitly listed in verified company context. Match the requested channel exactly; if channel is chat, produce a WhatsApp-style draft, not an email. Goal: ${goal}. Supplied history: ${history ?? '[No additional manual history provided.]'}`, { company, lead, client, supplied_history: history ?? null, grounding_rules: GROUNDING_RULES, context_status: status, current_time_africa_blantyre: new Date().toLocaleString('en-GB', { timeZone: 'Africa/Blantyre', dateStyle: 'full', timeStyle: 'long' }) });
     return text({ channel, recommendation: result, requires_approval: true, context_used: { ...status, lookup_subject: subject } });
   });
 }
