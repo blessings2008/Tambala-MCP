@@ -1,24 +1,55 @@
 import OpenAI from 'openai';
 
+const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
+
+// Models are intentionally fixed in code so agent behavior is predictable.
+// Groq currently supports these production models for tool/agent workflows.
+const AGENT_MODELS = {
+  orchestrator: 'openai/gpt-oss-120b',
+  outreach: 'llama-3.3-70b-versatile',
+  followup: 'llama-3.1-8b-instant',
+} as const;
+
+export type AgentName = keyof typeof AGENT_MODELS;
+
 let client: OpenAI | null = null;
 
 function getClient(): OpenAI {
   if (!client) {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error('OPENAI_API_KEY is not configured');
-    client = new OpenAI({ apiKey });
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) throw new Error('GROQ_API_KEY is not configured');
+    client = new OpenAI({ apiKey, baseURL: GROQ_BASE_URL });
   }
   return client;
 }
 
-export async function askTambalaAI(input: string, context?: unknown): Promise<string> {
-  const model = process.env.OPENAI_MODEL ?? 'gpt-5.6-mini';
-  const contextText = context === undefined ? '' : `\n\nTambala business context:\n${JSON.stringify(context)}`;
+const AGENT_INSTRUCTIONS: Record<AgentName, string> = {
+  orchestrator:
+    'You are the Tambala Orchestrator. Break business goals into practical work for specialist agents. Protect the user\'s time, prioritize revenue-generating work, and never invent business facts or claim an action happened when it did not.',
+  outreach:
+    'You are the Tambala Outreach Agent. Create natural, personalized, professional prospect outreach from supplied facts. Never invent contact details, business facts, pricing, promises, or previous conversations. Avoid spammy or desperate language.',
+  followup:
+    'You are the Tambala Follow-up Agent. Analyze supplied prospect/client history and recommend the next appropriate follow-up. Keep messages concise, human, contextual, and non-pushy. Never invent conversation history.',
+};
+
+export async function askTambalaAI(
+  agent: AgentName,
+  input: string,
+  context?: unknown,
+): Promise<string> {
+  const contextText = context === undefined
+    ? ''
+    : `\n\nTambala business context:\n${JSON.stringify(context)}`;
+
   const response = await getClient().responses.create({
-    model,
-    instructions:
-      'You are Tambala AI, a business operations assistant for Tambala Technologies. Use the supplied business context as facts. Do not invent clients, projects, conversations, financial figures, or actions. Be practical and concise. When information is missing, say so. Never send messages or make external changes unless an explicit tool is later provided for that action.',
+    model: AGENT_MODELS[agent],
+    instructions: AGENT_INSTRUCTIONS[agent],
     input: `${input}${contextText}`,
   });
+
   return response.output_text;
+}
+
+export function getAgentModel(agent: AgentName): string {
+  return AGENT_MODELS[agent];
 }
