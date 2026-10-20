@@ -67,7 +67,7 @@ async function recordAutomaticActivity(table: string, action: 'CREATED' | 'UPDAT
   } catch (error) { console.error('Activity logging failed:', error); }
 }
 
-export async function getById<T>(table: string, id: string): Promise<T | null> {
+export async function getById<T extends DbRow>(table: string, id: string): Promise<T | null> {
   const rows = await supabaseSelect<T>(table, { id: `eq.${id}`, limit: '1' });
   return rows[0] ?? null;
 }
