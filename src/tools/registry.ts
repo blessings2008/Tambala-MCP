@@ -8,6 +8,7 @@ import { registerAITools } from './ai-actions.js';
 import { registerLeadIntelligenceTools } from './lead-intelligence.js';
 import { registerDailyReportTools } from './daily-report.js';
 import { registerEmailReportTools } from './email-report.js';
+import { registerAutomationTools } from './automation.js';
 
 /** Register all MCP tool groups. Keep transport/bootstrap code out of tool modules. */
 export function registerAllTools(server: McpServer): void {
@@ -17,6 +18,7 @@ export function registerAllTools(server: McpServer): void {
     registerLeadIntelligenceTools,
     registerDailyReportTools,
     registerEmailReportTools,
+    registerAutomationTools,
     registerTambalaTools,
     registerActivityTools,
     registerClientActionTools,
