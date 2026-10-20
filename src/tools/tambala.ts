@@ -12,6 +12,17 @@ function text(value: unknown): { content: [{ type: 'text'; text: string }] } {
 const uuid = z.string().uuid();
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
 const datetime = z.string().datetime({ offset: true });
+const EXCLUDED_STATUSES = new Set(['archived', 'cancelled', 'canceled', 'deleted']);
+const CLOSED_TASK_STATUSES = new Set(['done', 'completed', 'archived', 'cancelled', 'canceled', 'deleted']);
+function isOperational(row: DbRow): boolean {
+  const status = String(row.status ?? '').trim().toLowerCase();
+  const name = `${row.name ?? ''} ${row.business_name ?? ''}`.toLowerCase();
+  const title = String(row.title ?? '').toLowerCase();
+  return !EXCLUDED_STATUSES.has(status) && !/(^|\s)test(\s|$)|test[-_]/i.test(`${name} ${title}`);
+}
+function isOpenTask(row: DbRow): boolean {
+  return isOperational(row) && !CLOSED_TASK_STATUSES.has(String(row.status ?? '').trim().toLowerCase());
+}
 
 const clientStatus = z.enum(['lead', 'active', 'inactive', 'archived']);
 const leadStatus = z.enum(['new', 'contacted', 'interested', 'demo_sent', 'negotiating', 'won', 'lost', 'follow_up']);
@@ -60,35 +71,47 @@ export function registerTambalaTools(server: McpServer): void {
 
   server.registerTool('get_business_summary', { description: 'Get a live high-level summary of Tambala clients, leads, projects, tasks, services, and products.', inputSchema: {} }, async () => {
     const [clients, leads, projects, tasks, services, products] = await Promise.all([supabaseSelect<DbRow>('clients'), supabaseSelect<DbRow>('leads'), supabaseSelect<DbRow>('projects'), supabaseSelect<DbRow>('tasks'), supabaseSelect<DbRow>('services'), supabaseSelect<DbRow>('products')]);
+    const activeClients = clients.filter(isOperational);
+    const activeLeads = leads.filter(isOperational);
+    const activeProjects = projects.filter(isOperational);
+    const activeTasks = tasks.filter(isOpenTask);
     const countBy = (rows: DbRow[], field: string) => rows.reduce<Record<string, number>>((acc, row) => { const value = String(row[field] ?? 'unknown'); acc[value] = (acc[value] ?? 0) + 1; return acc; }, {});
-    return text({ generated_at: new Date().toISOString(), totals: { clients: clients.length, leads: leads.length, projects: projects.length, tasks: tasks.length, active_services: services.filter((row) => row.active === true).length, products: products.length }, by_status: { clients: countBy(clients, 'status'), leads: countBy(leads, 'status'), projects: countBy(projects, 'status'), tasks: countBy(tasks, 'status') } });
+    return text({ generated_at: new Date().toISOString(), operational_scope: 'Archived, cancelled/canceled, deleted, and clearly test-named records are excluded.', totals: { clients: activeClients.length, leads: activeLeads.length, projects: activeProjects.length, tasks: activeTasks.length, active_services: services.filter((row) => row.active === true).length, products: products.length }, by_status: { clients: countBy(activeClients, 'status'), leads: countBy(activeLeads, 'status'), projects: countBy(activeProjects, 'status'), tasks: countBy(activeTasks, 'status') } });
   });
 
-  server.registerTool('get_active_projects', { description: 'Get projects currently active or waiting on a client, ordered by due date.', inputSchema: {} }, async () => text(await supabaseSelect('projects', 'select=*&status=in.(active,waiting_client,review,on_hold)&order=due_date.asc.nullslast')));
-  server.registerTool('get_overdue_tasks', { description: 'Get unfinished tasks whose due time has passed.', inputSchema: {} }, async () => { const now = new Date().toISOString(); return text(await supabaseSelect('tasks', `select=*&due_at=lt.${encodeURIComponent(now)}&status=not.in.(done,cancelled)&order=due_at.asc`)); });
-  server.registerTool('get_follow_ups_due', { description: 'Get sales leads whose follow-up time is due or overdue, excluding won and lost leads.', inputSchema: {} }, async () => { const now = new Date().toISOString(); return text(await supabaseSelect('leads', `select=*&next_follow_up_at=not.is.null&next_follow_up_at=lte.${encodeURIComponent(now)}&status=not.in.(won,lost)&order=next_follow_up_at.asc`)); });
-  server.registerTool('get_sales_pipeline', { description: 'Summarize the current sales pipeline by lead status and return the underlying leads.', inputSchema: {} }, async () => { const leads = await supabaseSelect<DbRow>('leads'); const byStatus = leads.reduce<Record<string, number>>((acc, lead) => { const status = String(lead.status ?? 'unknown'); acc[status] = (acc[status] ?? 0) + 1; return acc; }, {}); return text({ total_leads: leads.length, by_status: byStatus, leads }); });
+  server.registerTool('get_active_projects', { description: 'Get projects currently active or waiting on a client, ordered by due date.', inputSchema: {}, }, async () => text((await supabaseSelect<DbRow>('projects', 'select=*&status=in.(active,waiting_client,review,on_hold)&order=due_date.asc.nullslast')).filter(isOperational)));
+  server.registerTool('get_overdue_tasks', { description: 'Get unfinished tasks whose due time has passed.', inputSchema: {} }, async () => { const now = new Date().toISOString(); return text((await supabaseSelect<DbRow>('tasks', `select=*&due_at=lt.${encodeURIComponent(now)}&status=not.in.(done,cancelled)&order=due_at.asc`)).filter(isOpenTask)); });
+  server.registerTool('get_follow_ups_due', { description: 'Get sales leads whose follow-up time is due or overdue, excluding won and lost leads.', inputSchema: {} }, async () => { const now = new Date().toISOString(); return text((await supabaseSelect<DbRow>('leads', `select=*&next_follow_up_at=not.is.null&next_follow_up_at=lte.${encodeURIComponent(now)}&status=not.in.(won,lost)&order=next_follow_up_at.asc`)).filter(isOperational)); });
+  server.registerTool('get_sales_pipeline', { description: 'Summarize the current operational sales pipeline by lead status and return the underlying leads.', inputSchema: {} }, async () => { const leads = (await supabaseSelect<DbRow>('leads')).filter(isOperational); const byStatus = leads.reduce<Record<string, number>>((acc, lead) => { const status = String(lead.status ?? 'unknown'); acc[status] = (acc[status] ?? 0) + 1; return acc; }, {}); return text({ total_leads: leads.length, by_status: byStatus, leads }); });
   server.registerTool('get_client_summary', { description: 'Get a client together with their projects and tasks.', inputSchema: { id: uuid.describe('Client UUID') } }, async ({ id }) => { const [client, projects, tasks] = await Promise.all([getById('clients', id), supabaseSelect('projects', `select=*&client_id=eq.${encodeURIComponent(id)}&order=due_date.asc.nullslast`), supabaseSelect('tasks', `select=*&client_id=eq.${encodeURIComponent(id)}&order=due_at.asc.nullslast`)]); return text({ client, projects, tasks }); });
 
   server.registerTool('get_command_center', {
-    description: 'Get one live operational dashboard for Tambala: summary, active projects, overdue tasks, due follow-ups, and sales pipeline.',
+    description: 'Get one live operational dashboard for Tambala using the same exclusion rules as the AI business snapshot.',
     inputSchema: {},
   }, async () => {
     const now = new Date().toISOString();
-    const [clients, leads, projects, tasks, services, products, activeProjects, overdueTasks, dueFollowUps] = await Promise.all([
+    const [allClients, allLeads, allProjects, allTasks, services, products, activeProjectsRaw, overdueTasksRaw, dueFollowUpsRaw] = await Promise.all([
       supabaseSelect<DbRow>('clients'),
       supabaseSelect<DbRow>('leads'),
       supabaseSelect<DbRow>('projects'),
       supabaseSelect<DbRow>('tasks'),
       supabaseSelect<DbRow>('services'),
       supabaseSelect<DbRow>('products'),
-      supabaseSelect<DbRow>('projects', 'select=*&status=in.(active,waiting_client,review,on_hold)&order=due_date.asc.nullslast&limit=20'),
-      supabaseSelect<DbRow>('tasks', `select=*&due_at=lt.${encodeURIComponent(now)}&status=not.in.(done,cancelled)&order=due_at.asc&limit=20`),
-      supabaseSelect<DbRow>('leads', `select=*&next_follow_up_at=not.is.null&next_follow_up_at=lte.${encodeURIComponent(now)}&status=not.in.(won,lost)&order=next_follow_up_at.asc&limit=20`),
+      supabaseSelect<DbRow>('projects', 'select=*&status=in.(active,waiting_client,review,on_hold)&order=due_date.asc.nullslast&limit=100'),
+      supabaseSelect<DbRow>('tasks', `select=*&due_at=lt.${encodeURIComponent(now)}&status=not.in.(done,cancelled)&order=due_at.asc&limit=100`),
+      supabaseSelect<DbRow>('leads', `select=*&next_follow_up_at=not.is.null&next_follow_up_at=lte.${encodeURIComponent(now)}&status=not.in.(won,lost)&order=next_follow_up_at.asc&limit=100`),
     ]);
+    const clients = allClients.filter(isOperational);
+    const leads = allLeads.filter(isOperational);
+    const projects = allProjects.filter(isOperational);
+    const tasks = allTasks.filter(isOpenTask);
+    const activeProjects = activeProjectsRaw.filter(isOperational);
+    const overdueTasks = overdueTasksRaw.filter(isOpenTask);
+    const dueFollowUps = dueFollowUpsRaw.filter(isOperational);
     const countBy = (rows: DbRow[], field: string) => rows.reduce<Record<string, number>>((acc, row) => { const value = String(row[field] ?? 'unknown'); acc[value] = (acc[value] ?? 0) + 1; return acc; }, {});
     return text({
       generated_at: now,
+      operational_scope: 'Archived, cancelled/canceled, deleted, and clearly test-named records are excluded from all operational counts and attention lists.',
       summary: { clients: clients.length, leads: leads.length, projects: projects.length, tasks: tasks.length, services: services.length, products: products.length },
       status: { clients: countBy(clients, 'status'), leads: countBy(leads, 'status'), projects: countBy(projects, 'status'), tasks: countBy(tasks, 'status') },
       attention: { active_projects: activeProjects, overdue_tasks: overdueTasks, follow_ups_due: dueFollowUps },
@@ -102,16 +125,16 @@ export function registerTambalaTools(server: McpServer): void {
   }, async () => {
     const now = new Date().toISOString();
     const [overdueTasks, dueFollowUps, blockedTasks, waitingProjects] = await Promise.all([
-      supabaseSelect<DbRow>('tasks', `select=*&due_at=lt.${encodeURIComponent(now)}&status=not.in.(done,cancelled)&order=priority.desc,due_at.asc&limit=20`),
-      supabaseSelect<DbRow>('leads', `select=*&next_follow_up_at=not.is.null&next_follow_up_at=lte.${encodeURIComponent(now)}&status=not.in.(won,lost)&order=next_follow_up_at.asc&limit=20`),
-      supabaseSelect<DbRow>('tasks', 'select=*&status=eq.blocked&order=priority.desc,due_at.asc&limit=20'),
-      supabaseSelect<DbRow>('projects', 'select=*&status=eq.waiting_client&order=due_date.asc.nullslast&limit=20'),
+      supabaseSelect<DbRow>('tasks', `select=*&due_at=lt.${encodeURIComponent(now)}&status=not.in.(done,cancelled)&order=priority.desc,due_at.asc&limit=100`),
+      supabaseSelect<DbRow>('leads', `select=*&next_follow_up_at=not.is.null&next_follow_up_at=lte.${encodeURIComponent(now)}&status=not.in.(won,lost)&order=next_follow_up_at.asc&limit=100`),
+      supabaseSelect<DbRow>('tasks', 'select=*&status=eq.blocked&order=priority.desc,due_at.asc&limit=100'),
+      supabaseSelect<DbRow>('projects', 'select=*&status=eq.waiting_client&order=due_date.asc.nullslast&limit=100'),
     ]);
     const actions: DbRow[] = [];
-    for (const row of overdueTasks) actions.push({ priority: row.priority === 'urgent' ? 'critical' : 'high', type: 'overdue_task', title: `Complete overdue task: ${String(row.title ?? 'Untitled task')}`, task_id: row.id, due_at: row.due_at });
-    for (const row of dueFollowUps) actions.push({ priority: 'high', type: 'lead_follow_up', title: `Follow up with ${String(row.business_name ?? row.name ?? 'lead')}`, lead_id: row.id, next_follow_up_at: row.next_follow_up_at });
-    for (const row of blockedTasks) actions.push({ priority: row.priority === 'urgent' ? 'critical' : 'medium', type: 'blocked_task', title: `Unblock task: ${String(row.title ?? 'Untitled task')}`, task_id: row.id });
-    for (const row of waitingProjects) actions.push({ priority: 'medium', type: 'waiting_client', title: `Check in on client for project: ${String(row.name ?? 'Untitled project')}`, project_id: row.id, due_date: row.due_date });
+    for (const row of overdueTasks.filter(isOpenTask)) actions.push({ priority: row.priority === 'urgent' ? 'critical' : 'high', type: 'overdue_task', title: `Complete overdue task: ${String(row.title ?? 'Untitled task')}`, task_id: row.id, due_at: row.due_at });
+    for (const row of dueFollowUps.filter(isOperational)) actions.push({ priority: 'high', type: 'lead_follow_up', title: `Follow up with ${String(row.business_name ?? row.name ?? 'lead')}`, lead_id: row.id, next_follow_up_at: row.next_follow_up_at });
+    for (const row of blockedTasks.filter(isOpenTask)) actions.push({ priority: row.priority === 'urgent' ? 'critical' : 'medium', type: 'blocked_task', title: `Unblock task: ${String(row.title ?? 'Untitled task')}`, task_id: row.id });
+    for (const row of waitingProjects.filter(isOperational)) actions.push({ priority: 'medium', type: 'waiting_client', title: `Check in on client for project: ${String(row.name ?? 'Untitled project')}`, project_id: row.id, due_date: row.due_date });
     const rank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
     actions.sort((a, b) => (rank[String(a.priority)] ?? 9) - (rank[String(b.priority)] ?? 9));
     return text({ generated_at: now, total_actions: actions.length, actions: actions.slice(0, 30) });
