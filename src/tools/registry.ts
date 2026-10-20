@@ -8,8 +8,8 @@ import { registerAITools } from './ai-actions.js';
 /** Register all MCP tool groups. Keep transport/bootstrap code out of tool modules. */
 export function registerAllTools(server: McpServer): void {
   const registrars = [
-    registerTambalaTools,
     registerCompanyTools,
+    registerTambalaTools,
     registerActivityTools,
     registerClientActionTools,
     registerAITools,
