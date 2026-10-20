@@ -17,6 +17,7 @@ const GROUNDING_RULES = [
   'A lead status such as demo_sent does not prove a demo was actually delivered; activity history must support that claim.',
   'If a link is needed but not verified, use [LINK].',
   'Never use a lead/client phone number as the sender phone. Sender details come only from verified sender configuration or placeholders.',
+  'Only describe Tambala services that appear in the verified services context. Never add booking systems, payment systems, apps, or other services unless explicitly listed.',
   'All communication drafts require human approval and are never sent by these tools.',
 ];
 function normalizeSubject(value: string) { return value.split(',')[0].trim().replace(/\s+/g, ' '); }
@@ -77,7 +78,7 @@ async function getVerifiedCompanyContext(): Promise<DbRow> {
 }
 async function getBusinessSummary(): Promise<DbRow> {
   const [leads, clients, projects, tasks] = await Promise.all([
-    supabaseSelect<DbRow>('leads', 'select=id,name,business_name,status,follow_up_at,created_at'),
+    supabaseSelect<DbRow>('leads', 'select=id,name,business_name,status,next_follow_up_at,created_at'),
     supabaseSelect<DbRow>('clients', 'select=id,name,business_name,status,created_at'),
     supabaseSelect<DbRow>('projects', 'select=id,name,status,client_id,due_date,created_at'),
     supabaseSelect<DbRow>('tasks', 'select=id,title,status,due_at,client_id,project_id'),
@@ -111,7 +112,7 @@ export function registerAITools(server: McpServer): void {
   }, async ({ prospect, goal, channel, lead_id, client_id }) => {
     const [company, lead, client] = await Promise.all([getVerifiedCompanyContext(), resolveLead(prospect, lead_id), resolveClient(prospect, client_id)]);
     const status = crmStatus(lead, client);
-    const result = await askTambalaAI('outreach', `Draft a ${channel} message for the goal. Use only verified CRM facts and company context. Never expose internal notes, phase labels, addresses, statuses, UUIDs, or database metadata. Only say something was sent/shared/completed if activity history confirms it. If a link is needed but not verified, use [LINK]. Never use the prospect's phone number as the sender phone. Use configured sender details or placeholders. Goal: ${goal}.`, { company, lead, client, supplied_prospect: prospect, grounding_rules: GROUNDING_RULES, context_status: status });
+    const result = await askTambalaAI('outreach', `Draft a ${channel} message for the goal. Use only verified CRM facts and company context. Never expose internal notes, phase labels, addresses, statuses, UUIDs, or database metadata. Only say something was sent/shared/completed if activity history confirms it. If a link is needed but not verified, use [LINK]. Never use the prospect's phone number as the sender phone. Use configured sender details or placeholders. Only mention services explicitly listed in verified company context. Goal: ${goal}.`, { company, lead, client, supplied_prospect: prospect, grounding_rules: GROUNDING_RULES, context_status: status });
     return text({ channel, draft: result, requires_approval: true, context_used: { ...status, lookup_subject: prospect } });
   });
 
@@ -121,7 +122,7 @@ export function registerAITools(server: McpServer): void {
   }, async ({ subject, history, goal, channel, lead_id, client_id }) => {
     const [company, lead, client] = await Promise.all([getVerifiedCompanyContext(), resolveLead(subject, lead_id), resolveClient(subject, client_id)]);
     const status = crmStatus(lead, client);
-    const result = await askTambalaAI('followup', `Analyze this ${channel} follow-up using CRM/activity context and supplied history only. Recommend timing relative to the current time and any verified follow-up due date. Distinguish requested demos/examples from demos/examples actually sent. Then provide a draft. Never invent links, promises, meetings, travel, shipments, contact details, project claims, client claims, or previous events. If a link is needed but not verified, use [LINK]. Goal: ${goal}. Supplied history: ${history ?? '[No additional manual history provided.]'}`, { company, lead, client, supplied_history: history ?? null, grounding_rules: GROUNDING_RULES, context_status: status, current_time_africa_blantyre: new Date().toLocaleString('en-GB', { timeZone: 'Africa/Blantyre', dateStyle: 'full', timeStyle: 'long' }) });
+    const result = await askTambalaAI('followup', `Analyze this ${channel} follow-up using CRM/activity context and supplied history only. Recommend timing relative to the current time and any verified follow-up due date. Distinguish requested demos/examples from demos/examples actually sent. Do not infer delivery from lead status alone. Only claim a past event if supported by activity history. Never invent links, promises, meetings, travel, shipments, contact details, project claims, client claims, previous events, or vague claims about Tambala's experience. If a link is needed but not verified, use [LINK]. Only mention services explicitly listed in verified company context. Goal: ${goal}. Supplied history: ${history ?? '[No additional manual history provided.]'}`, { company, lead, client, supplied_history: history ?? null, grounding_rules: GROUNDING_RULES, context_status: status, current_time_africa_blantyre: new Date().toLocaleString('en-GB', { timeZone: 'Africa/Blantyre', dateStyle: 'full', timeStyle: 'long' }) });
     return text({ channel, recommendation: result, requires_approval: true, context_used: { ...status, lookup_subject: subject } });
   });
 }
