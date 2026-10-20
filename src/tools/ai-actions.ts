@@ -5,11 +5,7 @@ import { getById } from '../lib/database.js';
 import { askTambalaAI, getAgentModel, type AgentName } from '../services/ai.js';
 
 type DbRow = Record<string, unknown>;
-
-function text(value: unknown) {
-  return { content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] };
-}
-
+function text(value: unknown) { return { content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] }; }
 const agent = z.enum(['orchestrator', 'outreach', 'followup']);
 const uuid = z.string().uuid();
 const GROUNDING_RULES = [
@@ -23,20 +19,11 @@ const GROUNDING_RULES = [
   'Never use a lead/client phone number as the sender phone. Sender details come only from verified sender configuration or placeholders.',
   'All communication drafts require human approval and are never sent by these tools.',
 ];
-
-function normalizeSubject(value: string): string {
-  return value.split(',')[0].trim().replace(/\s+/g, ' ');
-}
-
-function searchTerm(value: string): string {
-  return encodeURIComponent(value.trim().replace(/[%(),]/g, ''));
-}
-
+function normalizeSubject(value: string) { return value.split(',')[0].trim().replace(/\s+/g, ' '); }
+function searchTerm(value: string) { return encodeURIComponent(value.trim().replace(/[%(),]/g, '')); }
 async function findLeadBySubject(subject: string): Promise<DbRow | null> {
-  const cleaned = normalizeSubject(subject);
-  if (!cleaned) return null;
-  const pattern = searchTerm(`*${cleaned}*`);
-  const rows = await supabaseSelect<DbRow>('leads', `select=*&or=(business_name.ilike.${pattern},name.ilike.${pattern})&limit=10`);
+  const cleaned = normalizeSubject(subject); if (!cleaned) return null;
+  const rows = await supabaseSelect<DbRow>('leads', `select=*&or=(business_name.ilike.${searchTerm(`*${cleaned}*`)},name.ilike.${searchTerm(`*${cleaned}*`)})&limit=10`);
   const lower = cleaned.toLowerCase();
   const exact = rows.filter((row) => [row.business_name, row.name].filter(Boolean).some((v) => String(v).trim().toLowerCase() === lower));
   if (exact.length === 1) return exact[0];
@@ -44,12 +31,9 @@ async function findLeadBySubject(subject: string): Promise<DbRow | null> {
   if (rows.length > 1) return { ambiguous: true, lookup_subject: subject, candidates: rows.map((row) => ({ id: row.id, name: row.name, business_name: row.business_name, status: row.status })) };
   return null;
 }
-
 async function findClientBySubject(subject: string): Promise<DbRow | null> {
-  const cleaned = normalizeSubject(subject);
-  if (!cleaned) return null;
-  const pattern = searchTerm(`*${cleaned}*`);
-  const rows = await supabaseSelect<DbRow>('clients', `select=*&or=(business_name.ilike.${pattern},name.ilike.${pattern})&limit=10`);
+  const cleaned = normalizeSubject(subject); if (!cleaned) return null;
+  const rows = await supabaseSelect<DbRow>('clients', `select=*&or=(business_name.ilike.${searchTerm(`*${cleaned}*`)},name.ilike.${searchTerm(`*${cleaned}*`)})&limit=10`);
   const lower = cleaned.toLowerCase();
   const exact = rows.filter((row) => [row.business_name, row.name].filter(Boolean).some((v) => String(v).trim().toLowerCase() === lower));
   if (exact.length === 1) return exact[0];
@@ -57,13 +41,9 @@ async function findClientBySubject(subject: string): Promise<DbRow | null> {
   if (rows.length > 1) return { ambiguous: true, lookup_subject: subject, candidates: rows.map((row) => ({ id: row.id, name: row.name, business_name: row.business_name, status: row.status })) };
   return null;
 }
-
 async function getLeadContext(id: string): Promise<DbRow> {
-  const lead = await getById<DbRow>('leads', id);
-  if (!lead) return { found: false, lead_id: id };
-  const name = String(lead.name ?? '');
-  const business = String(lead.business_name ?? '');
-  const pattern = encodeURIComponent(`*${business || name}*`);
+  const lead = await getById<DbRow>('leads', id); if (!lead) return { found: false, lead_id: id };
+  const name = String(lead.name ?? ''); const business = String(lead.business_name ?? ''); const pattern = encodeURIComponent(`*${business || name}*`);
   const [activities, matchingClients, relatedProjects, relatedTasks] = await Promise.all([
     supabaseSelect<DbRow>('activity_log', `select=*&entity_type=eq.lead&entity_id=eq.${encodeURIComponent(id)}&order=created_at.desc&limit=100`),
     supabaseSelect<DbRow>('clients', `select=*&or=(name.ilike.${pattern},business_name.ilike.${pattern})&order=created_at.desc&limit=10`),
@@ -72,10 +52,8 @@ async function getLeadContext(id: string): Promise<DbRow> {
   ]);
   return { found: true, generated_at: new Date().toISOString(), lead, activity: activities, matching_clients: matchingClients, related_projects: relatedProjects, related_tasks: relatedTasks };
 }
-
 async function getClientContext(id: string): Promise<DbRow> {
-  const client = await getById<DbRow>('clients', id);
-  if (!client) return { found: false, client_id: id };
+  const client = await getById<DbRow>('clients', id); if (!client) return { found: false, client_id: id };
   const [projects, tasks, activities] = await Promise.all([
     supabaseSelect<DbRow>('projects', `select=*&client_id=eq.${encodeURIComponent(id)}&order=due_date.asc.nullslast`),
     supabaseSelect<DbRow>('tasks', `select=*&client_id=eq.${encodeURIComponent(id)}&order=due_at.asc.nullslast`),
@@ -83,53 +61,37 @@ async function getClientContext(id: string): Promise<DbRow> {
   ]);
   return { found: true, generated_at: new Date().toISOString(), client, projects, tasks, activity: activities };
 }
-
 async function resolveLead(subject?: string, id?: string): Promise<DbRow | undefined> {
-  if (id) return getLeadContext(id);
-  if (!subject?.trim()) return undefined;
-  const lead = await findLeadBySubject(subject);
-  if (!lead) return { found: false, lookup_subject: subject };
-  if (lead.ambiguous) return { found: false, ambiguous: true, lookup_subject: subject, candidates: lead.candidates };
-  const leadId = typeof lead.id === 'string' ? lead.id : null;
-  if (!leadId) return { found: false, lookup_subject: subject };
-  return getLeadContext(leadId);
+  if (id) return getLeadContext(id); if (!subject?.trim()) return undefined; const lead = await findLeadBySubject(subject);
+  if (!lead) return { found: false, lookup_subject: subject }; if (lead.ambiguous) return { found: false, ambiguous: true, lookup_subject: subject, candidates: lead.candidates };
+  return typeof lead.id === 'string' ? getLeadContext(lead.id) : { found: false, lookup_subject: subject };
 }
-
 async function resolveClient(subject?: string, id?: string): Promise<DbRow | undefined> {
-  if (id) return getClientContext(id);
-  if (!subject?.trim()) return undefined;
-  const client = await findClientBySubject(subject);
-  if (!client) return { found: false, lookup_subject: subject };
-  if (client.ambiguous) return { found: false, ambiguous: true, lookup_subject: subject, candidates: client.candidates };
-  const clientId = typeof client.id === 'string' ? client.id : null;
-  if (!clientId) return { found: false, lookup_subject: subject };
-  return getClientContext(clientId);
+  if (id) return getClientContext(id); if (!subject?.trim()) return undefined; const client = await findClientBySubject(subject);
+  if (!client) return { found: false, lookup_subject: subject }; if (client.ambiguous) return { found: false, ambiguous: true, lookup_subject: subject, candidates: client.candidates };
+  return typeof client.id === 'string' ? getClientContext(client.id) : { found: false, lookup_subject: subject };
 }
-
 async function getVerifiedCompanyContext(): Promise<DbRow> {
   const [services, products] = await Promise.all([supabaseSelect<DbRow>('services'), supabaseSelect<DbRow>('products')]);
-  return {
-    company: { name: 'Tambala Technologies', country: 'Malawi', base: 'Lilongwe, Malawi' },
-    services,
-    products,
-    sender: { name: process.env.TAMBALA_SENDER_NAME?.trim() || '[SENDER NAME]', phone: process.env.TAMBALA_SENDER_PHONE?.trim() || '[SENDER PHONE]' },
-    verified_portfolio_links: [],
-    rules: GROUNDING_RULES,
-  };
+  return { company: { name: 'Tambala Technologies', country: 'Malawi', base: 'Lilongwe, Malawi' }, services, products, sender: { name: process.env.TAMBALA_SENDER_NAME?.trim() || '[SENDER NAME]', phone: process.env.TAMBALA_SENDER_PHONE?.trim() || '[SENDER PHONE]' }, verified_portfolio_links: [], rules: GROUNDING_RULES };
 }
-
+async function getBusinessSummary(): Promise<DbRow> {
+  const [leads, clients, projects, tasks] = await Promise.all([
+    supabaseSelect<DbRow>('leads', 'select=id,name,business_name,status,follow_up_at,created_at'),
+    supabaseSelect<DbRow>('clients', 'select=id,name,business_name,status,created_at'),
+    supabaseSelect<DbRow>('projects', 'select=id,name,status,client_id,due_date,created_at'),
+    supabaseSelect<DbRow>('tasks', 'select=id,title,status,due_at,client_id,project_id'),
+  ]);
+  const countBy = (rows: DbRow[]) => rows.reduce<Record<string, number>>((a, r) => { const s = String(r.status ?? 'unknown'); a[s] = (a[s] ?? 0) + 1; return a; }, {});
+  return { company_type: 'one-person business', leads_total: leads.length, leads_by_status: countBy(leads), clients_total: clients.length, clients_by_status: countBy(clients), projects_total: projects.length, projects_by_status: countBy(projects), tasks_total: tasks.length, tasks_by_status: countBy(tasks) };
+}
 function crmStatus(lead?: DbRow, client?: DbRow) {
-  const leadValue = lead?.lead;
-  const clientValue = client?.client;
-  const leadId = leadValue && typeof leadValue === 'object' && 'id' in leadValue ? String((leadValue as DbRow).id) : null;
-  const clientId = clientValue && typeof clientValue === 'object' && 'id' in clientValue ? String((clientValue as DbRow).id) : null;
+  const lv = lead?.lead; const cv = client?.client;
+  const leadId = lv && typeof lv === 'object' && 'id' in lv ? String((lv as DbRow).id) : null;
+  const clientId = cv && typeof cv === 'object' && 'id' in cv ? String((cv as DbRow).id) : null;
   return { lead_id: leadId, client_id: clientId, crm_loaded: Boolean(leadId || clientId), match_found: Boolean(lead?.found || client?.found) };
 }
-
-function requestSubject(request: string): string | undefined {
-  const cleaned = request.trim();
-  return cleaned.length <= 120 ? cleaned : undefined;
-}
+function requestSubject(request: string) { const cleaned = request.trim(); return cleaned.length <= 120 ? cleaned : undefined; }
 
 export function registerAITools(server: McpServer): void {
   server.registerTool('ask_tambala_ai', {
@@ -137,9 +99,9 @@ export function registerAITools(server: McpServer): void {
     inputSchema: { agent: agent.describe('AI specialist'), request: z.string().trim().min(1).max(10000), subject: z.string().trim().min(1).max(500).optional(), lead_id: uuid.optional(), client_id: uuid.optional() },
   }, async ({ agent: agentName, request, subject, lead_id, client_id }) => {
     const resolvedSubject = subject ?? requestSubject(request);
-    const [company, lead, client] = await Promise.all([getVerifiedCompanyContext(), resolveLead(resolvedSubject, lead_id), resolveClient(resolvedSubject, client_id)]);
+    const [company, summary, lead, client] = await Promise.all([getVerifiedCompanyContext(), getBusinessSummary(), resolveLead(resolvedSubject, lead_id), resolveClient(resolvedSubject, client_id)]);
     const status = crmStatus(lead, client);
-    const result = await askTambalaAI(agentName as AgentName, request, { company, lead, client, grounding_rules: GROUNDING_RULES, context_status: status });
+    const result = await askTambalaAI(agentName as AgentName, request, { company, business_summary: summary, lead, client, grounding_rules: GROUNDING_RULES, context_status: status, current_time_africa_blantyre: new Date().toLocaleString('en-GB', { timeZone: 'Africa/Blantyre', dateStyle: 'full', timeStyle: 'long' }) });
     return text({ agent: agentName, model: getAgentModel(agentName as AgentName), context_used: { ...status, lookup_subject: resolvedSubject ?? null }, response: result, requires_approval: true });
   });
 
