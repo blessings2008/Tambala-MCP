@@ -1,5 +1,6 @@
 import { supabaseSelect } from '../../lib/supabase.js';
 import { getById } from '../../lib/database.js';
+import { getApprovedPortfolio } from '../portfolio.js';
 import { CLOSED_TASK_STATUSES, EXCLUDED_STATUSES, GROUNDING_RULES } from './rules.js';
 
 type DbRow = Record<string, unknown>;
@@ -60,8 +61,27 @@ export async function resolveClient(subject?: string, id?: string): Promise<DbRo
 }
 
 export async function getVerifiedCompanyContext(): Promise<DbRow> {
-  const [services, products] = await Promise.all([supabaseSelect<DbRow>('services'), supabaseSelect<DbRow>('products')]);
-  return { company: { name: 'Tambala Technologies', country: 'Malawi', base: 'Lilongwe, Malawi' }, services, products, sender: { name: process.env.TAMBALA_SENDER_NAME?.trim() || '[SENDER NAME]', phone: process.env.TAMBALA_SENDER_PHONE?.trim() || '[SENDER PHONE]' }, verified_portfolio_links: [], rules: GROUNDING_RULES };
+  const [profiles, services, products, portfolio] = await Promise.all([
+    supabaseSelect<DbRow>('company_profile', 'select=*&id=eq.default&limit=1'),
+    supabaseSelect<DbRow>('services'),
+    supabaseSelect<DbRow>('products'),
+    getApprovedPortfolio(),
+  ]);
+  const profile = profiles[0] ?? {};
+  return {
+    company: {
+      name: profile.company_name ?? 'Tambala Technologies',
+      country: profile.country ?? 'Malawi',
+      base: profile.base_location ?? 'Lilongwe, Malawi',
+      description: profile.description ?? null,
+      contact_name: profile.contact_name ?? null,
+    },
+    services,
+    products,
+    verified_portfolio: portfolio,
+    sender: { name: process.env.TAMBALA_SENDER_NAME?.trim() || '[SENDER NAME]', phone: process.env.TAMBALA_SENDER_PHONE?.trim() || '[SENDER PHONE]' },
+    rules: GROUNDING_RULES,
+  };
 }
 
 export async function getBusinessSummary(): Promise<DbRow> {
