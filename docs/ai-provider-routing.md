@@ -43,6 +43,9 @@ Blank example values are intentional. Add actual keys only in Render or the rele
 - `getAgentRuntimeInfo(agent)` returns the agent, configured endpoint/model, credential variable name, readiness, and whether a key is configured. It never returns the key value.
 - `askTambalaAI(agent, ...)` routes only to that agent's configured client.
 - Specialist calls fail with an explicit configuration error if their own key, endpoint, or model is missing. They do not silently consume the orchestrator's API quota.
-- Each client has a 30-second request timeout and at most one SDK retry. Add application-level rate limits/usage budgets before enabling high-volume or autonomous workloads.
+- Each client has a 30-second request timeout and at most one SDK retry.
+- A local per-agent sliding-window limiter and concurrency cap are enabled by default: Orchestrator 20 requests/minute and 2 concurrent calls; Outreach 8 requests/minute and 2 concurrent calls; Follow-up 8 requests/minute and 2 concurrent calls.
+- Override per agent with `TAMBALA_<AGENT>_MAX_REQUESTS_PER_MINUTE` and `TAMBALA_<AGENT>_MAX_CONCURRENCY` (for example `TAMBALA_OUTREACH_MAX_REQUESTS_PER_MINUTE`). Values must be positive integers.
+- These limits are per running process and reset on restart; they do not enforce account-wide quotas across multiple instances. Set provider-side quotas too before high-volume/autonomous workloads.
 - API keys are credentials, not identities or permissions. Organization authorization and approval checks remain separate.
 - No new API key has been configured by this code change. Until you add the specialist settings, outreach and follow-up AI calls will return a clear configuration error rather than using the shared Groq key.
