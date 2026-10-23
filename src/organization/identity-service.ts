@@ -8,7 +8,16 @@ type BindingRow = {
   active: boolean;
 };
 
-type RoleRow = OrganizationalRole;
+type RoleRow = {
+  id: string;
+  title: string;
+  kind: OrganizationalRole['kind'];
+  unit_id: string | null;
+  reports_to_role_id: string | null;
+  purpose: string;
+  capabilities: string[] | null;
+  activation: OrganizationalRole['activation'];
+};
 
 export type ResolvedOrganizationIdentity =
   | { authenticated: true; principalType: 'oauth'; clientId: string; role: OrganizationalRole }
@@ -100,6 +109,15 @@ export async function resolveOrganizationIdentity(): Promise<ResolvedOrganizatio
     authenticated: true,
     principalType: 'oauth',
     clientId: principal.clientId,
-    role: rows[0],
+    role: {
+      id: rows[0].id,
+      title: rows[0].title,
+      kind: rows[0].kind,
+      unitId: rows[0].unit_id,
+      reportsToRoleId: rows[0].reports_to_role_id,
+      purpose: rows[0].purpose,
+      capabilities: rows[0].capabilities ?? [],
+      activation: rows[0].activation,
+    },
   };
 }
