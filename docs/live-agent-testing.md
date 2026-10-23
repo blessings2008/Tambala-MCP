@@ -24,8 +24,17 @@ Set these in the **staging service only**. Never commit credentials to Git or pa
 | --- | --- |
 | `TAMBALA_CHAT_TEST_TOKEN` | A long, random, private token used only by the live testing console. Generate a fresh one, for example with a password manager. Do not reuse `TAMBALA_MCP_TOKEN`. |
 | `GROQ_API_KEY` | Your Groq API key for the orchestrator/CEO agent. The orchestrator has a Groq-compatible default endpoint and model. |
+| `TAMBALA_WEB_SEARCH_API_KEY` | Your Tavily API key. This is separate from every model-provider API key and is used only by the web research capability. |
 
-The page asks you for the chat test token. It is kept in the current browser session and sent only to this service's same-origin test endpoints. The token does not grant MCP tool access; it only authorizes the three agent-test endpoints. Anyone who has the token can incur provider usage, so keep it private and rotate it if exposed.
+The page asks you for the chat test token. It is kept in the current browser session and sent only to this service's same-origin test endpoints. The token does not grant MCP tool access; it only authorizes the test endpoints. Anyone who has the token can incur provider usage, so keep it private and rotate it if exposed.
+
+## Web research provider
+
+Use **Tavily** for the initial Research capability. Tavily's current pricing page lists a free tier with **1,000 API credits per month and no credit card required**. citeturn0search0
+
+The server expects the key in `TAMBALA_WEB_SEARCH_API_KEY` and calls Tavily's search endpoint directly. Search results are passed to the agent as explicit evidence with their source URLs. The agent is instructed not to claim it browsed anything beyond the supplied results and not to fabricate sources.
+
+The live collaboration route automatically enables web research for an Outreach task when the objective contains research-oriented terms such as `research`, `find`, `identify`, `market`, `prospect`, `hotel`, `lodge`, or `tourism`. You can also explicitly set `useWebResearch: true` when calling the API.
 
 ## Optional specialist providers
 
@@ -45,17 +54,20 @@ The orchestrator can instead use the dedicated `TAMBALA_ORCHESTRATOR_API_KEY`, `
 ## Test steps
 
 1. Deploy the staging branch and wait for the build to complete.
-2. Open `/chat-live`, paste `TAMBALA_CHAT_TEST_TOKEN`, then choose **Check connection**.
-3. Review readiness for each agent. Missing specialist settings will show as not configured.
-4. Select an agent and submit a prompt. The response displayed is from the actual configured AI provider.
-5. Inspect Render logs if a request fails. Provider calls have a 30-second timeout and use the existing per-process request/concurrency caps.
+2. Add `TAMBALA_WEB_SEARCH_API_KEY` to the staging environment.
+3. Open `/chat-live`, paste `TAMBALA_CHAT_TEST_TOKEN`, then choose **Check connection**.
+4. Review readiness for each agent and confirm the Research provider reports as configured.
+5. Select **CEO delegates to department**, choose **Head of Sales & Business Development**, and submit a constrained task such as: `Research three realistic ways Tambala can acquire lodge/hotel website clients in Malawi. Use current public web sources and return the source URLs. Do not invent Tambala services or contact details.`
+6. The backend will search the web, give the results to Outreach, then send Outreach's report to the CEO for a constraint/provenance review.
+7. Inspect Render logs if a request fails. Provider calls have timeouts and use the existing per-process request/concurrency caps.
 
 ## Scope and safety
 
 - This is a live **agent test console**, not the full persistent organization chat yet.
-- Messages and responses are currently held in the browser page; they are not persisted in Supabase.
-- The console calls one selected agent per request. It does not yet implement CEO delegation, shared room history, agent-to-agent event streams, or live collaboration.
+- Messages and responses are currently held in the browser response; they are not persisted in Supabase.
+- Collaboration now supports real Founder -> CEO -> department -> CEO -> Founder mediation and optional/automatic web research, but persistent event history and autonomous multi-step delegation are still future work.
 - No WhatsApp/SMS/email messages are sent, and no business actions are executed.
-- The test token is checked server-side using a timing-safe comparison. The endpoint accepts only the three known agent names, JSON requests, and prompts up to 10,000 characters.
-- Use a separate staging service and token. Do not enable this test surface on the production service unless you explicitly intend to expose a provider-costing test endpoint there.
+- The test token is checked server-side using a timing-safe comparison. The endpoints accept only known agent names, JSON requests, and bounded prompt/query sizes.
+- Use a separate staging service and token. Do not enable this test surface on the production service unless you explicitly intend to expose provider-costing test endpoints there.
 - The existing `/chat` stays a simulated visual preview. The live console is `/chat-live`.
+- The CEO is now instructed to reject specialist reports that violate explicit constraints, fabricate company capabilities or contacts, or claim research without evidence. This is a model-level guardrail; it is not a substitute for deterministic validation, which will be added as the organization workflow matures.
