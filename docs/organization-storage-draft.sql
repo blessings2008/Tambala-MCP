@@ -1,19 +1,10 @@
--- Draft schema for the Tambala Organization domain.
--- This file is documentation/review material only; it has NOT been applied to Supabase.
--- Keep organizational records server-side. Do not add permissive anon/authenticated policies.
-
-create table if not exists public.organization_units (
-  id text primary key,
-  name text not null,
-  kind text not null check (kind in ('division', 'department', 'business_unit')),
-  parent_id text references public.organization_units(id) on delete restrict,
-  purpose text not null,
-  status text not null default 'planned' check (status in ('planned', 'active', 'paused', 'retired')),
-  accountable_role_ids text[] not null default '{}',
-  tags text[] not null default '{}',
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
+-- Future organization governance tables for the existing Tambala MCP database.
+-- IMPORTANT: the additive migration place_tambala_mcp_under_ai_automation has already
+-- created public.organization_units with Technology & Innovation -> AI & Automation,
+-- and added nullable department_id references to existing operational tables.
+-- This file is a REVIEW DRAFT for the next migration; it is not applied as a whole.
+-- It intentionally does not recreate or replace existing MCP tables or business data.
+-- Keep organizational records server-side; do not add permissive anon/authenticated policies.
 
 create table if not exists public.organization_roles (
   id text primary key,
@@ -77,13 +68,11 @@ create index if not exists organization_approval_requests_status_created_idx on 
 create index if not exists organization_audit_events_created_idx on public.organization_audit_events(created_at desc);
 create index if not exists organization_audit_events_target_idx on public.organization_audit_events(target_type, target_id);
 
-alter table public.organization_units enable row level security;
 alter table public.organization_roles enable row level security;
 alter table public.organization_decisions enable row level security;
 alter table public.organization_approval_requests enable row level security;
 alter table public.organization_audit_events enable row level security;
 
-revoke all on public.organization_units from anon, authenticated;
 revoke all on public.organization_roles from anon, authenticated;
 revoke all on public.organization_decisions from anon, authenticated;
 revoke all on public.organization_approval_requests from anon, authenticated;
