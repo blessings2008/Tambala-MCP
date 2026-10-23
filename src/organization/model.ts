@@ -75,7 +75,8 @@ export interface ApprovalRequest {
 
 export interface AuditEvent {
   id: string;
-  actorRoleId: string;
+  /** Null is permitted for unauthenticated/unknown actors whose denied attempts must still be audited. */
+  actorRoleId: string | null;
   action: string;
   targetType: string;
   targetId: string;
