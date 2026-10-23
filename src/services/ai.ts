@@ -8,14 +8,8 @@ const clients = new Map<AgentName, OpenAI>();
 function getClient(agent: AgentName): OpenAI {
   const existing = clients.get(agent);
   if (existing) return existing;
-
   const config = getAgentRuntimeConfig(agent);
-  const client = new OpenAI({
-    apiKey: config.apiKey,
-    baseURL: config.baseURL,
-    timeout: 30000,
-    maxRetries: 1,
-  });
+  const client = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseURL, timeout: 30000, maxRetries: 1 });
   clients.set(agent, client);
   return client;
 }
@@ -36,23 +30,14 @@ export async function askTambalaAI(agent: AgentName, input: string, context?: un
       ],
       temperature: 0.2,
     });
-
     const content = response.choices[0]?.message?.content;
-    if (typeof content !== 'string' || !content.trim()) {
-      throw new Error(`The ${agent} AI provider returned an empty response.`);
-    }
+    if (typeof content !== 'string' || !content.trim()) throw new Error(`The ${agent} AI provider returned an empty response.`);
     return content;
   } finally {
     releaseSlot();
   }
 }
 
-export function getAgentModel(agent: AgentName): string {
-  return getAgentRuntimeInfo(agent).model ?? 'not-configured';
-}
-
+export function getAgentModel(agent: AgentName): string { return getAgentRuntimeInfo(agent).model ?? 'not-configured'; }
 export { getAgentRuntimeInfo };
-
-export function getAgentOperationalInfo(agent: AgentName) {
-  return { ...getAgentRuntimeInfo(agent), limits: getAgentLimitInfo(agent) };
-}
+export function getAgentOperationalInfo(agent: AgentName) { return { ...getAgentRuntimeInfo(agent), limits: getAgentLimitInfo(agent) }; }
