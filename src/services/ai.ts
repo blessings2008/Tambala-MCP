@@ -18,9 +18,9 @@ export type { AgentName } from './ai/models.js';
 
 /** Route to the assigned provider while enforcing per-agent local request caps. */
 export async function askTambalaAI(agent: AgentName, input: string, context?: unknown): Promise<string> {
+  const config = getAgentRuntimeConfig(agent);
   const releaseSlot = acquireAgentRequestSlot(agent);
   try {
-    const config = getAgentRuntimeConfig(agent);
     const contextText = context === undefined ? '' : `\n\nTambala business context:\n${JSON.stringify(context)}`;
     const response = await getClient(agent).chat.completions.create({
       model: config.model,
