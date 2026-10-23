@@ -1,6 +1,6 @@
 import * as z from 'zod/v4';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { askTambalaAI, getAgentModel, getAgentRuntimeInfo, type AgentName } from '../services/ai.js';
+import { askTambalaAI, getAgentModel, getAgentOperationalInfo, type AgentName } from '../services/ai.js';
 import { GROUNDING_RULES } from '../services/ai/rules.js';
 import { crmStatus, findSubjectInCRM, getBusinessSummary, getVerifiedCompanyContext, resolveClient, resolveLead } from '../services/ai/context.js';
 
@@ -16,7 +16,7 @@ export function registerAITools(server: McpServer): void {
     inputSchema: {},
   }, async () => text({
     policy: 'Each agent uses its own credential. Only the orchestrator may use GROQ_API_KEY as a legacy fallback.',
-    agents: (['orchestrator', 'outreach', 'followup'] as const).map((name) => getAgentRuntimeInfo(name)),
+    agents: (['orchestrator', 'outreach', 'followup'] as const).map((name) => getAgentOperationalInfo(name)),
   }));
 
   server.registerTool('ask_tambala_ai', {
