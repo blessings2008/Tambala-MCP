@@ -33,7 +33,7 @@ const server = createHttpServer(async (req, res) => {
       return;
     }
     const authorization = req.headers.authorization ?? '';
-    const tokenMatch = /^Bearer\\s+(.+)$/i.exec(authorization.trim());
+    const tokenMatch = /^Bearer\s+(.+)$/i.exec(authorization.trim());
     const token = tokenMatch?.[1] ?? '';
     const clientId = token ? getOAuthAccessClientId(token) : null;
     const principal = clientId
