@@ -24,7 +24,9 @@ function chatTokenMatches(provided: string | null): boolean {
 }
 
 function bearerToken(req: import('node:http').IncomingMessage): string | null {
-  const match = /^Bearer\\s+(.+)$/i.exec((req.headers.authorization ?? '').trim());
+  // \s must be a single regex escape here; the previous implementation used
+  // a double backslash and therefore looked for the literal characters "\\s".
+  const match = /^Bearer\s+(.+)$/i.exec((req.headers.authorization ?? '').trim());
   return match?.[1] ?? null;
 }
 
