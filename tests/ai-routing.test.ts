@@ -76,3 +76,44 @@ test('route diagnostics never expose secret values and report unconfigured speci
     assert.equal(JSON.stringify(info).includes('do-not-expose-this'), false);
   });
 });
+
+import { acquireAgentRequestSlot, getAgentLimitInfo, resetAgentLimitStateForTests } from '../src/services/ai/limits.js';
+
+test('AI request budgets default conservatively by agent', () => {
+  assert.equal(getAgentLimitInfo('orchestrator').requestsPerMinute, 20);
+  assert.equal(getAgentLimitInfo('outreach').requestsPerMinute, 8);
+  assert.equal(getAgentLimitInfo('followup').requestsPerMinute, 8);
+});
+
+test('AI request budget rejects excess requests and allows a new window', () => {
+  const previous = process.env.TAMBALA_OUTREACH_MAX_REQUESTS_PER_MINUTE;
+  try {
+    resetAgentLimitStateForTests();
+    process.env.TAMBALA_OUTREACH_MAX_REQUESTS_PER_MINUTE = '1';
+    const release = acquireAgentRequestSlot('outreach', 100000);
+    release();
+    assert.throws(() => acquireAgentRequestSlot('outreach', 100001), /limit of 1 requests per minute/);
+    assert.doesNotThrow(() => acquireAgentRequestSlot('outreach', 160001));
+  } finally {
+    resetAgentLimitStateForTests();
+    if (previous === undefined) delete process.env.TAMBALA_OUTREACH_MAX_REQUESTS_PER_MINUTE;
+    else process.env.TAMBALA_OUTREACH_MAX_REQUESTS_PER_MINUTE = previous;
+  }
+});
+
+test('AI concurrency caps are isolated between agents', () => {
+  const previous = process.env.TAMBALA_OUTREACH_MAX_CONCURRENCY;
+  try {
+    resetAgentLimitStateForTests();
+    process.env.TAMBALA_OUTREACH_MAX_CONCURRENCY = '1';
+    const release = acquireAgentRequestSlot('outreach', 200000);
+    assert.throws(() => acquireAgentRequestSlot('outreach', 200001), /concurrency limit of 1/);
+    assert.doesNotThrow(() => acquireAgentRequestSlot('followup', 200001));
+    release();
+    assert.doesNotThrow(() => acquireAgentRequestSlot('outreach', 200002));
+  } finally {
+    resetAgentLimitStateForTests();
+    if (previous === undefined) delete process.env.TAMBALA_OUTREACH_MAX_CONCURRENCY;
+    else process.env.TAMBALA_OUTREACH_MAX_CONCURRENCY = previous;
+  }
+});
