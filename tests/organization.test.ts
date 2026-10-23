@@ -15,6 +15,18 @@ test('initial organization seed is structurally valid', () => {
   assert.deepEqual(validateOrganization(initialOrganization), []);
 });
 
+test('the complete initial blueprint includes all core departments and business units', () => {
+  const departments = initialOrganization.units.filter((unit) => unit.kind === 'department');
+  const divisions = initialOrganization.units.filter((unit) => unit.kind === 'division');
+  const businessUnits = initialOrganization.units.filter((unit) => unit.kind === 'business_unit');
+
+  assert.equal(divisions.length, 4);
+  assert.equal(departments.length, 18);
+  assert.equal(businessUnits.length, 3);
+  assert.ok(departments.find((unit) => unit.id === 'research-intelligence')?.parentId === null);
+  assert.ok(departments.filter((unit) => unit.id !== 'research-intelligence').every((unit) => unit.parentId));
+});
+
 test('organization summary reports the expected leadership and planned units', () => {
   const summary = getOrganizationSummary();
   assert.equal(summary.name, 'Tambala Organization');
