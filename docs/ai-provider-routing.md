@@ -49,3 +49,13 @@ Blank example values are intentional. Add actual keys only in Render or the rele
 - These limits are per running process and reset on restart; they do not enforce account-wide quotas across multiple instances. Set provider-side quotas too before high-volume/autonomous workloads.
 - API keys are credentials, not identities or permissions. Organization authorization and approval checks remain separate.
 - No new API key has been configured by this code change. Until you add the specialist settings, outreach and follow-up AI calls will return a clear configuration error rather than using the shared Groq key.
+
+## Agent ownership directory
+
+| Agent | Organizational unit | Role mapping | Scope |
+|---|---|---|---|
+| Orchestrator | Executive Management | Proposed CEO mapping; CEO role remains planned | Organization-wide planning and coordination |
+| Outreach | Sales & Business Development | No organizational role binding yet | Prospect research and outreach drafts |
+| Follow-up | Customer Relations & Support | No organizational role binding yet | Follow-up analysis and drafts |
+
+These are routing/ownership labels, not authorization grants. An agent's department label does not give it permission to approve spending, send messages, change records, or perform other consequential actions. The CEO role remains planned until the separate activation and trusted identity process is completed.
