@@ -1,6 +1,6 @@
 import * as z from 'zod/v4';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { askTambalaAI, getAgentModel, type AgentName } from '../services/ai.js';
+import { askTambalaAI, getAgentModel, getAgentRuntimeInfo, type AgentName } from '../services/ai.js';
 import { GROUNDING_RULES } from '../services/ai/rules.js';
 import { crmStatus, findSubjectInCRM, getBusinessSummary, getVerifiedCompanyContext, resolveClient, resolveLead } from '../services/ai/context.js';
 
@@ -11,6 +11,14 @@ const blantyreTime = () => new Date().toLocaleString('en-GB', { timeZone: 'Afric
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
 
 export function registerAITools(server: McpServer): void {
+  server.registerTool('get_ai_agent_api_routes', {
+    description: 'Show which configured API endpoint, model, and credential variable each AI agent uses. Never returns API key values.',
+    inputSchema: {},
+  }, async () => text({
+    policy: 'Each agent uses its own credential. Only the orchestrator may use GROQ_API_KEY as a legacy fallback.',
+    agents: (['orchestrator', 'outreach', 'followup'] as const).map((name) => getAgentRuntimeInfo(name)),
+  }));
+
   server.registerTool('ask_tambala_ai', {
     description: 'Ask a Tambala AI specialist using live CRM and business context.',
     inputSchema: { agent: agent.describe('AI specialist'), request: z.string().trim().min(1).max(10000), subject: z.string().trim().min(1).max(500).optional(), lead_id: uuid.optional(), client_id: uuid.optional() },
