@@ -117,3 +117,12 @@ test('AI concurrency caps are isolated between agents', () => {
     else process.env.TAMBALA_OUTREACH_MAX_CONCURRENCY = previous;
   }
 });
+
+test('AI route diagnostics identify organizational ownership without granting roles', () => {
+  assert.equal(getAgentRuntimeInfo('orchestrator').unitId, 'executive-management');
+  assert.equal(getAgentRuntimeInfo('orchestrator').roleStatus, 'planned');
+  assert.equal(getAgentRuntimeInfo('outreach').unitId, 'sales-business-development');
+  assert.equal(getAgentRuntimeInfo('outreach').roleId, null);
+  assert.equal(getAgentRuntimeInfo('followup').unitId, 'customer-relations');
+  assert.equal(getAgentRuntimeInfo('followup').roleId, null);
+});
