@@ -2,6 +2,7 @@ import * as z from 'zod/v4';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { supabaseSelect } from '../lib/supabase.js';
 import { getPersistedOrganizationSnapshot } from '../organization/persisted-service.js';
+import { resolveOrganizationIdentity } from '../organization/identity-service.js';
 
 function text(value: unknown): { content: Array<{ type: 'text'; text: string }> } {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
@@ -110,4 +111,43 @@ export function registerOrganizationTools(server: McpServer): void {
       return text({ count: rows.length, events: rows });
     },
   );
+
+  server.registerTool(
+    'get_my_organization_identity',
+    {
+      description: 'Show the organization role, if any, bound to the authenticated OAuth client. The role is resolved from trusted server request context and persistent records; caller-supplied role IDs are never accepted.',
+      inputSchema: {},
+    },
+    async () => {
+      const identity = await resolveOrganizationIdentity();
+      if (!identity.authenticated) {
+        return text({
+          authenticated: false,
+          role: null,
+          reason: identity.reason,
+          nextStep: 'An authorized administrator must bind this OAuth client to an active organization role in organization_actor_bindings.',
+        });
+      }
+      if (identity.principalType === 'legacy-shared-token') {
+        return text({
+          authenticated: true,
+          principalType: identity.principalType,
+          role: null,
+          reason: 'The legacy shared bearer token does not identify a unique person or agent, so it cannot be granted an organization role.',
+        });
+      }
+      return text({
+        authenticated: true,
+        principalType: identity.principalType,
+        role: {
+          id: identity.role.id,
+          title: identity.role.title,
+          kind: identity.role.kind,
+          activation: identity.role.activation,
+          capabilities: identity.role.capabilities,
+        },
+      });
+    },
+  );
+
 }
