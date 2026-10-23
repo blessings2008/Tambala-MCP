@@ -24,7 +24,7 @@ export type OrganizationalAction =
 export interface AuthorizationRequest {
   actorRole: OrganizationalRole | null;
   action: OrganizationalAction;
-  /** True only when an independently recorded approval is supplied and validated. */
+  /** Must come from a separately persisted and validated approval record. */
   approval?: {
     authority: ApprovalAuthority;
     approved: boolean;
@@ -39,7 +39,7 @@ export interface AuthorizationResult {
   reason: string;
 }
 
-const ACTION_CAPABILITY: Partial<Record<OrganizationalAction, string>> = {
+const ACTION_CAPABILITY: Record<OrganizationalAction, string | null> = {
   read_organization: 'organization.view_all',
   read_operational_records: 'organization.view_operational',
   coordinate_work: 'work.coordinate',
@@ -49,6 +49,12 @@ const ACTION_CAPABILITY: Partial<Record<OrganizationalAction, string>> = {
   review_strategy: 'strategy.review',
   resolve_founder_approval: 'approvals.resolve_founder',
   resolve_board_approval: 'approvals.resolve_board',
+  launch_major_venture: 'ventures.launch',
+  commit_material_funds: 'finance.commit_material',
+  change_mission: 'organization.mission.change',
+  close_major_business_unit: 'business_unit.close',
+  send_sensitive_external_communication: 'communications.send_sensitive',
+  execute_financial_transaction: 'finance.transaction.execute',
   manage_department_workflow: 'department.workflow.manage',
 };
 
@@ -57,14 +63,14 @@ const RESTRICTED_ACTIONS: Partial<Record<OrganizationalAction, ApprovalAuthority
   commit_material_funds: 'founder',
   change_mission: 'founder',
   close_major_business_unit: 'founder',
-  send_sensitive_external_communication: 'ceo',
+  send_sensitive_external_communication: 'founder',
   execute_financial_transaction: 'founder',
 };
 
 /**
- * Pure deterministic policy decision. Callers must resolve actor roles from
- * trusted stored records; never pass an AI-generated role definition directly.
- * This function does not execute actions or validate an approval against storage.
+ * Deterministic policy evaluation only. The caller must resolve actorRole and
+ * approval from trusted storage and must not execute an action unless allowed.
+ * AI-generated claims of approval are not approval records.
  */
 export function authorizeOrganizationalAction(
   request: AuthorizationRequest,
@@ -80,8 +86,36 @@ export function authorizeOrganizationalAction(
     };
   }
 
+  const requiredCapability = ACTION_CAPABILITY[action];
+  if (requiredCapability && !actorRole.capabilities.includes(requiredCapability)) {
+    return {
+      allowed: false,
+      requiresApproval: false,
+      requiredAuthority: null,
+      reason: `Denied: role ${actorRole.id} lacks capability ${requiredCapability}.`,
+    };
+  }
+
+  if (action === 'resolve_founder_approval' && actorRole.id !== 'founder') {
+    return {
+      allowed: false,
+      requiresApproval: false,
+      requiredAuthority: null,
+      reason: 'Denied: only the Founder role may resolve Founder approval requests.',
+    };
+  }
+
+  if (action === 'resolve_board_approval' && actorRole.id !== 'board') {
+    return {
+      allowed: false,
+      requiresApproval: false,
+      requiredAuthority: null,
+      reason: 'Denied: only the Board role may resolve Board approval requests.',
+    };
+  }
+
   const requiredAuthority = RESTRICTED_ACTIONS[action];
-  if (requiredAuthority) {
+  if (requiredAuthority && actorRole.id !== requiredAuthority) {
     const validApproval =
       approval?.approved === true &&
       approval.authority === requiredAuthority &&
@@ -95,40 +129,6 @@ export function authorizeOrganizationalAction(
         reason: `Approval from ${requiredAuthority} is required before this action can proceed.`,
       };
     }
-  }
-
-  const requiredCapability = ACTION_CAPABILITY[action];
-  if (requiredCapability && !actorRole.capabilities.includes(requiredCapability)) {
-    return {
-      allowed: false,
-      requiresApproval: Boolean(requiredAuthority),
-      requiredAuthority: requiredAuthority ?? null,
-      reason: `Denied: role ${actorRole.id} lacks capability ${requiredCapability}.`,
-    };
-  }
-
-  if (
-    action === 'resolve_founder_approval' &&
-    actorRole.id !== 'founder'
-  ) {
-    return {
-      allowed: false,
-      requiresApproval: false,
-      requiredAuthority: null,
-      reason: 'Denied: only the Founder role may resolve Founder approval requests.',
-    };
-  }
-
-  if (
-    action === 'resolve_board_approval' &&
-    actorRole.id !== 'board'
-  ) {
-    return {
-      allowed: false,
-      requiresApproval: false,
-      requiredAuthority: null,
-      reason: 'Denied: only the Board role may resolve Board approval requests.',
-    };
   }
 
   return {
