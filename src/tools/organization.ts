@@ -2,8 +2,8 @@ import * as z from 'zod/v4';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { getOrganizationSnapshot, getOrganizationSummary } from '../organization/service.js';
 
-function text(value: unknown): { content: [{ type: 'text'; text: string }] } {
-  return { content: [{ type: 'text'; text: JSON.stringify(value, null, 2) }] };
+function text(value: unknown): { content: Array<{ type: 'text'; text: string }> } {
+  return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
 }
 
 export function registerOrganizationTools(server: McpServer): void {
