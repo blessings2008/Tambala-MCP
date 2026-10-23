@@ -8,6 +8,13 @@ export const AGENT_DEFAULT_MODELS = {
 
 export type AgentName = keyof typeof AGENT_DEFAULT_MODELS;
 
+/** Routing directory, not an authorization grant or proof that the role is activated. */
+export const AGENT_DIRECTORY = {
+  orchestrator: { responsibility: 'Organization-wide planning and coordination', unitId: 'executive-management', unitName: 'Executive Management', roleId: 'ceo', roleStatus: 'planned' },
+  outreach: { responsibility: 'Prospect research and outreach drafts', unitId: 'sales-business-development', unitName: 'Sales & Business Development', roleId: null, roleStatus: 'not-bound' },
+  followup: { responsibility: 'Follow-up analysis and follow-up drafts', unitId: 'customer-relations', unitName: 'Customer Relations & Support', roleId: null, roleStatus: 'not-bound' },
+} as const;
+
 export interface AgentRuntimeConfig {
   agent: AgentName;
   baseURL: string;
@@ -64,6 +71,7 @@ export function getAgentRuntimeInfo(agent: AgentName) {
     ?? (agent === 'orchestrator' ? AGENT_DEFAULT_MODELS.orchestrator : null);
   return {
     agent,
+    ...AGENT_DIRECTORY[agent],
     baseURL,
     model,
     apiKeyEnv: process.env[dedicatedKeyName]
