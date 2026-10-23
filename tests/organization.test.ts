@@ -4,6 +4,7 @@ import { initialOrganization } from '../src/organization/seed.js';
 import { validateOrganization } from '../src/organization/validate.js';
 import { authorizeOrganizationalAction } from '../src/organization/policy.js';
 import { getOrganizationSummary } from '../src/organization/service.js';
+import { getRequestPrincipal, runWithRequestPrincipal } from '../src/organization/request-context.js';
 
 const role = (id: string) => {
   const found = initialOrganization.roles.find((candidate) => candidate.id === id);
@@ -104,4 +105,25 @@ test('structural validator detects duplicate IDs and missing references', () => 
   const errors = validateOrganization(broken);
   assert.ok(errors.some((error) => error.includes('Duplicate unit id')));
   assert.ok(errors.some((error) => error.includes('reports to missing role')));
+});
+
+
+test('request identity context defaults to unknown outside an authenticated request', () => {
+  assert.deepEqual(getRequestPrincipal(), { kind: 'unknown' });
+});
+
+test('request identity context is isolated between concurrent requests', async () => {
+  const [first, second] = await Promise.all([
+    runWithRequestPrincipal({ kind: 'oauth', clientId: 'client-one' }, async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return getRequestPrincipal();
+    }),
+    runWithRequestPrincipal({ kind: 'oauth', clientId: 'client-two' }, async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      return getRequestPrincipal();
+    }),
+  ]);
+
+  assert.deepEqual(first, { kind: 'oauth', clientId: 'client-one' });
+  assert.deepEqual(second, { kind: 'oauth', clientId: 'client-two' });
 });
