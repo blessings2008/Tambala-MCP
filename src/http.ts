@@ -20,6 +20,7 @@ type ChatAgent = typeof chatAgents[number];
 const specialistAgents = ['outreach', 'followup'] as const;
 type SpecialistAgent = typeof specialistAgents[number];
 type ExecutionStage = 'ceo_delegate' | 'specialist_execute' | 'ceo_complete';
+type CeoDelegation = { task: string; deliverable: string; constraints: string[]; researchQuery: string; };
 
 function chatTokenMatches(provided: string | null): boolean {
   const expectedValue = process.env.TAMBALA_CHAT_TEST_TOKEN;
@@ -56,8 +57,6 @@ function errorStatus(message: string): number {
 function taskNeedsWebResearch(text: string): boolean {
   return /\b(research|investigate|look\s*up|find|identify|current|latest|market|competitor|prospect|hotel|lodge|tourism|association|statistics|report)\b/i.test(text);
 }
-
-/** Build a short search query from the Founder objective. The web provider receives search terms, never the organizational prompt. */
 function researchQueryFromObjective(objective: string): string {
   const cleaned = objective.replace(/https?:\/\/\S+/gi, ' ').replace(/\s+/g, ' ').trim();
   const quoted = [...cleaned.matchAll(/["“”']([^"“”']{2,120})["“”']/g)].map((m) => m[1]);
@@ -65,8 +64,7 @@ function researchQueryFromObjective(objective: string): string {
     .map((m) => m[0].trim()).filter((v) => v.length > 2 && !/^(The|Find|Research|Identify|Determine|Give|Tell|Please|What|How|Why|Use|Do|And|For|With|From|This|That)\b/i.test(v));
   const domainTerms = cleaned.match(/\b(?:Malawi|Malawian|Malabi|lodge|lodges|hotel|hotels|tourism|hospitality|website|websites|digital|competitor|competitors|market|prospect|prospects|opportunity|opportunities|Tambala|Exclusive)\b/gi) ?? [];
   const unique = [...new Set([...quoted, ...properPhrases, ...domainTerms.map((v) => v.toLowerCase())])];
-  const query = unique.join(' ').replace(/\s+/g, ' ').trim();
-  return (query || cleaned).slice(0, 1400).trim();
+  return (unique.join(' ').replace(/\s+/g, ' ').trim() || cleaned).slice(0, 1400).trim();
 }
 function truncateForModel(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
@@ -74,11 +72,22 @@ function truncateForModel(value: string, maxChars: number): string {
 }
 function compactResearchEvidence(value: unknown): string {
   if (!value) return 'No web research evidence was returned.';
-  const raw = JSON.stringify(value);
-  return truncateForModel(raw, 4500);
+  return truncateForModel(JSON.stringify(value), 4500);
 }
-const liveTaskRunners = new Map<string, OrganizationTaskRunner>();
-function publishRunnerEvent(event: ReturnType<OrganizationTaskRunner['startCeoAnalysis']>): void { publishOrganizationTaskEvent(event); }
+function parseCeoDelegation(raw: string, fallbackObjective: string): CeoDelegation {
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i); const source = fenced?.[1] ?? raw;
+  const first = source.indexOf('{'); const last = source.lastIndexOf('}');
+  if (first < 0 || last <= first) throw new Error('CEO delegation did not return structured JSON. Retry the delegation stage.');
+  let parsed: unknown; try { parsed = JSON.parse(source.slice(first, last + 1)); } catch { throw new Error('CEO delegation returned invalid JSON. Retry the delegation stage.'); }
+  if (!parsed || typeof parsed !== 'object') throw new Error('CEO delegation response must be a JSON object.');
+  const value = parsed as Record<string, unknown>;
+  const task = typeof value.task === 'string' ? value.task.trim() : '';
+  const deliverable = typeof value.deliverable === 'string' ? value.deliverable.trim() : '';
+  const constraints = Array.isArray(value.constraints) ? value.constraints.filter((v): v is string => typeof v === 'string').map((v) => v.trim()).filter(Boolean).slice(0, 8) : [];
+  const researchQuery = typeof value.researchQuery === 'string' ? value.researchQuery.replace(/\s+/g, ' ').trim().slice(0, 1400) : '';
+  if (!task || !deliverable || !researchQuery) throw new Error(`CEO delegation is incomplete. It must contain task, deliverable, constraints, and a short researchQuery. Original objective: ${truncateForModel(fallbackObjective, 800)}`);
+  return { task, deliverable, constraints, researchQuery };
+}
 type CeoEvaluation = { decision: 'approved' | 'rework'; feedback: string; finalResult: string };
 function parseCeoEvaluation(raw: string): CeoEvaluation {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i); const source = fenced?.[1] ?? raw;
@@ -95,6 +104,9 @@ function parseCeoEvaluation(raw: string): CeoEvaluation {
   return { decision: value.decision, feedback, finalResult };
 }
 function validStage(value: unknown): value is ExecutionStage { return value === 'ceo_delegate' || value === 'specialist_execute' || value === 'ceo_complete'; }
+
+const liveTaskRunners = new Map<string, OrganizationTaskRunner>();
+function publishRunnerEvent(event: ReturnType<OrganizationTaskRunner['startCeoAnalysis']>): void { publishOrganizationTaskEvent(event); }
 
 const server = createHttpServer(async (req, res) => {
   setCorsHeaders(res); if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
@@ -122,7 +134,7 @@ const server = createHttpServer(async (req, res) => {
     openTaskEventStream(res, taskId, runner.task.events); return;
   }
   if (requestPath === '/api/chat-test/status' && req.method === 'GET') {
-    json(res, 200, { agents: chatAgents.map((agent) => getAgentOperationalInfo(agent)), safety: 'Test requests only generate AI text. They do not send messages or execute business actions.', collaboration: 'Organization tests execute in explicit stages: Founder objective -> CEO delegation -> specialist execution -> CEO completion.', research: 'Research uses a compact keyword query derived from the Founder objective; the full organizational prompt is not sent to the web provider.' }); return;
+    json(res, 200, { agents: chatAgents.map((agent) => getAgentOperationalInfo(agent)), safety: 'Test requests only generate AI text. They do not send messages or execute business actions.', collaboration: 'Organization tests execute in explicit stages: Founder objective -> CEO delegation -> specialist execution -> CEO completion.', research: 'The CEO produces a compact task plus a short researchQuery. The web provider receives only that query, never the full Founder/CEO prompt.' }); return;
   }
   if (requestPath === '/api/chat-test' && req.method === 'POST') {
     if (!req.headers['content-type']?.toLowerCase().includes('application/json')) { json(res, 415, { error: 'Content-Type must be application/json.' }); return; }
@@ -149,20 +161,23 @@ const server = createHttpServer(async (req, res) => {
       if (runner && runner.task.objective !== founderMessage) return json(res, 400, { error: 'The request must match the original objective for this task.' });
       if (body.stage === 'ceo_delegate') {
         if (runner) publishRunnerEvent(runner.startCeoAnalysis());
-        const delegation = await askTambalaAI('orchestrator', `Founder / Bless has given you this objective:\n\n${founderMessage}\n\nAct as the CEO. Own this objective from start to finish. Decide what work must be delegated to ${getAgentOperationalInfo(specialist).title}. Create a precise execution brief. Do not complete the department's work yourself. The department must return the actual requested deliverable, not merely advice about how to do it. Do not invent facts, locations, countries, services, or requirements that are not in the Founder objective. If something is ambiguous, instruct the department to verify it with research. Include objective, scope, constraints, required deliverable, quality bar, and evidence/source requirements.`, { communicationType: 'Founder -> CEO', sender: 'Founder / Bless', recipient: 'Chief Executive Officer (CEO)' });
-        if (runner) publishRunnerEvent(runner.delegate(delegation)); return json(res, 200, { stage: body.stage, taskId: runner?.task.id, message: delegation });
+        const rawDelegation = await askTambalaAI('orchestrator', `Founder / Bless gave you this objective:\n${founderMessage}\n\nYou are the CEO and own this objective end-to-end. Decide the single responsible department and define the minimum information it needs to execute. Do NOT write the department's report. Do NOT repeat the Founder prompt. Return ONLY JSON:\n{"task":"one concise executable task for the department","deliverable":"exact result the department must return","constraints":["only essential constraints"],"researchQuery":"6-12 concise search keywords/entities, not a sentence or prompt"}\nThe department will perform the work itself. If research is needed, researchQuery must contain only search terms. Never put instructions, long prose, or the original objective inside researchQuery.`, { communicationType: 'Founder -> CEO', sender: 'Founder / Bless', recipient: 'Chief Executive Officer (CEO)' });
+        const delegation = parseCeoDelegation(rawDelegation, founderMessage);
+        const delegationMessage = JSON.stringify(delegation);
+        if (runner) publishRunnerEvent(runner.delegate(delegationMessage)); return json(res, 200, { stage: body.stage, taskId: runner?.task.id, message: delegationMessage, delegation });
       }
       if (body.stage === 'specialist_execute') {
         if (runner) publishRunnerEvent(runner.startDepartment());
         if (typeof body.delegation !== 'string' || !body.delegation.trim()) return json(res, 400, { error: 'The CEO delegation is required for specialist execution.' });
-        const specialistTask = `CEO execution brief:\n\n${truncateForModel(body.delegation, 7000)}\n\nExecute this task now. Produce the requested deliverable itself. Do not merely describe what should be done, do not delegate it back, and do not stop at process recommendations. Respect every constraint, but verify factual assumptions against research evidence rather than blindly trusting the brief. If research is required, use the web research evidence and preserve source URLs. Return completed work to the CEO, including genuine blockers only if they prevent completion.`;
-        if (taskNeedsWebResearch(`${founderMessage}\n${body.delegation}`)) {
-          const query = researchQueryFromObjective(founderMessage); if (runner) publishRunnerEvent(runner.waitForResearch(query));
-          const researched = await askTambalaAIWithWebResearch(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: truncateForModel(body.delegation, 3500) }, query);
+        let delegation: CeoDelegation; try { delegation = parseCeoDelegation(body.delegation, founderMessage); } catch { delegation = { task: truncateForModel(body.delegation, 3000), deliverable: 'Complete the assigned task and return the actual result.', constraints: [], researchQuery: researchQueryFromObjective(founderMessage) }; }
+        const specialistTask = `You are the ${getAgentOperationalInfo(specialist).title}. Execute the CEO task now.\n\nTASK:\n${truncateForModel(delegation.task, 5000)}\n\nREQUIRED DELIVERABLE:\n${truncateForModel(delegation.deliverable, 2500)}\n\nCONSTRAINTS:\n${delegation.constraints.map((v) => `- ${v}`).join('\n') || '- Verify facts; do not invent information.'}\n\nReturn the completed work itself. Do not return a plan for doing it, do not ask the Founder what to do, and do not simply acknowledge the delegation.`;
+        if (taskNeedsWebResearch(`${delegation.task} ${delegation.deliverable}`)) {
+          const query = delegation.researchQuery; if (runner) publishRunnerEvent(runner.waitForResearch(query));
+          const researched = await askTambalaAIWithWebResearch(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: { task: delegation.task, deliverable: delegation.deliverable } }, query);
           if (runner) { const evidence = researched.research as { sources?: unknown[]; results?: unknown[] } | unknown[] | null; const sourceCount = Array.isArray(evidence) ? evidence.length : evidence && typeof evidence === 'object' ? (Array.isArray(evidence.sources) ? evidence.sources.length : Array.isArray(evidence.results) ? evidence.results.length : undefined) : undefined; publishRunnerEvent(runner.researchComplete(sourceCount)); publishRunnerEvent(runner.resumeDepartment()); publishRunnerEvent(runner.submitDepartmentWork(researched.response)); publishRunnerEvent(runner.returnToCeo()); }
           return json(res, 200, { stage: body.stage, taskId: runner?.task.id, message: researched.response, researchEvidence: researched.research, researchQuery: query });
         }
-        const result = await askTambalaAI(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: truncateForModel(body.delegation, 3500) });
+        const result = await askTambalaAI(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: { task: delegation.task, deliverable: delegation.deliverable } });
         if (runner) { publishRunnerEvent(runner.submitDepartmentWork(result)); publishRunnerEvent(runner.returnToCeo()); }
         return json(res, 200, { stage: body.stage, taskId: runner?.task.id, message: result });
       }
