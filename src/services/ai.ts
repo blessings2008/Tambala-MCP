@@ -17,6 +17,23 @@ function getClient(agent: AgentName): OpenAI {
 
 export type { AgentName } from './ai/models.js';
 
+/** Turn an organizational instruction into a compact search query. The web provider should receive search intent, not the full agent prompt. */
+function compactSearchQuery(input: string): string {
+  const cleaned = input
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const quoted = [...cleaned.matchAll(/["“”']([^"“”']{2,100})["“”']/g)].map((m) => m[1]);
+  const proper = [...cleaned.matchAll(/\b(?:[A-Z][A-Za-z0-9&'-]+(?:\s+|$)){1,5}/g)]
+    .map((m) => m[0].trim())
+    .filter((v) => v.length > 2 && !/^(The|Find|Research|Identify|Determine|Please|What|How|Why|Use|Do|And|For|With|From|This|That)\b/i.test(v));
+  const useful = cleaned.match(/\b(?:Malawi|Malawian|Malabi|lodge|lodges|hotel|hotels|tourism|hospitality|website|websites|digital|competitor|competitors|market|prospect|prospects|opportunity|opportunities|Tambala|Exclusive|current|latest)\b/gi) ?? [];
+  const unique = [...new Set([...quoted, ...proper, ...useful.map((v) => v.toLowerCase())])];
+  const query = unique.join(' ').replace(/\s+/g, ' ').trim() || cleaned;
+  return query.slice(0, 400).trim();
+}
+
 /** Route to the assigned provider while enforcing per-agent local request caps. */
 export async function askTambalaAI(agent: AgentName, input: string, context?: unknown): Promise<string> {
   return askTambalaAIInternal(agent, input, context);
@@ -24,7 +41,8 @@ export async function askTambalaAI(agent: AgentName, input: string, context?: un
 
 /** Run a web search first, then give the returned evidence to the agent as explicit external research context. */
 export async function askTambalaAIWithWebResearch(agent: AgentName, input: string, context?: unknown, query?: string): Promise<{ response: string; research: ReturnType<typeof formatResearchContext> }> {
-  const research = await webResearch(query ?? input);
+  const searchQuery = compactSearchQuery(query ?? input);
+  const research = await webResearch(searchQuery);
   const researchContext = formatResearchContext(research);
   const response = await askTambalaAIInternal(agent, `${input}\n\n${researchContext}\n\nCITATION RULES: Cite the supplied source URLs next to factual claims that depend on them. If the supplied sources do not establish a claim, label it unknown rather than filling the gap.`, context);
   return { response, research: researchContext };
