@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - org-platform-redesign
+      - org-task-engine
   pull_request:
     branches:
       - main
