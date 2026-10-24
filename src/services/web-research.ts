@@ -12,6 +12,7 @@ export interface WebResearchResult {
 
 const TAVILY_URL = 'https://api.tavily.com/search';
 const MAX_SEARCH_QUERY_CHARS = 400;
+const MAX_RESEARCH_CONTEXT_CHARS = 3500;
 
 /**
  * Shared research tool. It is intentionally separate from model-provider credentials.
@@ -27,15 +28,7 @@ export async function webResearch(query: string, maxResults = 5): Promise<WebRes
   const response = await fetch(TAVILY_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify({
-      api_key: apiKey,
-      query: compactQuery,
-      search_depth: 'basic',
-      max_results: boundedResults,
-      include_answer: false,
-      include_raw_content: false,
-      include_images: false,
-    }),
+    body: JSON.stringify({ api_key: apiKey, query: compactQuery, search_depth: 'basic', max_results: boundedResults, include_answer: false, include_raw_content: false, include_images: false }),
     signal: AbortSignal.timeout(20_000),
   });
 
@@ -44,20 +37,10 @@ export async function webResearch(query: string, maxResults = 5): Promise<WebRes
     throw new Error(`Web research provider returned HTTP ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ''}.`);
   }
 
-  const data = await response.json() as {
-    query?: string;
-    results?: Array<{ title?: string; url?: string; content?: string; score?: number; published_date?: string }>;
-  };
-
+  const data = await response.json() as { query?: string; results?: Array<{ title?: string; url?: string; content?: string; score?: number; published_date?: string }> };
   return {
     query: data.query ?? compactQuery,
-    results: (data.results ?? []).map((item) => ({
-      title: item.title ?? 'Untitled source',
-      url: item.url ?? '',
-      content: item.content ?? '',
-      score: item.score,
-      publishedDate: item.published_date,
-    })).filter((item) => item.url),
+    results: (data.results ?? []).map((item) => ({ title: item.title ?? 'Untitled source', url: item.url ?? '', content: item.content ?? '', score: item.score, publishedDate: item.published_date })).filter((item) => item.url),
   };
 }
 
@@ -67,7 +50,8 @@ export function formatResearchContext(research: WebResearchResult): string {
     `[SOURCE ${index + 1}] ${item.title}`,
     `URL: ${item.url}`,
     item.publishedDate ? `Published: ${item.publishedDate}` : '',
-    `Snippet: ${item.content}`,
+    `Snippet: ${item.content.slice(0, 450)}`,
   ].filter(Boolean).join('\n')).join('\n\n');
-  return `WEB RESEARCH RESULT\nQuery: ${research.query}\nUse these sources as external evidence. Do not claim to have read anything beyond the supplied snippets.\n\n${sources}`;
+  const context = `WEB RESEARCH RESULT\nQuery: ${research.query}\nUse these sources as external evidence. Do not claim to have read anything beyond the supplied snippets.\n\n${sources}`;
+  return context.length <= MAX_RESEARCH_CONTEXT_CHARS ? context : `${context.slice(0, MAX_RESEARCH_CONTEXT_CHARS)}\n[Research context compacted.]`;
 }
