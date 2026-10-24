@@ -163,6 +163,7 @@ const server = createHttpServer(async (req, res) => {
   // Stepwise execution endpoint. The browser calls one stage at a time so the UI can show the organization working live.
   if (requestPath === '/api/chat-test/step' && req.method === 'POST') {
     if (!req.headers['content-type']?.toLowerCase().includes('application/json')) { json(res, 415, { error: 'Content-Type must be application/json.' }); return; }
+    let activeRunner: OrganizationTaskRunner | undefined;
     try {
       const body = await readJsonBody(req) as { stage?: unknown; request?: unknown; specialist?: unknown; delegation?: unknown; specialistResult?: unknown; researchEvidence?: unknown; taskId?: unknown };
       if (!validStage(body.stage)) { json(res, 400, { error: 'Invalid stage. Use ceo_delegate, specialist_execute, or ceo_complete.' }); return; }
@@ -171,6 +172,7 @@ const server = createHttpServer(async (req, res) => {
       const specialist = body.specialist as SpecialistAgent;
       const founderMessage = body.request.trim();
       const runner = typeof body.taskId === 'string' ? liveTaskRunners.get(body.taskId) : undefined;
+      activeRunner = runner;
       if (typeof body.taskId === 'string' && !runner) { return json(res, 404, { error: 'Organization task not found. Create a new task and reconnect.' }); }
       if (runner && runner.task.objective !== founderMessage) { return json(res, 400, { error: 'The request must match the original objective for this task.' }); }
 
@@ -216,13 +218,10 @@ const server = createHttpServer(async (req, res) => {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'The organization step failed.';
       console.error('Organization step failed:', message);
-      const failedBody = typeof error === 'object' && error !== null ? error : null;
-      // Failure transitions are best-effort; never mask the original provider error.
+      // Mark the live task failed so the event stream cannot leave a misleading "working" state.
       try {
-        const maybeTaskId = (typeof failedBody === 'object' && failedBody && 'taskId' in failedBody) ? String((failedBody as { taskId: unknown }).taskId) : '';
-        const failedRunner = maybeTaskId ? liveTaskRunners.get(maybeTaskId) : undefined;
-        if (failedRunner && failedRunner.task.status !== 'completed' && failedRunner.task.status !== 'failed') publishRunnerEvent(failedRunner.fail(message));
-      } catch { /* Preserve the original error response. */ }
+        if (activeRunner && activeRunner.task.status !== 'completed' && activeRunner.task.status !== 'failed') publishRunnerEvent(activeRunner.fail(message));
+      } catch { /* Preserve the original error response if the lifecycle is already terminal. */ }
       return json(res, errorStatus(message), { error: message });
     }
   }
