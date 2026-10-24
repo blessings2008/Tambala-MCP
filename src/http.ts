@@ -73,8 +73,8 @@ const server = createHttpServer(async (req, res) => {
     json(res, 200, {
       agents: chatAgents.map((agent) => getAgentOperationalInfo(agent)),
       safety: 'Test requests only generate AI text. They do not send messages or execute business actions.',
-      collaboration: 'The collaboration endpoint mediates Founder -> CEO -> department head -> CEO. Messages are not persisted yet.',
-      research: 'Research-enabled tasks run through the configured web research provider and pass returned source evidence into the specialist context.',
+      collaboration: 'The collaboration endpoint executes Founder objectives through CEO delegation, specialist execution, and CEO completion. The CEO is accountable for the final result, not merely a relay of the specialist report.',
+      research: 'Research-enabled tasks run through the configured web research provider and pass returned source evidence into the specialist and final CEO completion step.',
     });
     return;
   }
@@ -107,28 +107,39 @@ const server = createHttpServer(async (req, res) => {
       const body = await readJsonBody(req) as { request?: unknown; specialist?: unknown };
       if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 8_000) { json(res, 400, { error: 'Provide a task between 1 and 8,000 characters.' }); return; }
       if (!specialistAgents.includes(body.specialist as SpecialistAgent)) { json(res, 400, { error: 'Choose outreach or followup as the specialist.' }); return; }
+
       const specialist = body.specialist as SpecialistAgent;
       const founderMessage = body.request.trim();
-      const delegation = await askTambalaAI('orchestrator', `Founder / Bless has sent you this objective:\n\n${founderMessage}\n\nAct as CEO. Decide what work should be delegated to ${specialist}. Write a concise internal delegation message addressed to the ${specialist} department head. Do not perform the specialist's work yourself. Include the objective, expected deliverable, constraints, and what should be reported back.`, { communicationType: 'Founder -> CEO', sender: 'Founder / Bless', recipient: 'Chief Executive Officer (CEO)' });
-      let specialistReport: string;
+
+      // Step 1: CEO interprets the Founder objective and creates a precise execution brief.
+      const delegation = await askTambalaAI('orchestrator', `Founder / Bless has given you this objective:\n\n${founderMessage}\n\nAct as the CEO. You own this objective from start to finish. Decide which work must be delegated to ${getAgentOperationalInfo(specialist).title}. Create a precise execution brief for that department. Do not answer the Founder yet and do not perform the specialist's work yourself. The department must return the actual requested deliverable, not merely advice about how to do it. Include the objective, scope, constraints, required deliverable, quality bar, and what evidence or sources are required.`, { communicationType: 'Founder -> CEO', sender: 'Founder / Bless', recipient: 'Chief Executive Officer (CEO)' });
+
+      // Step 2: specialist actually executes the delegated work, including web research when needed.
+      let specialistResult: string;
       let researchEvidence: unknown = undefined;
+      const specialistTask = `CEO execution brief:\n\n${delegation}\n\nExecute this task now. Produce the requested deliverable itself. Do not merely describe what should be done, do not delegate it back, and do not stop at recommendations about process. Respect every constraint in the brief. If research is required, use the supplied web research evidence and clearly preserve the source URLs. Return the completed work to the CEO, including any material blockers that genuinely prevent completion.`;
+
       if (taskNeedsWebResearch(`${founderMessage}\n${delegation}`)) {
-        const researched = await askTambalaAIWithWebResearch(specialist, `Internal message from your CEO:\n\n${delegation}\n\nComplete the delegated work within your department's responsibility. Use the supplied web research evidence where relevant. Then report your findings, deliverable, assumptions, blockers, and source URLs back to the CEO. Do not address the Founder directly unless the message explicitly requires it.`, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation });
-        specialistReport = researched.response;
+        const researched = await askTambalaAIWithWebResearch(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation });
+        specialistResult = researched.response;
         researchEvidence = researched.research;
       } else {
-        specialistReport = await askTambalaAI(specialist, `Internal message from your CEO:\n\n${delegation}\n\nComplete the delegated work within your department's responsibility. Then report your findings, deliverable, assumptions, and blockers back to the CEO. Do not address the Founder directly unless the message explicitly requires it.`, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation });
+        specialistResult = await askTambalaAI(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation });
       }
-      const executiveReview = await askTambalaAI('orchestrator', `You delegated work to ${getAgentOperationalInfo(specialist).title}. Here is the specialist's report:\n\n${specialistReport}\n\nReview it as CEO. Briefly state what the department completed, any important limitations or blockers, and what you recommend reporting to Founder / Bless. Do not invent work that the specialist did not complete.`, { communicationType: 'Department Head -> CEO', sender: getAgentOperationalInfo(specialist).title, recipient: 'Chief Executive Officer (CEO)', specialistReport, researchEvidence });
+
+      // Step 3: CEO consumes the completed departmental work and finishes the original objective.
+      const finalResult = await askTambalaAI('orchestrator', `You are now completing the Founder objective end-to-end.\n\nORIGINAL FOUNDER OBJECTIVE:\n${founderMessage}\n\nYOUR DELEGATION:\n${delegation}\n\nDEPARTMENT'S COMPLETED WORK:\n${specialistResult}\n\nWEB RESEARCH EVIDENCE (if any):\n${JSON.stringify(researchEvidence ?? null)}\n\nDo NOT merely summarize the department report. Do NOT say what the department recommends doing. Instead, use the completed departmental work to produce the actual final deliverable requested by the Founder. You are accountable for the result. Check the work against the original objective and constraints. If something material is missing, correct it using the evidence available to you; do not invent facts. Preserve source URLs for web-supported claims. If the task asked for a list, give the list. If it asked for a plan, give the plan. If it asked for research, give the researched findings. If a genuine blocker prevents completion, clearly identify it rather than pretending the task is complete. Return only the useful final result for Founder / Bless, with concise context where necessary.`, { communicationType: 'CEO -> Founder', sender: 'Chief Executive Officer (CEO)', recipient: 'Founder / Bless', founderObjective: founderMessage, delegation, specialistResult, researchEvidence });
+
       json(res, 200, {
         flow: [
           { from: 'Founder / Bless', to: 'Chief Executive Officer (CEO)', type: 'objective', message: founderMessage },
           { from: 'Chief Executive Officer (CEO)', to: getAgentOperationalInfo(specialist).title, type: 'delegation', message: delegation },
-          { from: getAgentOperationalInfo(specialist).title, to: 'Chief Executive Officer (CEO)', type: 'report', message: specialistReport },
-          { from: 'Chief Executive Officer (CEO)', to: 'Founder / Bless', type: 'executive_review', message: executiveReview },
+          { from: getAgentOperationalInfo(specialist).title, to: 'Chief Executive Officer (CEO)', type: 'completed_work', message: specialistResult },
+          { from: 'Chief Executive Officer (CEO)', to: 'Founder / Bless', type: 'final_result', message: finalResult },
         ],
+        result: finalResult,
         researchEvidence,
-        note: 'Live mediated agent-to-agent test. Research-enabled tasks include returned source evidence. Messages are not persisted and no external business action is executed.',
+        note: 'Live end-to-end agent test. The specialist executes delegated work, research is injected into the execution context when required, and the CEO completes and returns the original Founder objective rather than merely relaying a departmental report. Messages are not persisted and no external business action is executed.',
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'The collaboration flow failed.';
