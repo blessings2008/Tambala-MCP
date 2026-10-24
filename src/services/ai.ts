@@ -54,7 +54,9 @@ function compactSearchQuery(input: string): string {
  * keyword cannot derail the research.
  */
 export async function askTambalaAIWithWebResearch(agent: AgentName, input: string, context?: unknown, query?: string): Promise<{ response: string; research: ReturnType<typeof formatResearchContext> }> {
-  const searchSeed = [query ?? '', input].filter(Boolean).join(' ');
+  // When the caller has built a task-aware query, search only that query. Appending
+  // the full specialist prompt reintroduces instructions and unrelated nouns.
+  const searchSeed = query?.trim() || input;
   const searchQuery = compactSearchQuery(searchSeed);
   const research = await webResearch(searchQuery);
   const researchContext = formatResearchContext(research);
