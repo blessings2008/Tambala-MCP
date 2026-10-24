@@ -77,15 +77,22 @@ function compactResearchEvidence(value: unknown): string {
 function parseCeoDelegation(raw: string, fallbackObjective: string): CeoDelegation {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i); const source = fenced?.[1] ?? raw;
   const first = source.indexOf('{'); const last = source.lastIndexOf('}');
-  if (first < 0 || last <= first) throw new Error('CEO delegation did not return structured JSON. Retry the delegation stage.');
-  let parsed: unknown; try { parsed = JSON.parse(source.slice(first, last + 1)); } catch { throw new Error('CEO delegation returned invalid JSON. Retry the delegation stage.'); }
-  if (!parsed || typeof parsed !== 'object') throw new Error('CEO delegation response must be a JSON object.');
-  const value = parsed as Record<string, unknown>;
-  const task = typeof value.task === 'string' ? value.task.trim() : '';
-  const deliverable = typeof value.deliverable === 'string' ? value.deliverable.trim() : '';
+  let value: Record<string, unknown> = {};
+  if (first >= 0 && last > first) {
+    try {
+      const parsed = JSON.parse(source.slice(first, last + 1));
+      if (parsed && typeof parsed === 'object') value = parsed as Record<string, unknown>;
+    } catch {
+      // Recover below instead of failing the whole organization task because the model wrapped its JSON imperfectly.
+    }
+  }
+  const task = typeof value.task === 'string' && value.task.trim() ? value.task.trim() : truncateForModel(fallbackObjective, 3000);
+  const deliverable = typeof value.deliverable === 'string' && value.deliverable.trim() ? value.deliverable.trim() : 'Complete the assigned objective and return the actual finished result.';
   const constraints = Array.isArray(value.constraints) ? value.constraints.filter((v): v is string => typeof v === 'string').map((v) => v.trim()).filter(Boolean).slice(0, 8) : [];
-  const researchQuery = typeof value.researchQuery === 'string' ? value.researchQuery.replace(/\s+/g, ' ').trim().slice(0, 1400) : '';
-  if (!task || !deliverable || !researchQuery) throw new Error(`CEO delegation is incomplete. It must contain task, deliverable, constraints, and a short researchQuery. Original objective: ${truncateForModel(fallbackObjective, 800)}`);
+  const derivedQuery = researchQueryFromObjective(`${task} ${deliverable} ${fallbackObjective}`);
+  const researchQuery = typeof value.researchQuery === 'string' && value.researchQuery.trim()
+    ? value.researchQuery.replace(/\s+/g, ' ').trim().slice(0, 1400)
+    : derivedQuery;
   return { task, deliverable, constraints, researchQuery };
 }
 type CeoEvaluation = { decision: 'approved' | 'rework'; feedback: string; finalResult: string };
@@ -186,7 +193,7 @@ const server = createHttpServer(async (req, res) => {
       const delegationContext = typeof body.delegation === 'string' ? truncateForModel(body.delegation, 3500) : 'No delegation was supplied.';
       const specialistContext = typeof body.specialistResult === 'string' ? truncateForModel(body.specialistResult, 6000) : 'No department result was supplied.';
       const researchContext = compactResearchEvidence(body.researchEvidence);
-      const finalPrompt = `You are the CEO accountable for completing the original Founder objective. Evaluate the department's work before deciding whether it is complete.\n\nORIGINAL FOUNDER OBJECTIVE:\n${founderMessage}\n\nCEO DELEGATION:\n${delegationContext}\n\nDEPARTMENT COMPLETED WORK:\n${specialistContext}\n\nWEB RESEARCH EVIDENCE:\n${researchContext}\n\nCompare the actual work against the original objective, requested deliverable, and constraints. The original objective and supplied evidence outrank unsupported claims in the delegation. If the deliverable is genuinely sufficient, choose "approved" and provide the complete final deliverable in finalResult; do not merely summarize the department report. Preserve source URLs when research was requested. If there is a material, fixable gap, choose "rework" and provide precise, actionable feedback. Never invent facts. This is evaluation attempt ${attempt} of 3; on attempt 3, do not request another revision—approve only with clear caveats if needed, or explain any truly blocking unknown in the finalResult.\n\nReturn ONLY valid JSON with this exact shape:\n{"decision":"approved" or "rework","feedback":"specific revision instructions; empty when approved","finalResult":"complete final deliverable when approved; empty when rework"}`;
+      const finalPrompt = `You are the CEO accountable for completing the original Founder objective. Evaluate the department's work before deciding whether it is complete.\n\nORIGINAL FOUNDER OBJECTIVE:\n${founderMessage}\n\nCEO DELEGATION:\n${delegationContext}\n\nDEPARTMENT COMPLETED WORK:\n${specialistContext}\n\nWEB RESEARCH EVIDENCE:\n${researchContext}\n\nCompare the actual work against the original objective, requested deliverable, and constraints. The original objective and supplied evidence outrank unsupported claims in the delegation. If the deliverable is genuinely sufficient, choose \"approved\" and provide the complete final deliverable in finalResult; do not merely summarize the department report. Preserve source URLs when research was requested. If there is a material, fixable gap, choose \"rework\" and provide precise, actionable feedback. Never invent facts. This is evaluation attempt ${attempt} of 3; on attempt 3, do not request another revision—approve only with clear caveats if needed, or explain any truly blocking unknown in the finalResult.\n\nReturn ONLY valid JSON with this exact shape:\n{\"decision\":\"approved\" or \"rework\",\"feedback\":\"specific revision instructions; empty when approved\",\"finalResult\":\"complete final deliverable when approved; empty when rework\"}`;
       if (runner) publishRunnerEvent(runner.beginCeoReview());
       const rawEvaluation = await askTambalaAI('orchestrator', finalPrompt, { communicationType: 'CEO evaluation', sender: 'Chief Executive Officer (CEO)', recipient: 'Founder / Bless', founderObjective: truncateForModel(founderMessage, 3500), delegation: delegationContext, specialistResult: specialistContext, researchEvidence: researchContext, attempt });
       const evaluation = parseCeoEvaluation(rawEvaluation);
