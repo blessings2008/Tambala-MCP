@@ -1,20 +1,16 @@
-import { initialOrganization } from './seed.js';
-import { validateOrganization } from './validate.js';
+import { getPersistedOrganizationSnapshot } from './persisted-service.js';
 
-/** Return a defensive copy so callers cannot mutate the in-memory seed. */
-export function getOrganizationSnapshot() {
-  const validationErrors = validateOrganization(initialOrganization);
-  return {
-    organization: structuredClone(initialOrganization),
-    validation: {
-      valid: validationErrors.length === 0,
-      errors: validationErrors,
-    },
-  };
+/**
+ * Return the organization from the existing Tambala MCP database when configured.
+ * Local development without Supabase credentials may still use the seed fallback
+ * implemented by the persisted service.
+ */
+export async function getOrganizationSnapshot() {
+  return getPersistedOrganizationSnapshot();
 }
 
-export function getOrganizationSummary() {
-  const snapshot = getOrganizationSnapshot();
+export async function getOrganizationSummary() {
+  const snapshot = await getOrganizationSnapshot();
   return {
     id: snapshot.organization.id,
     name: snapshot.organization.name,
@@ -25,6 +21,7 @@ export function getOrganizationSummary() {
       ceoRoleId: snapshot.organization.ceoRoleId,
       executiveCouncilRoleId: snapshot.organization.executiveCouncilRoleId,
     },
+    source: snapshot.source,
     units: snapshot.organization.units.map(({ id, name, kind, status, parentId }) => ({
       id,
       name,
