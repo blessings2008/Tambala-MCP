@@ -90,3 +90,20 @@ A department is operational only when it has:
 - Preserve the existing database and existing records; do not replace tables or seed duplicate organization structures.
 - Work on `org-task-engine`; do not modify `main` or deploy without explicit authorization.
 - Keep payment processing, outbound messages, public publishing, refunds, and other consequential actions behind appropriate human approval until controls are implemented and tested.
+
+
+## Progress update — research query reliability
+
+The first Sales/Research implementation slice is now committed on `org-task-engine`:
+
+- Added `src/services/research-query.ts` to create short, intent-aware search queries.
+- Generic prospecting defaults to Tambala's known Malawi market and core sectors (lodges, hotels, restaurants) rather than searching the raw prompt.
+- Specific locations and industries are retained when the Founder objective provides them.
+- The CEO delegation path now derives its search query from the original objective and task instead of trusting a model-generated sentence.
+- The web research adapter now searches the compact query alone rather than appending the entire specialist prompt.
+- The outreach role instructions now require individually identifiable, source-backed prospects, evidence of fit, verified contact routes, duplicate checks when CRM context is supplied, and honest disclosure when website quality is unknown.
+- Added automated tests for generic prospecting, industry/location-specific queries, named-entity research, and explicit non-Malawi geography.
+
+**Verification:** GitHub Actions workflow `Organization foundation checks` passed for commit `899a4578440af97af2e1e040ec71639c0adce402` before the additional outreach-prompt tightening. The newest prompt change has its own CI run and must pass before this slice is treated as fully verified.
+
+**Still not complete:** This improves query construction and research instructions, but does not yet prove that live Tavily results are consistently relevant or that CRM duplicate checks are wired into the live agent context. The department remains `planned` until a real end-to-end prospecting test passes.
