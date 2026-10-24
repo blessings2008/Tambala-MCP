@@ -3,12 +3,12 @@
  * Never forward the full Founder/CEO prompt to the search provider.
  */
 const LOCATIONS: Array<[RegExp, string]> = [
-  [/\bmalawi|malawian\b/i, 'Malawi'],
   [/\bblantyre\b/i, 'Blantyre Malawi'],
   [/\blilongwe\b/i, 'Lilongwe Malawi'],
   [/\bmzuzu\b/i, 'Mzuzu Malawi'],
   [/\bzomba\b/i, 'Zomba Malawi'],
   [/\bntcheu\b/i, 'Ntcheu Malawi'],
+  [/\bmalawi|malawian\b/i, 'Malawi'],
   [/\bkenya|kenyan\b/i, 'Kenya'],
   [/\bzambia|zambian\b/i, 'Zambia'],
   [/\btanzania|tanzanian\b/i, 'Tanzania'],
@@ -64,7 +64,7 @@ export function buildResearchQuery(objective: string, delegatedTask = '', sugges
 
   const explicitEntities = [...combined.matchAll(/\b[A-Z][A-Za-z0-9&'-]*(?:\s+[A-Z][A-Za-z0-9&'-]*){0,2}\b/g)]
     .map((match) => match[0])
-    .filter((value) => !/^(Find|Identify|Research|Please|The|Our|Next|Client|Potential|Current|Return|Provide|Complete|Tambala Technologies)$/i.test(value))
+    .filter((value) => !/^(Find|Identify|Research|Please|The|Our|Next|Client|Potential|Current|Return|Provide|Complete|Five|Ten|Top|Best|New)\b/i.test(value))
     .filter((value) => !STOP_WORDS.has(value.toLowerCase()));
 
   const suggestedTerms = suggestedQuery
