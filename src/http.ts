@@ -13,6 +13,7 @@ import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo, typ
 import { OrganizationTaskRunner } from './organization/task-runner.js';
 import { publishOrganizationTaskEvent } from './organization/task-events.js';
 import { openTaskEventStream } from './organization/task-sse.js';
+import { buildResearchQuery } from './services/research-query.js';
 
 const nodeHandler = toNodeHandler(mcpHandler);
 const chatAgents = ['orchestrator', 'outreach', 'followup'] as const;
@@ -57,15 +58,6 @@ function errorStatus(message: string): number {
 function taskNeedsWebResearch(text: string): boolean {
   return /\b(research|investigate|look\s*up|find|identify|current|latest|market|competitor|prospect|hotel|lodge|tourism|association|statistics|report)\b/i.test(text);
 }
-function researchQueryFromObjective(objective: string): string {
-  const cleaned = objective.replace(/https?:\/\/\S+/gi, ' ').replace(/\s+/g, ' ').trim();
-  const quoted = [...cleaned.matchAll(/["“”']([^"“”']{2,120})["“”']/g)].map((m) => m[1]);
-  const properPhrases = [...cleaned.matchAll(/\b(?:[A-Z][\w&'-]+(?:\s+|$)){1,5}/g)]
-    .map((m) => m[0].trim()).filter((v) => v.length > 2 && !/^(The|Find|Research|Identify|Determine|Give|Tell|Please|What|How|Why|Use|Do|And|For|With|From|This|That)\b/i.test(v));
-  const domainTerms = cleaned.match(/\b(?:Malawi|Malawian|Malabi|lodge|lodges|hotel|hotels|tourism|hospitality|website|websites|digital|competitor|competitors|market|prospect|prospects|opportunity|opportunities|Tambala|Exclusive)\b/gi) ?? [];
-  const unique = [...new Set([...quoted, ...properPhrases, ...domainTerms.map((v) => v.toLowerCase())])];
-  return (unique.join(' ').replace(/\s+/g, ' ').trim() || cleaned).slice(0, 1400).trim();
-}
 function truncateForModel(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
   return `${value.slice(0, maxChars)}\n\n[Context truncated to protect the model request size.]`;
@@ -89,10 +81,7 @@ function parseCeoDelegation(raw: string, fallbackObjective: string): CeoDelegati
   const task = typeof value.task === 'string' && value.task.trim() ? value.task.trim() : truncateForModel(fallbackObjective, 3000);
   const deliverable = typeof value.deliverable === 'string' && value.deliverable.trim() ? value.deliverable.trim() : 'Complete the assigned objective and return the actual finished result.';
   const constraints = Array.isArray(value.constraints) ? value.constraints.filter((v): v is string => typeof v === 'string').map((v) => v.trim()).filter(Boolean).slice(0, 8) : [];
-  const derivedQuery = researchQueryFromObjective(`${task} ${deliverable} ${fallbackObjective}`);
-  const researchQuery = typeof value.researchQuery === 'string' && value.researchQuery.trim()
-    ? value.researchQuery.replace(/\s+/g, ' ').trim().slice(0, 1400)
-    : derivedQuery;
+  const researchQuery = buildResearchQuery(fallbackObjective, `${task} ${deliverable}`, typeof value.researchQuery === 'string' ? value.researchQuery : '');
   return { task, deliverable, constraints, researchQuery };
 }
 type CeoEvaluation = { decision: 'approved' | 'rework'; feedback: string; finalResult: string };
@@ -150,7 +139,7 @@ const server = createHttpServer(async (req, res) => {
       if (!body || typeof body !== 'object' || !chatAgents.includes(body.agent as ChatAgent)) { json(res, 400, { error: 'Choose orchestrator, outreach, or followup.' }); return; }
       if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 10_000) { json(res, 400, { error: 'Provide a prompt between 1 and 10,000 characters.' }); return; }
       const agent = body.agent as ChatAgent;
-      if (taskNeedsWebResearch(body.request)) { const query = researchQueryFromObjective(body.request); const researched = await askTambalaAIWithWebResearch(agent as AgentName, body.request.trim(), undefined, query); json(res, 200, { agent, model: getAgentOperationalInfo(agent).model, response: researched.response, researchEvidence: researched.research, researchQuery: query }); }
+      if (taskNeedsWebResearch(body.request)) { const query = buildResearchQuery(body.request); const researched = await askTambalaAIWithWebResearch(agent as AgentName, body.request.trim(), undefined, query); json(res, 200, { agent, model: getAgentOperationalInfo(agent).model, response: researched.response, researchEvidence: researched.research, researchQuery: query }); }
       else { const response = await askTambalaAI(agent as AgentName, body.request.trim()); json(res, 200, { agent, model: getAgentOperationalInfo(agent).model, response }); }
     } catch (error) { const message = error instanceof Error ? error.message : 'The AI provider request failed.'; console.error('Live agent test request failed:', message); json(res, errorStatus(message), { error: message }); }
     return;
