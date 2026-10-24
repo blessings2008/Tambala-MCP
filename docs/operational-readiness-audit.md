@@ -107,3 +107,21 @@ The first Sales/Research implementation slice is now committed on `org-task-engi
 **Verification:** GitHub Actions workflow `Organization foundation checks` passed for commit `899a4578440af97af2e1e040ec71639c0adce402` before the additional outreach-prompt tightening. The newest prompt change has its own CI run and must pass before this slice is treated as fully verified.
 
 **Still not complete:** This improves query construction and research instructions, but does not yet prove that live Tavily results are consistently relevant or that CRM duplicate checks are wired into the live agent context. The department remains `planned` until a real end-to-end prospecting test passes.
+
+
+## Progress update — CRM grounding and first content deliverable
+
+Additional work completed on `org-task-engine`:
+
+- Added `src/organization/sales-context.ts` to load a privacy-conscious snapshot of existing lead names/statuses, client names/statuses/locations, and active verified services from the existing Supabase database.
+- Wired that context into both direct outreach testing and CEO-delegated outreach execution. Contact details and private CRM notes are intentionally excluded from the research context.
+- If CRM credentials are missing, the context explicitly reports that duplicate checks cannot be claimed. If configured database reads fail, the request fails visibly rather than silently pretending the CRM was checked.
+- Tightened the outreach agent rules to compare candidates against existing lead/client records, use only verified active services, exclude Tambala itself and unrelated results, and disclose weak or missing evidence.
+- Added the sales prospecting workflow at `docs/workflows/sales-prospecting.md`.
+- Added the Marketing/Media handoff workflow at `docs/workflows/marketing-content-production.md`.
+- Added a first three-post content pack draft at `docs/workflows/week-1-content-pack-draft.md`. It uses only verified service descriptions, avoids client-specific claims pending permission, and remains unpublished pending Founder approval.
+- Added a separate activation task for Media & Content Production so the existing department—not a newly invented duplicate—owns production deliverables.
+
+**Verification:** CI passed for the CRM-context loader, outreach integration, and grounding-rule changes. CI runs for the newest documentation-only commits are still in progress at the time of this update.
+
+**Remaining Sales blocker:** A live end-to-end test still needs to demonstrate relevant web results, source-backed prospect qualification, duplicate checking against the loaded CRM context, and a usable outreach draft. Do not mark Sales or Research & Intelligence operational before that test passes.
