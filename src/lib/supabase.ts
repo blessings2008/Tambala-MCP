@@ -39,3 +39,27 @@ export async function supabaseSelect<T>(table: string, query = 'select=*'): Prom
 
   return (await response.json()) as T[];
 }
+
+/** Insert server-side records using the service-role key. Never expose this helper to tool arguments. */
+export async function supabaseInsert<T>(table: string, value: Record<string, unknown>): Promise<T> {
+  const key = getServiceRoleKey();
+  const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify(value),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Supabase insert failed (${response.status}): ${body}`);
+  }
+
+  const rows = (await response.json()) as T[];
+  if (!rows.length) throw new Error(`Supabase insert into ${table} returned no record`);
+  return rows[0];
+}

@@ -10,7 +10,8 @@
     "start:stdio": "tsx src/index.ts",
     "inspect": "npx @modelcontextprotocol/inspector npx tsx src/index.ts",
     "automation": "node dist/automation/job.js",
-    "daily-report": "node dist/daily-report-job.js"
+    "daily-report": "node dist/daily-report-job.js",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/node": "latest",
