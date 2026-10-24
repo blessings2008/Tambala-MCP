@@ -1,13 +1,9 @@
-export type TaskEventType =
-  | 'task.created'
-  | 'task.status_changed'
-  | 'task.message'
-  | 'task.completed'
-  | 'task.failed';
+import type { OrganizationTaskEvent } from './task-engine.js';
 
 export interface TaskEvent {
+  id: string;
   taskId: string;
-  type: TaskEventType;
+  type: string;
   status?: string;
   actor: string;
   recipient?: string;
@@ -18,11 +14,7 @@ export interface TaskEvent {
 
 type Listener = (event: TaskEvent) => void;
 
-/**
- * In-process event bus for live task execution.
- * It intentionally has no persistence yet; the database/event store will be
- * attached once the live execution flow is stable.
- */
+/** In-process fan-out for lifecycle events. Persistence can be attached later. */
 class TaskEventBus {
   private listeners = new Set<Listener>();
 
@@ -33,29 +25,41 @@ class TaskEventBus {
 
   publish(event: TaskEvent): void {
     for (const listener of this.listeners) {
-      try {
-        listener(event);
-      } catch (error) {
-        console.error('Task event listener failed:', error);
-      }
+      try { listener(event); }
+      catch (error) { console.error('Task event listener failed:', error); }
     }
   }
 }
 
 export const taskEventBus = new TaskEventBus();
+/** Compatibility alias for the SSE layer. */
+export const taskEvents = taskEventBus;
+
+export function publishOrganizationTaskEvent(event: OrganizationTaskEvent): TaskEvent {
+  const published: TaskEvent = {
+    id: event.id,
+    taskId: event.taskId,
+    type: event.type,
+    status: event.status,
+    actor: event.actor,
+    recipient: event.recipient,
+    message: event.message,
+    timestamp: event.timestamp,
+    metadata: event.metadata,
+  };
+  taskEventBus.publish(published);
+  return published;
+}
 
 export function emitTaskEvent(
   taskId: string,
-  type: TaskEventType,
+  type: string,
   actor: string,
   message?: string,
-  options?: {
-    status?: string;
-    recipient?: string;
-    metadata?: Record<string, unknown>;
-  },
+  options?: { status?: string; recipient?: string; metadata?: Record<string, unknown> },
 ): TaskEvent {
   const event: TaskEvent = {
+    id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     taskId,
     type,
     actor,
