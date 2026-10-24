@@ -13,13 +13,33 @@ export interface WebResearchResult {
 const TAVILY_URL = 'https://api.tavily.com/search';
 
 /**
+ * Convert an agent's natural-language research request into a short search query.
+ * Search providers should receive keywords, not the full CEO/delegation prompt.
+ */
+function normalizeResearchQuery(input: string): string {
+  let query = input.replace(/\s+/g, ' ').trim();
+  query = query
+    .replace(/^(please\s+)?(do\s+)?(some\s+)?(web\s+)?research\s+(on|about|into)\s+/i, '')
+    .replace(/^(please\s+)?(research|investigate|look\s*up|find|identify)\s+/i, '')
+    .trim();
+
+  const stop = /\s+(?:and|then|to)\s+(?:determine|identify|find|assess|analyse|analyze|research|investigate)\b/i.exec(query);
+  if (stop?.index && stop.index > 0) query = query.slice(0, stop.index).trim();
+
+  query = query.replace(/[.?!,:;]+$/g, '').trim();
+  if (!query) query = input.replace(/\s+/g, ' ').trim();
+  return query.slice(0, 300).trim();
+}
+
+/**
  * Shared research tool. It is intentionally separate from model-provider credentials.
  * Configure TAMBALA_WEB_SEARCH_API_KEY with a Tavily key.
  */
 export async function webResearch(query: string, maxResults = 5): Promise<WebResearchResult> {
   const apiKey = process.env.TAMBALA_WEB_SEARCH_API_KEY;
   if (!apiKey) throw new Error('Web research is not configured. Set TAMBALA_WEB_SEARCH_API_KEY.');
-  if (!query.trim()) throw new Error('A web research query is required.');
+  const searchQuery = normalizeResearchQuery(query);
+  if (!searchQuery) throw new Error('A web research query is required.');
   const boundedResults = Math.min(Math.max(maxResults, 1), 8);
 
   const response = await fetch(TAVILY_URL, {
@@ -27,7 +47,7 @@ export async function webResearch(query: string, maxResults = 5): Promise<WebRes
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify({
       api_key: apiKey,
-      query: query.trim(),
+      query: searchQuery,
       search_depth: 'basic',
       max_results: boundedResults,
       include_answer: false,
@@ -48,7 +68,7 @@ export async function webResearch(query: string, maxResults = 5): Promise<WebRes
   };
 
   return {
-    query: data.query ?? query.trim(),
+    query: data.query ?? searchQuery,
     results: (data.results ?? []).map((item) => ({
       title: item.title ?? 'Untitled source',
       url: item.url ?? '',
