@@ -41,3 +41,22 @@ test('explicit non-Malawi geography is not replaced by the default market', () =
   assert.match(query, /Zambia/);
   assert.doesNotMatch(query, /Malawi/);
 });
+
+test('North American prospecting stays in North America', () => {
+  const query = buildResearchQuery(
+    'Find independent hotels in North America that could benefit from Tambala web services',
+    'Target USA and Canada and verify public business contacts.',
+    'independent hotels North America USA Canada contact',
+  );
+  assert.match(query, /North America|United States|Canada/);
+  assert.doesNotMatch(query, /Malawi/);
+  assert.match(query, /hotels/);
+  assert.ok(query.length <= 220);
+});
+
+test('Southeast Asian hospitality research preserves the requested region', () => {
+  const query = buildResearchQuery('Find eco-tourism lodges in Southeast Asia');
+  assert.match(query, /Southeast Asia/);
+  assert.match(query, /lodges/);
+  assert.doesNotMatch(query, /Malawi/);
+});
