@@ -13,6 +13,24 @@ const LOCATIONS: Array<[RegExp, string]> = [
   [/\bzambia|zambian\b/i, 'Zambia'],
   [/\btanzania|tanzanian\b/i, 'Tanzania'],
   [/\bsouth africa\b/i, 'South Africa'],
+  [/\bghana|ghanaian\b/i, 'Ghana'],
+  [/\bnigeria|nigerian\b/i, 'Nigeria'],
+  [/\brwanda|rwandan\b/i, 'Rwanda'],
+  [/\buganda|ugandan\b/i, 'Uganda'],
+  [/\bunited states|\busa\b|\bu\.s\.\b|\bamerica\b/i, 'United States'],
+  [/\bcanada|canadian\b/i, 'Canada'],
+  [/\bnorth america\b/i, 'North America'],
+  [/\buk|united kingdom|england|scotland|wales\b/i, 'United Kingdom'],
+  [/\beurope\b/i, 'Europe'],
+  [/\bfrance|french\b/i, 'France'],
+  [/\bgermany|german\b/i, 'Germany'],
+  [/\bspain|spanish\b/i, 'Spain'],
+  [/\bitaly|italian\b/i, 'Italy'],
+  [/\bsoutheast asia|south east asia\b/i, 'Southeast Asia'],
+  [/\bthailand|thai\b/i, 'Thailand'],
+  [/\bindonesia|indonesian\b/i, 'Indonesia'],
+  [/\bvietnam|vietnamese\b/i, 'Vietnam'],
+  [/\bphilippines|philippine\b/i, 'Philippines'],
 ];
 
 const INDUSTRIES: Array<[RegExp, string]> = [
@@ -24,6 +42,8 @@ const INDUSTRIES: Array<[RegExp, string]> = [
   [/\bschools?|colleges?|universit(?:y|ies)\b/i, 'schools colleges'],
   [/\bclinics?|medical practices?\b/i, 'clinics'],
   [/\btour(?:ism| operators?)\b/i, 'tourism operators'],
+  [/\bretail|retailer|e-commerce|ecommerce\b/i, 'retail ecommerce'],
+  [/\bmusic|record labels?|artist management|music publishing\b/i, 'music industry'],
 ];
 
 const STOP_WORDS = new Set([
@@ -40,8 +60,8 @@ function unique(values: string[]): string[] {
 
 /**
  * Returns a compact query suited to a single web search. Generic client-finding
- * tasks default to Tambala's known Malawi market and services rather than
- * searching the entire Founder prompt or unrelated company names.
+ * tasks default to Tambala's known Malawi market only when no explicit geography
+ * is present. Explicit geography must always win over the default.
  */
 export function buildResearchQuery(objective: string, delegatedTask = '', suggestedQuery = ''): string {
   const combined = [objective, delegatedTask].filter(Boolean).join(' ').replace(/https?:\/\/\S+/gi, ' ');
@@ -56,8 +76,8 @@ export function buildResearchQuery(objective: string, delegatedTask = '', sugges
     ? ['website', 'web design', 'contact']
     : [];
 
-  // For generic prospecting, use Tambala's established core target sectors instead
-  // of weak fragments such as "our next client" or the full model instruction.
+  // Generic prospecting uses Tambala's established core sectors rather than
+  // weak fragments such as "our next client" or the full model instruction.
   if (isProspecting && industry.length === 0) {
     return unique([location || 'Malawi', 'lodges hotels restaurants', ...serviceTerms, 'official website']).join(' ').slice(0, 220);
   }
