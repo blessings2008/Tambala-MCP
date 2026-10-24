@@ -46,7 +46,7 @@ async function readJsonBody(req: import('node:http').IncomingMessage): Promise<u
   for await (const chunk of req) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
-    if (size > 12_000) throw new Error('Request body is too large. Keep the prompt under 10,000 characters.');
+    if (size > 32_000) throw new Error('Request body is too large. Keep the request payload under 32 KB.');
     chunks.push(buffer);
   }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
