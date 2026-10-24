@@ -10,6 +10,9 @@ import { setCorsHeaders } from './http/cors.js';
 import { handleHealth, handleNotFound } from './http/health.js';
 import { isAuthorized, unauthorized } from './http/auth.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo, type AgentName } from './services/ai.js';
+import { OrganizationTaskRunner } from './organization/task-runner.js';
+import { publishOrganizationTaskEvent } from './organization/task-events.js';
+import { openTaskEventStream } from './organization/task-sse.js';
 
 const nodeHandler = toNodeHandler(mcpHandler);
 const chatAgents = ['orchestrator', 'outreach', 'followup'] as const;
@@ -76,6 +79,12 @@ function compactResearchEvidence(value: unknown): string {
   return truncateForModel(raw, 4500);
 }
 
+const liveTaskRunners = new Map<string, OrganizationTaskRunner>();
+
+function publishRunnerEvent(event: ReturnType<OrganizationTaskRunner['startCeoAnalysis']>): void {
+  publishOrganizationTaskEvent(event);
+}
+
 function validStage(value: unknown): value is ExecutionStage {
   return value === 'ceo_delegate' || value === 'specialist_execute' || value === 'ceo_complete';
 }
@@ -87,8 +96,36 @@ const server = createHttpServer(async (req, res) => {
   if (await handleOAuth(req, res, requestPath)) return;
   if (requestPath === '/health' && req.method === 'GET') { handleHealth(res); return; }
 
-  if ((requestPath === '/api/chat-test/status' || requestPath === '/api/chat-test' || requestPath === '/api/chat-test/collaborate' || requestPath === '/api/chat-test/step') && (req.method === 'GET' || req.method === 'POST')) {
+  if ((requestPath === '/api/chat-test/status' || requestPath === '/api/chat-test' || requestPath === '/api/chat-test/collaborate' || requestPath === '/api/chat-test/step' || requestPath === '/api/chat-test/tasks' || requestPath === '/api/chat-test/events') && (req.method === 'GET' || req.method === 'POST')) {
     if (!chatTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized. Check the chat test token.' }); return; }
+  }
+
+  if (requestPath === '/api/chat-test/tasks' && req.method === 'POST') {
+    if (!req.headers['content-type']?.toLowerCase().includes('application/json')) { json(res, 415, { error: 'Content-Type must be application/json.' }); return; }
+    try {
+      const body = await readJsonBody(req) as { request?: unknown; specialist?: unknown };
+      if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 8_000) { json(res, 400, { error: 'Provide a task between 1 and 8,000 characters.' }); return; }
+      if (!specialistAgents.includes(body.specialist as SpecialistAgent)) { json(res, 400, { error: 'Choose outreach or followup as the specialist.' }); return; }
+      const specialist = body.specialist as SpecialistAgent;
+      const runner = new OrganizationTaskRunner(body.request.trim(), { specialist, departmentTitle: getAgentOperationalInfo(specialist).title });
+      liveTaskRunners.set(runner.task.id, runner);
+      const initialEvent = runner.task.events[0];
+      if (initialEvent) publishRunnerEvent(initialEvent);
+      json(res, 201, { taskId: runner.task.id, status: runner.task.status, message: 'Organization task created. Connect to its event stream before starting execution.' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to create organization task.';
+      json(res, errorStatus(message), { error: message });
+    }
+    return;
+  }
+
+  if (requestPath === '/api/chat-test/events' && req.method === 'GET') {
+    const taskId = new URL(req.url ?? '/', 'http://localhost').searchParams.get('taskId');
+    if (!taskId) { json(res, 400, { error: 'Provide a taskId query parameter.' }); return; }
+    const runner = liveTaskRunners.get(taskId);
+    if (!runner) { json(res, 404, { error: 'Organization task not found or server restarted.' }); return; }
+    openTaskEventStream(res, taskId, runner.task.events);
+    return;
   }
 
   if (requestPath === '/api/chat-test/status' && req.method === 'GET') {
@@ -127,27 +164,44 @@ const server = createHttpServer(async (req, res) => {
   if (requestPath === '/api/chat-test/step' && req.method === 'POST') {
     if (!req.headers['content-type']?.toLowerCase().includes('application/json')) { json(res, 415, { error: 'Content-Type must be application/json.' }); return; }
     try {
-      const body = await readJsonBody(req) as { stage?: unknown; request?: unknown; specialist?: unknown; delegation?: unknown; specialistResult?: unknown; researchEvidence?: unknown };
+      const body = await readJsonBody(req) as { stage?: unknown; request?: unknown; specialist?: unknown; delegation?: unknown; specialistResult?: unknown; researchEvidence?: unknown; taskId?: unknown };
       if (!validStage(body.stage)) { json(res, 400, { error: 'Invalid stage. Use ceo_delegate, specialist_execute, or ceo_complete.' }); return; }
       if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 8_000) { json(res, 400, { error: 'Provide a task between 1 and 8,000 characters.' }); return; }
       if (!specialistAgents.includes(body.specialist as SpecialistAgent)) { json(res, 400, { error: 'Choose outreach or followup as the specialist.' }); return; }
       const specialist = body.specialist as SpecialistAgent;
       const founderMessage = body.request.trim();
+      const runner = typeof body.taskId === 'string' ? liveTaskRunners.get(body.taskId) : undefined;
+      if (typeof body.taskId === 'string' && !runner) { return json(res, 404, { error: 'Organization task not found. Create a new task and reconnect.' }); }
+      if (runner && runner.task.objective !== founderMessage) { return json(res, 400, { error: 'The request must match the original objective for this task.' }); }
 
       if (body.stage === 'ceo_delegate') {
+        if (runner) publishRunnerEvent(runner.startCeoAnalysis());
         const delegation = await askTambalaAI('orchestrator', `Founder / Bless has given you this objective:\n\n${founderMessage}\n\nAct as the CEO. Own this objective from start to finish. Decide what work must be delegated to ${getAgentOperationalInfo(specialist).title}. Create a precise execution brief. Do not complete the department's work yourself. The department must return the actual requested deliverable, not merely advice about how to do it. Do not invent facts, locations, countries, services, or requirements that are not in the Founder objective. If something is ambiguous, instruct the department to verify it with research. Include objective, scope, constraints, required deliverable, quality bar, and evidence/source requirements.`, { communicationType: 'Founder -> CEO', sender: 'Founder / Bless', recipient: 'Chief Executive Officer (CEO)' });
-        return json(res, 200, { stage: body.stage, message: delegation });
+        if (runner) publishRunnerEvent(runner.delegate(delegation));
+        return json(res, 200, { stage: body.stage, taskId: runner?.task.id, message: delegation });
       }
 
       if (body.stage === 'specialist_execute') {
+        if (runner) publishRunnerEvent(runner.startDepartment());
         if (typeof body.delegation !== 'string' || !body.delegation.trim()) { return json(res, 400, { error: 'The CEO delegation is required for specialist execution.' }); }
         const specialistTask = `CEO execution brief:\n\n${truncateForModel(body.delegation, 7000)}\n\nExecute this task now. Produce the requested deliverable itself. Do not merely describe what should be done, do not delegate it back, and do not stop at process recommendations. Respect every constraint, but verify factual assumptions against research evidence rather than blindly trusting the brief. If research is required, use the web research evidence and preserve source URLs. Return completed work to the CEO, including genuine blockers only if they prevent completion.`;
         if (taskNeedsWebResearch(`${founderMessage}\n${body.delegation}`)) {
-          const researched = await askTambalaAIWithWebResearch(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: body.delegation }, researchQueryFromObjective(founderMessage));
-          return json(res, 200, { stage: body.stage, message: researched.response, researchEvidence: researched.research });
+          const query = researchQueryFromObjective(founderMessage);
+          if (runner) publishRunnerEvent(runner.waitForResearch(query));
+          const researched = await askTambalaAIWithWebResearch(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: body.delegation }, query);
+          if (runner) {
+            const evidence = researched.research as { sources?: unknown[]; results?: unknown[] } | unknown[] | null;
+            const sourceCount = Array.isArray(evidence) ? evidence.length : evidence && typeof evidence === 'object' ? (Array.isArray(evidence.sources) ? evidence.sources.length : Array.isArray(evidence.results) ? evidence.results.length : undefined) : undefined;
+            publishRunnerEvent(runner.researchComplete(sourceCount));
+            publishRunnerEvent(runner.resumeDepartment());
+            publishRunnerEvent(runner.submitDepartmentWork(researched.response));
+            publishRunnerEvent(runner.returnToCeo());
+          }
+          return json(res, 200, { stage: body.stage, taskId: runner?.task.id, message: researched.response, researchEvidence: researched.research });
         }
         const result = await askTambalaAI(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: body.delegation });
-        return json(res, 200, { stage: body.stage, message: result, researchEvidence: null });
+        if (runner) { publishRunnerEvent(runner.submitDepartmentWork(result)); publishRunnerEvent(runner.returnToCeo()); }
+        return json(res, 200, { stage: body.stage, taskId: runner?.task.id, message: result, researchEvidence: null });
       }
 
       if (typeof body.delegation !== 'string' || !body.delegation.trim() || typeof body.specialistResult !== 'string' || !body.specialistResult.trim()) { return json(res, 400, { error: 'CEO delegation and completed specialist work are required for final evaluation.' }); }
@@ -155,11 +209,20 @@ const server = createHttpServer(async (req, res) => {
       const specialistContext = truncateForModel(body.specialistResult, 6000);
       const researchContext = compactResearchEvidence(body.researchEvidence);
       const finalPrompt = `Complete the Founder objective end-to-end.\n\nORIGINAL FOUNDER OBJECTIVE:\n${founderMessage}\n\nCEO DELEGATION (may contain mistakes; do not treat its factual assumptions as truth):\n${delegationContext}\n\nDEPARTMENT COMPLETED WORK:\n${specialistContext}\n\nWEB RESEARCH EVIDENCE:\n${researchContext}\n\nYou are accountable for the final result. Evaluate the department work against the original objective and every constraint. Evidence and the original Founder objective take precedence over unsupported claims in the delegation or report. Correct factual errors when the supplied evidence supports the correction. Do not merely summarize or relay the department report. Produce the actual final deliverable requested by the Founder. If research was requested, present the researched findings and preserve source URLs. If the evidence is insufficient, clearly state what remains unknown rather than fabricating it.`;
+      if (runner) publishRunnerEvent(runner.beginCeoReview());
       const finalResult = await askTambalaAI('orchestrator', finalPrompt, { communicationType: 'CEO -> Founder', sender: 'Chief Executive Officer (CEO)', recipient: 'Founder / Bless', founderObjective: founderMessage, delegation: delegationContext, specialistResult: specialistContext, researchEvidence: researchContext });
-      return json(res, 200, { stage: body.stage, message: finalResult });
+      if (runner) publishRunnerEvent(runner.complete(finalResult));
+      return json(res, 200, { stage: body.stage, taskId: runner?.task.id, message: finalResult });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'The organization step failed.';
       console.error('Organization step failed:', message);
+      const failedBody = typeof error === 'object' && error !== null ? error : null;
+      // Failure transitions are best-effort; never mask the original provider error.
+      try {
+        const maybeTaskId = (typeof failedBody === 'object' && failedBody && 'taskId' in failedBody) ? String((failedBody as { taskId: unknown }).taskId) : '';
+        const failedRunner = maybeTaskId ? liveTaskRunners.get(maybeTaskId) : undefined;
+        if (failedRunner && failedRunner.task.status !== 'completed' && failedRunner.task.status !== 'failed') publishRunnerEvent(failedRunner.fail(message));
+      } catch { /* Preserve the original error response. */ }
       return json(res, errorStatus(message), { error: message });
     }
   }
