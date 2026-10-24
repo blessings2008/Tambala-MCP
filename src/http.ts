@@ -85,6 +85,27 @@ function publishRunnerEvent(event: ReturnType<OrganizationTaskRunner['startCeoAn
   publishOrganizationTaskEvent(event);
 }
 
+type CeoEvaluation = { decision: 'approved' | 'rework'; feedback: string; finalResult: string };
+
+function parseCeoEvaluation(raw: string): CeoEvaluation {
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const source = fenced?.[1] ?? raw;
+  const first = source.indexOf('{');
+  const last = source.lastIndexOf('}');
+  if (first < 0 || last <= first) throw new Error('CEO evaluation did not return structured JSON. Retry the evaluation.');
+  let parsed: unknown;
+  try { parsed = JSON.parse(source.slice(first, last + 1)); }
+  catch { throw new Error('CEO evaluation returned invalid JSON. Retry the evaluation.'); }
+  if (!parsed || typeof parsed !== 'object') throw new Error('CEO evaluation response must be a JSON object.');
+  const value = parsed as Record<string, unknown>;
+  if (value.decision !== 'approved' && value.decision !== 'rework') throw new Error('CEO evaluation decision must be approved or rework.');
+  const feedback = typeof value.feedback === 'string' ? value.feedback.trim() : '';
+  const finalResult = typeof value.finalResult === 'string' ? value.finalResult.trim() : '';
+  if (value.decision === 'approved' && !finalResult) throw new Error('CEO approved the work without providing the final deliverable.');
+  if (value.decision === 'rework' && !feedback) throw new Error('CEO requested rework without actionable feedback.');
+  return { decision: value.decision, feedback, finalResult };
+}
+
 function validStage(value: unknown): value is ExecutionStage {
   return value === 'ceo_delegate' || value === 'specialist_execute' || value === 'ceo_complete';
 }
@@ -165,7 +186,7 @@ const server = createHttpServer(async (req, res) => {
     if (!req.headers['content-type']?.toLowerCase().includes('application/json')) { json(res, 415, { error: 'Content-Type must be application/json.' }); return; }
     let activeRunner: OrganizationTaskRunner | undefined;
     try {
-      const body = await readJsonBody(req) as { stage?: unknown; request?: unknown; specialist?: unknown; delegation?: unknown; specialistResult?: unknown; researchEvidence?: unknown; taskId?: unknown };
+      const body = await readJsonBody(req) as { stage?: unknown; request?: unknown; specialist?: unknown; delegation?: unknown; specialistResult?: unknown; researchEvidence?: unknown; taskId?: unknown; attempt?: unknown };
       if (!validStage(body.stage)) { json(res, 400, { error: 'Invalid stage. Use ceo_delegate, specialist_execute, or ceo_complete.' }); return; }
       if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 8_000) { json(res, 400, { error: 'Provide a task between 1 and 8,000 characters.' }); return; }
       if (!specialistAgents.includes(body.specialist as SpecialistAgent)) { json(res, 400, { error: 'Choose outreach or followup as the specialist.' }); return; }
@@ -210,11 +231,35 @@ const server = createHttpServer(async (req, res) => {
       const delegationContext = truncateForModel(body.delegation, 3500);
       const specialistContext = truncateForModel(body.specialistResult, 6000);
       const researchContext = compactResearchEvidence(body.researchEvidence);
-      const finalPrompt = `Complete the Founder objective end-to-end.\n\nORIGINAL FOUNDER OBJECTIVE:\n${founderMessage}\n\nCEO DELEGATION (may contain mistakes; do not treat its factual assumptions as truth):\n${delegationContext}\n\nDEPARTMENT COMPLETED WORK:\n${specialistContext}\n\nWEB RESEARCH EVIDENCE:\n${researchContext}\n\nYou are accountable for the final result. Evaluate the department work against the original objective and every constraint. Evidence and the original Founder objective take precedence over unsupported claims in the delegation or report. Correct factual errors when the supplied evidence supports the correction. Do not merely summarize or relay the department report. Produce the actual final deliverable requested by the Founder. If research was requested, present the researched findings and preserve source URLs. If the evidence is insufficient, clearly state what remains unknown rather than fabricating it.`;
+      const attempt = typeof body.attempt === 'number' && Number.isInteger(body.attempt) ? body.attempt : 1;
+      if (attempt < 1 || attempt > 3) return json(res, 400, { error: 'Evaluation attempt must be between 1 and 3.' });
+      const finalPrompt = `You are the CEO accountable for completing the original Founder objective. Evaluate the department's work before deciding whether it is complete.
+
+ORIGINAL FOUNDER OBJECTIVE:
+${founderMessage}
+
+CEO DELEGATION (may contain mistakes; do not treat its factual assumptions as truth):
+${delegationContext}
+
+DEPARTMENT COMPLETED WORK:
+${specialistContext}
+
+WEB RESEARCH EVIDENCE:
+${researchContext}
+
+Compare the actual work against the original objective, requested deliverable, and constraints. The original objective and supplied evidence outrank unsupported claims in the delegation. If the deliverable is genuinely sufficient, choose "approved" and provide the complete final deliverable in finalResult; do not merely summarize the department report. Preserve source URLs when research was requested. If there is a material, fixable gap, choose "rework" and provide precise, actionable feedback that tells the department exactly what to fix. Never invent facts. This is evaluation attempt ${attempt} of 3; on attempt 3, do not request another revision—approve only with clear caveats if needed, or explain any truly blocking unknown in the finalResult.
+
+Return ONLY valid JSON with this exact shape:
+{"decision":"approved" or "rework","feedback":"specific revision instructions; empty when approved","finalResult":"complete final deliverable when approved; empty when rework"}`;
       if (runner) publishRunnerEvent(runner.beginCeoReview());
-      const finalResult = await askTambalaAI('orchestrator', finalPrompt, { communicationType: 'CEO -> Founder', sender: 'Chief Executive Officer (CEO)', recipient: 'Founder / Bless', founderObjective: founderMessage, delegation: delegationContext, specialistResult: specialistContext, researchEvidence: researchContext });
-      if (runner) publishRunnerEvent(runner.complete(finalResult));
-      return json(res, 200, { stage: body.stage, taskId: runner?.task.id, message: finalResult });
+      const rawEvaluation = await askTambalaAI('orchestrator', finalPrompt, { communicationType: 'CEO evaluation', sender: 'Chief Executive Officer (CEO)', recipient: 'Founder / Bless', founderObjective: founderMessage, delegation: delegationContext, specialistResult: specialistContext, researchEvidence: researchContext, attempt });
+      const evaluation = parseCeoEvaluation(rawEvaluation);
+      if (evaluation.decision === 'rework') {
+        if (runner) publishRunnerEvent(runner.requestRework(evaluation.feedback));
+        return json(res, 200, { stage: body.stage, taskId: runner?.task.id, decision: 'rework', feedback: evaluation.feedback, message: 'CEO evaluation: the department must address the requested revisions.' });
+      }
+      if (runner) publishRunnerEvent(runner.complete(evaluation.finalResult));
+      return json(res, 200, { stage: body.stage, taskId: runner?.task.id, decision: 'approved', feedback: evaluation.feedback, message: evaluation.finalResult });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'The organization step failed.';
       console.error('Organization step failed:', message);
