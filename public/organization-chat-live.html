@@ -45,8 +45,28 @@ const ceo=await runStep('ceo_delegate',{request:prompt,specialist});ceoWork.remo
 const deptWork=working(specialist==='outreach'?'Head of Sales & Business Development':'Head of Customer Relations & Support','Executing the delegated task…');
 if(/\b(research|investigate|look\s*up|find|identify|current|latest|market|competitor|prospect|hotel|lodge|tourism|association|statistics|report)\b/i.test(prompt+' '+ceo.message)){deptWork.textContent='Research required. Running targeted web research, then completing the department task…'}
 const dept=await runStep('specialist_execute',{request:prompt,specialist,delegation:ceo.message});deptWork.remove();if(dept.researchEvidence) addMessage('Web Research','Research completed. The returned source evidence is being evaluated by the department and CEO.','research','RESEARCH COMPLETE');addMessage((specialist==='outreach'?'Head of Sales & Business Development':'Head of Customer Relations & Support')+' → CEO',dept.message,'report','COMPLETED WORK');
-const ceoReview=working('Chief Executive Officer (CEO)','Evaluating the completed department work against the original objective…');
-const final=await runStep('ceo_complete',{request:prompt,specialist,delegation:ceo.message,specialistResult:dept.message,researchEvidence:dept.researchEvidence||null});ceoReview.remove();addMessage('Chief Executive Officer (CEO) → Founder / Bless',final.message,'review','FINAL RESULT');el('connectionStatus').textContent='Organization task completed end-to-end · '+activeTaskId;setTimeout(()=>{eventController?.abort();eventController=null;},700);
+let currentDelegation=ceo.message;let currentDept=dept;let researchEvidence=dept.researchEvidence||null;let final=null;let approved=false;
+for(let attempt=1;attempt<=3;attempt++){
+  const ceoReview=working('Chief Executive Officer (CEO)','Evaluating the completed department work against the original objective (review '+attempt+' of 3)…');
+  final=await runStep('ceo_complete',{request:prompt,specialist,delegation:currentDelegation,specialistResult:currentDept.message,researchEvidence,attempt});ceoReview.remove();
+  if(final.decision==='approved'){
+    addMessage('Chief Executive Officer (CEO) → Founder / Bless',final.message,'review','FINAL RESULT');approved=true;el('connectionStatus').textContent='Organization task completed end-to-end · '+activeTaskId;setTimeout(()=>{eventController?.abort();eventController=null;},700);break;
+  }
+  if(final.decision!=='rework')throw Error('CEO evaluation returned an unknown decision.');
+  addMessage('Chief Executive Officer (CEO) → '+(specialist==='outreach'?'Head of Sales & Business Development':'Head of Customer Relations & Support'),final.feedback,'delegation','REWORK REQUEST '+attempt);
+  if(attempt===3){
+    addMessage('Chief Executive Officer (CEO) → Founder / Bless','The CEO still identifies a material gap after two revision cycles. The task remains open and needs Founder review. Latest feedback: '+final.feedback,'review','NEEDS FOUNDER REVIEW');
+    el('connectionStatus').textContent='CEO review needs Founder attention · '+activeTaskId;break;
+  }
+  const departmentTitle=specialist==='outreach'?'Head of Sales & Business Development':'Head of Customer Relations & Support';
+  const reworkWork=working(departmentTitle,'Addressing the CEO feedback and revising the deliverable…');
+  currentDelegation=ceo.message+'\\n\\nCEO rework instructions:\\n'+final.feedback;
+  currentDept=await runStep('specialist_execute',{request:prompt,specialist,delegation:currentDelegation});
+  reworkWork.remove();
+  if(currentDept.researchEvidence)researchEvidence=currentDept.researchEvidence;
+  addMessage(departmentTitle+' → CEO',currentDept.message,'report','REVISED WORK');
+}
+
 }else{const r=await fetch('/api/chat-test',{method:'POST',headers:authHeaders(),body:JSON.stringify({agent:el('agent').value,request:prompt})});const d=await r.json();if(!r.ok)throw Error(d.error||'Agent request failed');addMessage(d.agent+' · '+d.model,d.response,'agent','LIVE RESPONSE');el('connectionStatus').textContent='Live agent response completed.'}}
 catch(e){addMessage('System',e.message||'Request failed. Check provider configuration and server logs.','review','ERROR');el('connectionStatus').textContent='Organization task stopped because a stage failed.'}finally{busy=false;el('send').disabled=false;el('send').textContent=el('mode').value==='collaborate'?'Run organization ↗':'Run agent ↗'}});
 if(sessionStorage.getItem('tambala_chat_test_token'))el('token').value=sessionStorage.getItem('tambala_chat_test_token');
