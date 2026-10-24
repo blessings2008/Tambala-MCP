@@ -14,6 +14,7 @@ import { OrganizationTaskRunner } from './organization/task-runner.js';
 import { publishOrganizationTaskEvent } from './organization/task-events.js';
 import { openTaskEventStream } from './organization/task-sse.js';
 import { buildResearchQuery } from './services/research-query.js';
+import { getSalesResearchContext } from './organization/sales-context.js';
 
 const nodeHandler = toNodeHandler(mcpHandler);
 const chatAgents = ['orchestrator', 'outreach', 'followup'] as const;
@@ -139,8 +140,9 @@ const server = createHttpServer(async (req, res) => {
       if (!body || typeof body !== 'object' || !chatAgents.includes(body.agent as ChatAgent)) { json(res, 400, { error: 'Choose orchestrator, outreach, or followup.' }); return; }
       if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 10_000) { json(res, 400, { error: 'Provide a prompt between 1 and 10,000 characters.' }); return; }
       const agent = body.agent as ChatAgent;
-      if (taskNeedsWebResearch(body.request)) { const query = buildResearchQuery(body.request); const researched = await askTambalaAIWithWebResearch(agent as AgentName, body.request.trim(), undefined, query); json(res, 200, { agent, model: getAgentOperationalInfo(agent).model, response: researched.response, researchEvidence: researched.research, researchQuery: query }); }
-      else { const response = await askTambalaAI(agent as AgentName, body.request.trim()); json(res, 200, { agent, model: getAgentOperationalInfo(agent).model, response }); }
+      const salesContext = agent === 'outreach' ? await getSalesResearchContext() : undefined;
+      if (taskNeedsWebResearch(body.request)) { const query = buildResearchQuery(body.request); const researched = await askTambalaAIWithWebResearch(agent as AgentName, body.request.trim(), salesContext, query); json(res, 200, { agent, model: getAgentOperationalInfo(agent).model, response: researched.response, researchEvidence: researched.research, researchQuery: query, crmContextAvailable: salesContext?.crmAvailable }); }
+      else { const response = await askTambalaAI(agent as AgentName, body.request.trim(), salesContext); json(res, 200, { agent, model: getAgentOperationalInfo(agent).model, response, crmContextAvailable: salesContext?.crmAvailable }); }
     } catch (error) { const message = error instanceof Error ? error.message : 'The AI provider request failed.'; console.error('Live agent test request failed:', message); json(res, errorStatus(message), { error: message }); }
     return;
   }
@@ -169,11 +171,13 @@ const server = createHttpServer(async (req, res) => {
         const specialistTask = `You are the ${getAgentOperationalInfo(specialist).title}. Execute the CEO task now.\n\nTASK:\n${truncateForModel(delegation.task, 5000)}\n\nREQUIRED DELIVERABLE:\n${truncateForModel(delegation.deliverable, 2500)}\n\nCONSTRAINTS:\n${delegation.constraints.map((v) => `- ${v}`).join('\n') || '- Verify facts; do not invent information.'}\n\nReturn the completed work itself. Do not return a plan for doing it, do not ask the Founder what to do, and do not simply acknowledge the delegation.`;
         if (taskNeedsWebResearch(`${delegation.task} ${delegation.deliverable}`)) {
           const query = delegation.researchQuery; if (runner) publishRunnerEvent(runner.waitForResearch(query));
-          const researched = await askTambalaAIWithWebResearch(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: { task: delegation.task, deliverable: delegation.deliverable } }, query);
+          const salesContext = specialist === 'outreach' ? await getSalesResearchContext() : undefined;
+          const researched = await askTambalaAIWithWebResearch(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: { task: delegation.task, deliverable: delegation.deliverable }, salesContext }, query);
           if (runner) { const evidence = researched.research as { sources?: unknown[]; results?: unknown[] } | unknown[] | null; const sourceCount = Array.isArray(evidence) ? evidence.length : evidence && typeof evidence === 'object' ? (Array.isArray(evidence.sources) ? evidence.sources.length : Array.isArray(evidence.results) ? evidence.results.length : undefined) : undefined; publishRunnerEvent(runner.researchComplete(sourceCount)); publishRunnerEvent(runner.resumeDepartment()); publishRunnerEvent(runner.submitDepartmentWork(researched.response)); publishRunnerEvent(runner.returnToCeo()); }
           return json(res, 200, { stage: body.stage, taskId: runner?.task.id, message: researched.response, researchEvidence: researched.research, researchQuery: query });
         }
-        const result = await askTambalaAI(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: { task: delegation.task, deliverable: delegation.deliverable } });
+        const salesContext = specialist === 'outreach' ? await getSalesResearchContext() : undefined;
+        const result = await askTambalaAI(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: { task: delegation.task, deliverable: delegation.deliverable }, salesContext });
         if (runner) { publishRunnerEvent(runner.submitDepartmentWork(result)); publishRunnerEvent(runner.returnToCeo()); }
         return json(res, 200, { stage: body.stage, taskId: runner?.task.id, message: result });
       }
