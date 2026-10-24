@@ -1,5 +1,7 @@
 import { initialOrganization } from './seed.js';
 import { validateOrganization } from './validate.js';
+export { createOrganizationTask, transitionTask } from './task-engine.js';
+export type { OrganizationTask, OrganizationTaskEvent, TaskStatus, TaskEventType } from './task-engine.js';
 
 /** Return a defensive copy so callers cannot mutate the in-memory seed. */
 export function getOrganizationSnapshot() {
