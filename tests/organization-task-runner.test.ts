@@ -35,3 +35,28 @@ test('runner cannot complete before CEO review', () => {
 
   assert.throws(() => runner.complete('Too early.'), /Invalid task transition/);
 });
+test('CEO can request rework and the department can resubmit before completion', () => {
+  const runner = new OrganizationTaskRunner('Prepare a sourced lodge opportunity assessment.', {
+    specialist: 'outreach',
+    departmentTitle: 'Head of Sales & Business Development',
+  });
+
+  runner.startCeoAnalysis();
+  runner.delegate('Prepare the assessment with evidence.');
+  runner.startDepartment();
+  runner.submitDepartmentWork('Initial draft.');
+  runner.returnToCeo();
+  runner.beginCeoReview();
+  runner.requestRework('Add source URLs and remove unsupported claims.');
+
+  assert.equal(runner.task.status, 'needs_more_work');
+  runner.startDepartment();
+  runner.submitDepartmentWork('Revised assessment with source URLs.');
+  runner.returnToCeo();
+  runner.beginCeoReview();
+  runner.complete('Approved revised assessment.');
+
+  assert.equal(runner.task.status, 'completed');
+  assert.ok(runner.task.events.some((event) => event.type === 'rework_requested'));
+  assert.equal(runner.task.events.at(-1)?.type, 'task_completed');
+});
