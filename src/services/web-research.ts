@@ -11,6 +11,7 @@ export interface WebResearchResult {
 }
 
 const TAVILY_URL = 'https://api.tavily.com/search';
+const MAX_SEARCH_QUERY_CHARS = 400;
 
 /**
  * Shared research tool. It is intentionally separate from model-provider credentials.
@@ -19,7 +20,8 @@ const TAVILY_URL = 'https://api.tavily.com/search';
 export async function webResearch(query: string, maxResults = 5): Promise<WebResearchResult> {
   const apiKey = process.env.TAMBALA_WEB_SEARCH_API_KEY;
   if (!apiKey) throw new Error('Web research is not configured. Set TAMBALA_WEB_SEARCH_API_KEY.');
-  if (!query.trim()) throw new Error('A web research query is required.');
+  const compactQuery = query.replace(/\s+/g, ' ').trim().slice(0, MAX_SEARCH_QUERY_CHARS);
+  if (!compactQuery) throw new Error('A web research query is required.');
   const boundedResults = Math.min(Math.max(maxResults, 1), 8);
 
   const response = await fetch(TAVILY_URL, {
@@ -27,7 +29,7 @@ export async function webResearch(query: string, maxResults = 5): Promise<WebRes
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify({
       api_key: apiKey,
-      query: query.trim(),
+      query: compactQuery,
       search_depth: 'basic',
       max_results: boundedResults,
       include_answer: false,
@@ -48,7 +50,7 @@ export async function webResearch(query: string, maxResults = 5): Promise<WebRes
   };
 
   return {
-    query: data.query ?? query.trim(),
+    query: data.query ?? compactQuery,
     results: (data.results ?? []).map((item) => ({
       title: item.title ?? 'Untitled source',
       url: item.url ?? '',
