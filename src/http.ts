@@ -165,7 +165,7 @@ const server = createHttpServer(async (req, res) => {
       if (body.stage === 'specialist_execute') {
         if (runner) publishRunnerEvent(runner.startDepartment());
         if (typeof body.delegation !== 'string' || !body.delegation.trim()) return json(res, 400, { error: 'The CEO delegation is required for specialist execution.' });
-        let delegation: CeoDelegation; try { delegation = parseCeoDelegation(body.delegation, founderMessage); } catch { delegation = { task: truncateForModel(body.delegation, 3000), deliverable: 'Complete the assigned task and return the actual result.', constraints: [], researchQuery: researchQueryFromObjective(founderMessage) }; }
+        let delegation: CeoDelegation; try { delegation = parseCeoDelegation(body.delegation, founderMessage); } catch { delegation = { task: truncateForModel(body.delegation, 3000), deliverable: 'Complete the assigned task and return the actual result.', constraints: [], researchQuery: buildResearchQuery(founderMessage) }; }
         const specialistTask = `You are the ${getAgentOperationalInfo(specialist).title}. Execute the CEO task now.\n\nTASK:\n${truncateForModel(delegation.task, 5000)}\n\nREQUIRED DELIVERABLE:\n${truncateForModel(delegation.deliverable, 2500)}\n\nCONSTRAINTS:\n${delegation.constraints.map((v) => `- ${v}`).join('\n') || '- Verify facts; do not invent information.'}\n\nReturn the completed work itself. Do not return a plan for doing it, do not ask the Founder what to do, and do not simply acknowledge the delegation.`;
         if (taskNeedsWebResearch(`${delegation.task} ${delegation.deliverable}`)) {
           const query = delegation.researchQuery; if (runner) publishRunnerEvent(runner.waitForResearch(query));
