@@ -1,7 +1,11 @@
 import type { ServerResponse } from 'node:http';
-import { taskEvents, type TaskEvent } from './task-events.js';
+import { taskEventBus, type TaskEvent } from './task-events.js';
 
-export function openTaskEventStream(res: ServerResponse, taskId: string): () => void {
+export function openTaskEventStream(
+  res: ServerResponse,
+  taskId: string,
+  initialEvents: TaskEvent[] = [],
+): () => void {
   res.writeHead(200, {
     'content-type': 'text/event-stream; charset=utf-8',
     'cache-control': 'no-cache, no-store, must-revalidate',
@@ -11,13 +15,17 @@ export function openTaskEventStream(res: ServerResponse, taskId: string): () => 
   });
 
   const write = (event: TaskEvent): void => {
-    if (event.taskId !== taskId) return;
+    if (event.taskId !== taskId || res.destroyed || res.writableEnded) return;
     res.write(`id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
   };
 
   res.write(': connected\n\n');
-  const unsubscribe = taskEvents.subscribe(write);
-  const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 15_000);
+  // Subscribe before replaying the snapshot so events are not lost between replay and subscription.
+  const unsubscribe = taskEventBus.subscribe(write);
+  for (const event of initialEvents) write(event);
+  const heartbeat = setInterval(() => {
+    if (!res.destroyed && !res.writableEnded) res.write(': heartbeat\n\n');
+  }, 15_000);
 
   const cleanup = (): void => {
     clearInterval(heartbeat);
