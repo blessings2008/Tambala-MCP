@@ -17,29 +17,42 @@ function getClient(agent: AgentName): OpenAI {
 
 export type { AgentName } from './ai/models.js';
 
-/** Turn organizational instructions and the requested search intent into a compact search query. */
+/**
+ * Convert task context into a short web-search query.
+ * The search provider must receive keywords/entities, never the full agent prompt.
+ */
 function compactSearchQuery(input: string): string {
   const cleaned = input
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/https?:\/\/\S+/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
   const quoted = [...cleaned.matchAll(/["“”']([^"“”']{2,100})["“”']/g)].map((m) => m[1]);
-  const proper = [...cleaned.matchAll(/\b(?:[A-Z][A-Za-z0-9&'-]+(?:\s+|$)){1,5}/g)]
+
+  // Keep meaningful proper-name phrases, but do not accidentally capture entire instructions.
+  const proper = [...cleaned.matchAll(/\b[A-Z][A-Za-z0-9&'-]*(?:\s+[A-Z][A-Za-z0-9&'-]*){0,3}\b/g)]
     .map((m) => m[0].trim())
-    .filter((v) => v.length > 2 && !/^(The|Find|Research|Identify|Determine|Please|What|How|Why|Use|Do|And|For|With|From|This|That)\b/i.test(v));
-  const useful = cleaned.match(/\b(?:Malawi|Malawian|Malabi|lodge|lodges|hotel|hotels|tourism|hospitality|website|websites|digital|competitor|competitors|market|prospect|prospects|opportunity|opportunities|Tambala|Exclusive|current|latest|USA|Canada|North America|United States)\b/gi) ?? [];
-  const unique = [...new Set([...quoted, ...proper, ...useful.map((v) => v.toLowerCase())])];
+    .filter((v) => v.length > 2 && !/^(The|Find|Research|Identify|Determine|Please|What|How|Why|Use|Do|And|For|With|From|This|That|You|Return|Complete|Provide|Only|Current|All|Ensure)\b/i.test(v));
+
+  const useful = cleaned.match(/\b(?:Malawi|Malawian|Malabi|lodge|lodges|hotel|hotels|resort|resorts|tourism|hospitality|website|websites|digital|competitor|competitors|market|prospect|prospects|opportunity|opportunities|independent|boutique|luxury|eco|ecotourism|wellness|retreat|retreats|Africa|African|Asia|Asian|Southeast Asia|Europe|European|North America|USA|Canada|United States|rooms|employees|owner|manager|director|contact|email|technology|software|booking|PMS|transformation|sustainable|sustainability)\b/gi) ?? [];
+
+  const unique = [...new Set([...quoted, ...proper, ...useful])]
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .filter((v) => !/^(Tambala|Technologies)$/i.test(v));
+
+  // Prefer a compact set of search terms. If the model supplied a noisy query,
+  // the task context still contributes the actual subject and domain terms.
   const query = unique.join(' ').replace(/\s+/g, ' ').trim() || cleaned;
-  return query.slice(0, 400).trim();
+  return query.slice(0, 900).trim();
 }
 
-/** Route to the assigned provider while enforcing per-agent local request caps. */
-export async function askTambalaAI(agent: AgentName, input: string, context?: unknown): Promise<string> {
-  return askTambalaAIInternal(agent, input, context);
-}
-
-/** Run web search first. The final query is always grounded in both the CEO's compact query and the actual task context, so a bad model-generated keyword cannot derail the research. */
+/**
+ * Run web search first. The final query is grounded in both the CEO's compact
+ * search intent and the actual department task, so a bad model-generated
+ * keyword cannot derail the research.
+ */
 export async function askTambalaAIWithWebResearch(agent: AgentName, input: string, context?: unknown, query?: string): Promise<{ response: string; research: ReturnType<typeof formatResearchContext> }> {
   const searchSeed = [query ?? '', input].filter(Boolean).join(' ');
   const searchQuery = compactSearchQuery(searchSeed);
@@ -47,6 +60,11 @@ export async function askTambalaAIWithWebResearch(agent: AgentName, input: strin
   const researchContext = formatResearchContext(research);
   const response = await askTambalaAIInternal(agent, `${input}\n\n${researchContext}\n\nCITATION RULES: Cite the supplied source URLs next to factual claims that depend on them. If the supplied sources do not establish a claim, label it unknown rather than filling the gap.`, context);
   return { response, research: researchContext };
+}
+
+/** Route to the assigned provider while enforcing per-agent local request caps. */
+export async function askTambalaAI(agent: AgentName, input: string, context?: unknown): Promise<string> {
+  return askTambalaAIInternal(agent, input, context);
 }
 
 async function askTambalaAIInternal(agent: AgentName, input: string, context?: unknown): Promise<string> {
