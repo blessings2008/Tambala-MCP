@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { handleZapClawWebhook } from './integrations/zapclaw.js';
 
 const baseUrl = () => process.env.PUBLIC_BASE_URL ?? 'https://tambala-mcp.onrender.com';
 const secret = () => {
@@ -34,6 +35,10 @@ export function oauthMetadata(): Record<string, unknown> {
 export function protectedResourceMetadata(): Record<string, unknown> { const issuer = baseUrl(); return { resource: issuer, authorization_servers: [issuer], scopes_supported: ['mcp'] }; }
 
 export async function handleOAuth(req: IncomingMessage, res: ServerResponse, path: string): Promise<boolean> {
+  if (path === '/webhooks/zapclaw/whatsapp') {
+    return handleZapClawWebhook(req, res);
+  }
+
   if (path === '/.well-known/oauth-authorization-server' && req.method === 'GET') { json(res, oauthMetadata()); return true; }
   if (path === '/.well-known/oauth-protected-resource' && req.method === 'GET') { json(res, protectedResourceMetadata()); return true; }
 
