@@ -65,6 +65,10 @@ function configError(): string | null {
   return null;
 }
 
+function phoneDigits(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
 async function sendText(to: string, text: string, replyTo?: string): Promise<unknown> {
   const key = ZAPCLAW_API_KEY();
   const from = ZAPCLAW_FROM();
@@ -76,7 +80,12 @@ async function sendText(to: string, text: string, replyTo?: string): Promise<unk
       'X-API-Key': key,
       'Idempotency-Key': replyTo ? `tambala-wa-${replyTo}` : `tambala-wa-${Date.now()}`,
     },
-    body: JSON.stringify({ from, to, text: text.slice(0, 4096), ...(replyTo ? { replyTo } : {}) }),
+    body: JSON.stringify({
+      from: phoneDigits(from),
+      to: phoneDigits(to),
+      text: text.slice(0, 4096),
+      ...(replyTo ? { replyTo } : {}),
+    }),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`ZapClaw send failed (${response.status}): ${JSON.stringify(payload)}`);
@@ -133,7 +142,7 @@ export async function handleZapClawWebhook(req: IncomingMessage, res: ServerResp
   }
 
   const data = event.data ?? {};
-  const sender = data.from ?? data.user_id ?? null;
+  const sender = data.from ?? null;
   const text = data.text?.body?.trim();
   if (!sender || !text || !data.message_id) {
     json(res, 200, { ok: true, ignored: 'non-text-or-unaddressable-message' });
