@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - org-platform-redesign
+      - org-whatsapp-zapclaw
   pull_request:
     branches:
       - main
