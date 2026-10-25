@@ -5,21 +5,24 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tambala WhatsApp Test</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#0b1220;color:#e8eef8;font:15px system-ui,-apple-system,Segoe UI,sans-serif}.wrap{max-width:720px;margin:0 auto;padding:28px 18px}.card{background:#111b2e;border:1px solid #263550;border-radius:18px;padding:22px;box-shadow:0 14px 40px #0004}h1{margin:0 0 6px;font-size:24px}p{color:#9eabc0;margin:0 0 20px}.row{display:grid;gap:8px;margin:14px 0}label{font-size:13px;color:#b8c4d7}input,textarea{width:100%;border:1px solid #30415f;border-radius:10px;background:#0a1324;color:#fff;padding:12px;font:inherit}textarea{min-height:110px;resize:vertical}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}button{border:0;border-radius:10px;padding:11px 16px;background:#36c275;color:#07130c;font-weight:700;cursor:pointer}button.secondary{background:#22314b;color:#dce7f5}.status{margin-top:20px;padding:14px;border-radius:12px;background:#0a1324;border:1px solid #263550;white-space:pre-wrap;min-height:58px}.ok{color:#72e6a0}.bad{color:#ff8d8d}.hint{font-size:12px;color:#8190a8;margin-top:12px;line-height:1.5}.url{font-family:ui-monospace,monospace;font-size:12px;word-break:break-all;color:#9ec5ff}
+*{box-sizing:border-box}body{margin:0;background:#0b1220;color:#e8eef8;font:15px system-ui,-apple-system,Segoe UI,sans-serif}.wrap{max-width:720px;margin:0 auto;padding:28px 18px}.card{background:#111b2e;border:1px solid #263550;border-radius:18px;padding:22px;box-shadow:0 14px 40px #0004}h1{margin:0 0 6px;font-size:24px}p{color:#9eabc0;margin:0 0 20px}.row{display:grid;gap:8px;margin:14px 0}label{font-size:13px;color:#b8c4d7}input,textarea{width:100%;border:1px solid #30415f;border-radius:10px;background:#0a1324;color:#fff;padding:12px;font:inherit}textarea{min-height:110px;resize:vertical}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}button{border:0;border-radius:10px;padding:11px 16px;background:#36c275;color:#07130c;font-weight:700;cursor:pointer}button.secondary{background:#22314b;color:#dce7f5}.status{margin-top:20px;padding:14px;border-radius:12px;background:#0a1324;border:1px solid #263550;white-space:pre-wrap;min-height:58px}.ok{color:#72e6a0}.bad{color:#ff8d8d}.hint{font-size:12px;color:#8190a8;margin-top:12px;line-height:1.5}.url{font-family:ui-monospace,monospace;font-size:12px;word-break:break-all}
 </style>
 </head>
 <body><main class="wrap"><section class="card">
 <h1>Tambala WhatsApp Test</h1>
-<p>Small staging console for verifying the ZapClaw → Tambala MCP → WhatsApp path. Secrets stay server-side.</p>
-<div class="row"><label>WhatsApp number to test (E.164)</label><input id="phone" placeholder="265XXXXXXXXX" inputmode="tel"></div>
+<p>Staging console for verifying the ZapClaw → Tambala MCP → WhatsApp path. ZapClaw secrets remain server-side.</p>
+<div class="row"><label>Chat test token</label><input id="token" type="password" autocomplete="off" placeholder="TAMBALA_CHAT_TEST_TOKEN"></div>
+<div class="row"><label>WhatsApp number to test (Malawi E.164)</label><input id="phone" placeholder="265XXXXXXXXX" inputmode="tel"></div>
 <div class="row"><label>Test message</label><textarea id="message">Hello Tambala, this is a WhatsApp integration test.</textarea></div>
-<div class="actions"><button id="check">Check MCP</button><button class="secondary" id="copy">Copy webhook URL</button></div>
-<div class="status" id="status">Ready. To test the real inbound flow, send the message from WhatsApp to the connected ZapClaw number after the webhook is configured.</div>
-<div class="hint"><strong>Webhook:</strong><br><span class="url">https://tambala-mcp.onrender.com/webhooks/zapclaw/whatsapp</span><br><br>This page intentionally does not contain a ZapClaw API key. Outbound test sending should remain server-side.</div>
+<div class="actions"><button id="send">Send WhatsApp Test</button><button class="secondary" id="check">Check MCP</button><button class="secondary" id="copy">Copy webhook URL</button></div>
+<div class="status" id="status">Ready. Enter the test token and a Malawi WhatsApp number, then send a test message.</div>
+<div class="hint"><strong>Webhook:</strong><br><span class="url">https://tambala-mcp.onrender.com/webhooks/zapclaw/whatsapp</span><br><br>The browser never receives the ZapClaw API key. The server authenticates this test request and sends through ZapClaw.</div>
 </section></main>
 <script>
 const status=document.getElementById('status');
+const token=document.getElementById('token');
 function show(text,good=true){status.textContent=text;status.className='status '+(good?'ok':'bad')}
 document.getElementById('check').onclick=async()=>{show('Checking MCP…');try{const r=await fetch('/health',{cache:'no-store'});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error('HTTP '+r.status);show('✓ MCP is reachable.\n'+JSON.stringify(d,null,2));}catch(e){show('✕ MCP health check failed.\n'+e.message,false)}};
+document.getElementById('send').onclick=async()=>{const t=token.value.trim(),to=document.getElementById('phone').value.trim(),text=document.getElementById('message').value.trim();if(!t||!to||!text){show('Enter the test token, recipient number and message.',false);return}show('Sending through ZapClaw…');try{const r=await fetch('/api/whatsapp-test/send',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},body:JSON.stringify({to,text})});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||('HTTP '+r.status));show('✓ WhatsApp test accepted by ZapClaw.\n'+JSON.stringify(d,null,2));}catch(e){show('✕ WhatsApp test failed.\n'+e.message,false)}};
 document.getElementById('copy').onclick=async()=>{const u='https://tambala-mcp.onrender.com/webhooks/zapclaw/whatsapp';try{await navigator.clipboard.writeText(u);show('✓ Webhook URL copied.');}catch{show(u)}};
 </script></body></html>
