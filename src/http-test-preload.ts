@@ -1,13 +1,15 @@
-import { createRequire } from 'node:module';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { readFile } from 'node:fs/promises';
-import { syncBuiltinESMExports } from 'node:module';
 import { sendZapClawTestText } from './integrations/zapclaw-test-send.js';
 
 const require = createRequire(import.meta.url);
 const http = require('node:http') as typeof import('node:http');
 const originalCreateServer = http.createServer.bind(http);
 
-function json(res: import('node:http').ServerResponse, status: number, payload: unknown): void {
+type Request = import('node:http').IncomingMessage;
+type Response = import('node:http').ServerResponse;
+
+function json(res: Response, status: number, payload: unknown): void {
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
@@ -16,13 +18,12 @@ function json(res: import('node:http').ServerResponse, status: number, payload: 
   res.end(JSON.stringify(payload));
 }
 
-function authorized(req: import('node:http').IncomingMessage): boolean {
+function authorized(req: Request): boolean {
   const expected = process.env.TAMBALA_CHAT_TEST_TOKEN;
-  const header = req.headers.authorization ?? '';
-  return Boolean(expected && header === `Bearer ${expected}`);
+  return Boolean(expected && req.headers.authorization === `Bearer ${expected}`);
 }
 
-async function readBody(req: import('node:http').IncomingMessage): Promise<unknown> {
+async function readBody(req: Request): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -34,9 +35,9 @@ async function readBody(req: import('node:http').IncomingMessage): Promise<unkno
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
-http.createServer = ((...args: Parameters<typeof http.createServer>) => {
+const patchedCreateServer = ((...args: any[]) => {
   const listener = args[0];
-  const wrapped = async (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+  const wrapped = async (req: Request, res: Response): Promise<void> => {
     const path = req.url?.split('?')[0] ?? '/';
 
     if (path === '/whatsapp-test' && req.method === 'GET') {
@@ -76,12 +77,14 @@ http.createServer = ((...args: Parameters<typeof http.createServer>) => {
     }
 
     if (typeof listener === 'function') {
-      return listener(req, res);
+      await listener(req, res);
+      return;
     }
-    listener.emit('request', req, res);
+    throw new Error('Unsupported createServer invocation in Tambala HTTP bootstrap.');
   };
 
-  return originalCreateServer(wrapped as Parameters<typeof http.createServer>[0]);
+  return originalCreateServer(wrapped as any);
 }) as typeof http.createServer;
 
+http.createServer = patchedCreateServer;
 syncBuiltinESMExports();
