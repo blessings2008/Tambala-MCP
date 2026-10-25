@@ -211,7 +211,7 @@ const server = createHttpServer(async (req, res) => {
   if (requestPath === '/chat' && req.method === 'GET') {
     try {
       const html = await readFile(new URL('../public/organization-chat.html', import.meta.url));
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'img-src': 'self' });
       res.end(html);
     } catch (error) { console.error('Unable to load organization chat preview:', error); json(res, 500, { error: 'Organization chat preview is unavailable.' }); }
     return;
