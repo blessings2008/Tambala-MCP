@@ -6,7 +6,7 @@ import { mcpHandler } from './index.js';
 import { getOAuthAccessClientId, handleOAuth } from './oauth.js';
 import { runWithRequestPrincipal } from './organization/request-context.js';
 import { getOrganizationSnapshot, routeOrganizationObjective } from './organization/service.js';
-import { resolveExecutionRoute } from './organization/execution-router.js';
+import { resolveExecutionRoute, type ExecutionRoute, type RoutedCapability } from './organization/execution-router.js';
 import { runtimeConfig } from './config/runtime.js';
 import { setCorsHeaders } from './http/cors.js';
 import { handleHealth, handleNotFound } from './http/health.js';
@@ -73,6 +73,23 @@ async function researchQueryFromObjective(objective: string): Promise<string> {
 
   const words = objective.replace(/[^a-zA-Z0-9\s-]/g, ' ').split(/\s+/).filter((word) => word.length >= 4);
   return [...new Set(words)].slice(0, 8).join(', ');
+}
+
+function resolveConfiguredExecutionRoute(match: RoutedCapability | undefined): ExecutionRoute {
+  const route = resolveExecutionRoute(match);
+  if (route.status !== 'ready') return route;
+  const runtime = getAgentOperationalInfo(route.agent);
+  if (runtime.ready) return route;
+
+  const missing: string[] = [];
+  if (!runtime.apiKeyConfigured) missing.push(runtime.apiKeyEnv);
+  if (!runtime.baseURL) missing.push(`TAMBALA_${route.agent.toUpperCase()}_BASE_URL`);
+  if (!runtime.model) missing.push(`TAMBALA_${route.agent.toUpperCase()}_MODEL`);
+  return {
+    ...route,
+    status: 'needs_configuration',
+    reason: `${route.role} is the mapped executor, but its runtime is not ready. Configure: ${missing.join(', ')}.`,
+  };
 }
 
 function truncateForModel(value: string, maxChars: number): string {
@@ -145,7 +162,7 @@ const server = createHttpServer(async (req, res) => {
 
       if (body.stage === 'ceo_delegate') {
         const routing = await routeOrganizationObjective(founderMessage);
-        const execution = resolveExecutionRoute(routing[0]);
+        const execution = resolveConfiguredExecutionRoute(routing[0]);
         const routingContext = routing.slice(0, 3).map((match) => `${match.department ?? 'unassigned'} / ${match.role ?? 'unassigned'} (score ${match.score}); role status: ${match.roleActivation ?? 'unknown'}; research keywords: ${match.researchQuery}`).join('\n');
         const delegation = await askTambalaAI('orchestrator', `Founder / Bless has given you this objective:\n\n${founderMessage}\n\nAct as the CEO. Own this objective from start to finish. Use the organization's capability routing below as the source of truth for departmental responsibilities:\n${routingContext || 'No capability match was found; choose an existing department and state why.'}\n\nDelegate only the specialist work. Create a precise execution brief containing ALL of these fields: task, deliverable, constraints, and short researchQuery. researchQuery must be a short keyword-style query, never a copy of the Founder objective or CEO prompt. Deterministic executor decision: ${JSON.stringify(execution)}. If status is not_activated, do not pretend a department agent is available; clearly mark the proposed handoff and what agent/configuration is missing. Do not complete the department's work yourself. The department must return the actual requested deliverable, not merely advice about how to do it. Do not invent facts, locations, countries, services, or requirements that are not in the Founder objective. If something is ambiguous, instruct the department to verify it with research.`, { communicationType: 'Founder -> CEO', sender: 'Founder / Bless', recipient: 'Chief Executive Officer (CEO)', routing });
         return json(res, 200, { stage: body.stage, routing, execution, message: delegation });
@@ -154,7 +171,7 @@ const server = createHttpServer(async (req, res) => {
       if (body.stage === 'specialist_execute') {
         if (typeof body.delegation !== 'string' || !body.delegation.trim()) { return json(res, 400, { error: 'The CEO delegation is required for specialist execution.' }); }
         const routing = await routeOrganizationObjective(founderMessage);
-        const execution = resolveExecutionRoute(routing[0]);
+        const execution = resolveConfiguredExecutionRoute(routing[0]);
         if (execution.status !== 'ready') { return json(res, 409, { error: execution.reason, execution, routing }); }
         const specialist = execution.agent;
         const researchQuery = execution.researchQuery || await researchQueryFromObjective(founderMessage);
@@ -188,7 +205,7 @@ const server = createHttpServer(async (req, res) => {
       if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 8_000) { json(res, 400, { error: 'Provide a task between 1 and 8,000 characters.' }); return; }
       const founderMessage = body.request.trim();
       const routing = await routeOrganizationObjective(founderMessage);
-      const execution = resolveExecutionRoute(routing[0]);
+      const execution = resolveConfiguredExecutionRoute(routing[0]);
       if (execution.status !== 'ready') { json(res, 409, { error: execution.reason, execution, routing }); return; }
       const specialist = execution.agent;
       const researchQuery = execution.researchQuery || await researchQueryFromObjective(founderMessage);
