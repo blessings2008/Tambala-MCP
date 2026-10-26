@@ -43,7 +43,31 @@ export type ExecutionRoute =
       reason: string;
     };
 
-const ACTIVE_EXECUTORS: Record<string, { agent: 'outreach' | 'followup'; title: string }> = {
+export interface ExecutorRuntimeReadiness {
+  ready: boolean;
+  apiKeyConfigured: boolean;
+  apiKeyEnv: string;
+  baseURL: string | null;
+  model: string | null;
+}
+
+export function requireConfiguredRuntime(
+  route: ExecutionRoute,
+  runtime: ExecutorRuntimeReadiness,
+): ExecutionRoute {
+  if (route.status !== 'ready' || runtime.ready) return route;
+  const missing: string[] = [];
+  if (!runtime.apiKeyConfigured) missing.push(runtime.apiKeyEnv);
+  if (!runtime.baseURL) missing.push(`TAMBALA_${route.agent.toUpperCase()}_BASE_URL`);
+  if (!runtime.model) missing.push(`TAMBALA_${route.agent.toUpperCase()}_MODEL`);
+  return {
+    ...route,
+    status: 'needs_configuration',
+    reason: `${route.role} is the mapped executor, but its runtime is not ready. Configure: ${missing.join(', ')}.`,
+  };
+}
+
+const AVAILABLE_EXECUTORS: Record<string, { agent: 'outreach' | 'followup'; title: string }> = {
   sales_prospecting: {
     agent: 'outreach',
     title: 'Head of Sales & Business Development',
@@ -73,7 +97,7 @@ export function resolveExecutionRoute(match: RoutedCapability | undefined): Exec
     };
   }
 
-  const mapping = ACTIVE_EXECUTORS[match.capabilityId];
+  const mapping = AVAILABLE_EXECUTORS[match.capabilityId];
   if (!mapping) {
     return {
       status: 'not_activated',
