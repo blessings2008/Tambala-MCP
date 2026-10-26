@@ -97,6 +97,19 @@ export function resolveExecutionRoute(match: RoutedCapability | undefined): Exec
     };
   }
 
+  if (!match.department) {
+    return {
+      status: 'not_activated',
+      capabilityId: match.capabilityId,
+      department: null,
+      role: match.role,
+      agent: null,
+      researchQuery: match.researchQuery || null,
+      deliverableHints: match.deliverableHints,
+      reason: `The capability matched, but its department is missing from the loaded organization snapshot. Check the existing MCP database before executing this task.`,
+    };
+  }
+
   const mapping = AVAILABLE_EXECUTORS[match.capabilityId];
   if (!mapping) {
     return {
