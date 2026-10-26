@@ -106,12 +106,40 @@ const server = createHttpServer(async (req, res) => {
   }
 
   if (requestPath === '/api/chat-test/status' && req.method === 'GET') {
-    json(res, 200, {
-      agents: chatAgents.map((agent) => getAgentOperationalInfo(agent)),
-      safety: 'Test requests only generate AI text. They do not send messages or execute business actions.',
-      collaboration: 'Organization tests execute in explicit stages: Founder objective -> CEO delegation -> specialist execution -> CEO completion.',
-      research: 'Research uses the organization capability router to generate a short keyword query; the Founder prompt is not sent as the research query.',
-    });
+    const agents = chatAgents.map((agent) => getAgentOperationalInfo(agent));
+    try {
+      const snapshot = await getOrganizationSnapshot();
+      json(res, 200, {
+        agents,
+        organization: {
+          status: 'loaded',
+          source: snapshot.source,
+          valid: snapshot.validation.valid,
+          validationErrors: snapshot.validation.errors,
+          unitCount: snapshot.organization.units.length,
+          roleCount: snapshot.organization.roles.length,
+          departments: snapshot.organization.units
+            .filter((unit) => unit.kind === 'department')
+            .map((unit) => ({ name: unit.name, status: unit.status })),
+          note: snapshot.source === 'supabase'
+            ? 'Loaded from the configured Supabase organization tables.'
+            : 'Using seed fallback because SUPABASE_SERVICE_ROLE_KEY is not configured; this is not a live database verification.',
+        },
+        safety: 'Test requests only generate AI text. They do not send messages or execute business actions.',
+        collaboration: 'Organization tests execute in explicit stages: Founder objective -> CEO delegation -> specialist execution -> CEO completion.',
+        research: 'Research uses the organization capability router to generate a short keyword query; the Founder prompt is not sent as the research query.',
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Organization snapshot could not be loaded.';
+      console.error('Chat test status could not load organization snapshot:', message);
+      json(res, 503, {
+        agents,
+        organization: {
+          status: 'unavailable',
+          note: 'The configured persistent organization snapshot could not be loaded; routing should not be treated as live-verified.',
+        },
+      });
+    }
     return;
   }
 
@@ -119,7 +147,7 @@ const server = createHttpServer(async (req, res) => {
     if (!req.headers['content-type']?.toLowerCase().includes('application/json')) { json(res, 415, { error: 'Content-Type must be application/json.' }); return; }
     try {
       const body = await readJsonBody(req) as { agent?: unknown; request?: unknown };
-      if (!body || typeof body !== 'object' || !chatAgents.includes(body.agent as ChatAgent)) { json(res, 400, { error: 'Choose orchestrator, outreach, or followup.' }); return; }
+      if (!body || typeof body !== 'object' || !chatAgents.includes(body.agent as ChatAgent)) { json(res, 400, { error: 'Choose one of the available agents: orchestrator, outreach, followup, research, marketing, content, finance, payments, or engineering.' }); return; }
       if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 10_000) { json(res, 400, { error: 'Provide a prompt between 1 and 10,000 characters.' }); return; }
       const agent = body.agent as ChatAgent;
       if (taskNeedsWebResearch(body.request)) {
