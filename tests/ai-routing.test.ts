@@ -13,6 +13,24 @@ const names = [
   'TAMBALA_FOLLOWUP_API_KEY',
   'TAMBALA_FOLLOWUP_BASE_URL',
   'TAMBALA_FOLLOWUP_MODEL',
+  'TAMBALA_RESEARCH_API_KEY',
+  'TAMBALA_RESEARCH_BASE_URL',
+  'TAMBALA_RESEARCH_MODEL',
+  'TAMBALA_MARKETING_API_KEY',
+  'TAMBALA_MARKETING_BASE_URL',
+  'TAMBALA_MARKETING_MODEL',
+  'TAMBALA_CONTENT_API_KEY',
+  'TAMBALA_CONTENT_BASE_URL',
+  'TAMBALA_CONTENT_MODEL',
+  'TAMBALA_FINANCE_API_KEY',
+  'TAMBALA_FINANCE_BASE_URL',
+  'TAMBALA_FINANCE_MODEL',
+  'TAMBALA_PAYMENTS_API_KEY',
+  'TAMBALA_PAYMENTS_BASE_URL',
+  'TAMBALA_PAYMENTS_MODEL',
+  'TAMBALA_ENGINEERING_API_KEY',
+  'TAMBALA_ENGINEERING_BASE_URL',
+  'TAMBALA_ENGINEERING_MODEL',
 ] as const;
 
 function withCleanEnv(run: () => void): void {
@@ -125,4 +143,17 @@ test('AI route diagnostics identify organizational ownership without granting ro
   assert.equal(getAgentRuntimeInfo('outreach').roleId, null);
   assert.equal(getAgentRuntimeInfo('followup').unitId, 'customer-relations');
   assert.equal(getAgentRuntimeInfo('followup').roleId, null);
+});
+
+test('new department agents require their own credentials and provider configuration', () => {
+  withCleanEnv(() => {
+    process.env.GROQ_API_KEY = 'shared-groq-secret';
+    for (const agent of ['research', 'marketing', 'content', 'finance', 'payments', 'engineering'] as const) {
+      assert.throws(
+        () => getAgentRuntimeConfig(agent),
+        new RegExp(`TAMBALA_${agent.toUpperCase()}_API_KEY; specialist agents do not fall back`),
+      );
+      assert.equal(getAgentRuntimeInfo(agent).ready, false);
+    }
+  });
 });
