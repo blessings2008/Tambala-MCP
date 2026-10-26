@@ -83,7 +83,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'payments',
-    unitTags: ['payments', 'finance', 'financial-operations'],
+    unitTags: ['tambala-pay', 'fintech', 'payments'],
     roleTags: ['payments', 'finance', 'financial operations'],
     description: 'Operate Tambala Pay and payment collection workflows for the organization.',
     objectiveKeywords: ['payment', 'invoice', 'receipt', 'partial payment', 'balance', 'refund', 'transaction', 'Tambala Pay'],
@@ -92,7 +92,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'technology_engineering',
-    unitTags: ['technology', 'engineering', 'software', 'ai-automation'],
+    unitTags: ['engineering', 'software', 'ai-automation'],
     roleTags: ['technology', 'engineering', 'developer', 'ai', 'automation'],
     description: 'Build and maintain software, infrastructure, AI systems and automation.',
     objectiveKeywords: ['build', 'code', 'software', 'bug', 'server', 'database', 'API', 'automation', 'AI', 'MCP', 'deploy'],
