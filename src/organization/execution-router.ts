@@ -22,6 +22,17 @@ export type ExecutionRoute =
       deliverableHints: string[];
     }
   | {
+      status: 'needs_configuration';
+      capabilityId: string;
+      department: string | null;
+      role: string;
+      organizationRoleStatus: 'planned' | 'active' | null;
+      agent: Extract<AgentName, 'outreach' | 'followup'>;
+      researchQuery: string;
+      deliverableHints: string[];
+      reason: string;
+    }
+  | {
       status: 'not_activated';
       capabilityId: string | null;
       department: string | null;
