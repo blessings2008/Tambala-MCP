@@ -29,7 +29,7 @@ export type ExecutionRoute =
       department: string | null;
       role: string;
       organizationRoleStatus: 'planned' | 'active' | null;
-      agent: Extract<AgentName, 'outreach' | 'followup'>;
+      agent: DepartmentAgentName;
       researchQuery: string;
       deliverableHints: string[];
       reason: string;
