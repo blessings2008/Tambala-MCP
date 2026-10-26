@@ -119,9 +119,9 @@ export function routeObjective(definition: OrganizationDefinition, objective: st
         ...capability.objectiveKeywords,
         ...capability.deliverableHints,
       ]);
-      const score = keywordScore + (findUnit(definition, capability.unitTags) ? 1 : 0) + (findRole(definition, capability.roleTags, findUnit(definition, capability.unitTags)?.id ?? null) ? 1 : 0);
       const unit = findUnit(definition, capability.unitTags);
       const role = findRole(definition, capability.roleTags, unit?.id ?? null);
+      const score = keywordScore + (unit ? 1 : 0) + (role ? 1 : 0);
       return {
         capability,
         unit,
