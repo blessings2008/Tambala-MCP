@@ -44,3 +44,8 @@ test('routes payment objectives to payments capability', () => {
   const matches = routeObjective(definition, 'Create an invoice and collect a partial payment');
   assert.equal(matches[0]?.capability.id, 'payments');
 });
+
+
+test('does not route unrelated objectives merely because departments exist', () => {
+  assert.deepEqual(routeObjective(definition, 'Tell me a joke about the moon.'), []);
+});
