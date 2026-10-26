@@ -91,3 +91,10 @@ test('ready agent runtime preserves the routed executor', async () => {
   if (configured.status !== 'ready') return;
   assert.equal(configured.agent, 'outreach');
 });
+
+test('missing department in the organization snapshot blocks execution', () => {
+  const result = resolveExecutionRoute(route({ department: null }));
+  assert.equal(result.status, 'not_activated');
+  if (result.status !== 'not_activated') return;
+  assert.match(result.reason, /missing from the loaded organization snapshot/i);
+});
