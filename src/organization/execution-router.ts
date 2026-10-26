@@ -16,6 +16,7 @@ export type ExecutionRoute =
       capabilityId: string;
       department: string | null;
       role: string;
+      organizationRoleStatus: 'planned' | 'active' | null;
       agent: Extract<AgentName, 'outreach' | 'followup'>;
       researchQuery: string;
       deliverableHints: string[];
@@ -31,14 +32,14 @@ export type ExecutionRoute =
       reason: string;
     };
 
-const ACTIVE_EXECUTORS: Record<string, { agent: 'outreach' | 'followup'; expectedRole: RegExp }> = {
+const ACTIVE_EXECUTORS: Record<string, { agent: 'outreach' | 'followup'; title: string }> = {
   sales_prospecting: {
     agent: 'outreach',
-    expectedRole: /sales|business development|outreach/i,
+    title: 'Head of Sales & Business Development',
   },
   customer_relations: {
     agent: 'followup',
-    expectedRole: /customer relations|support|client success/i,
+    title: 'Head of Customer Relations & Support',
   },
 };
 
@@ -62,7 +63,7 @@ export function resolveExecutionRoute(match: RoutedCapability | undefined): Exec
   }
 
   const mapping = ACTIVE_EXECUTORS[match.capabilityId];
-  if (!mapping || match.roleActivation !== 'active' || !match.role || !mapping.expectedRole.test(match.role)) {
+  if (!mapping) {
     return {
       status: 'not_activated',
       capabilityId: match.capabilityId,
@@ -72,10 +73,8 @@ export function resolveExecutionRoute(match: RoutedCapability | undefined): Exec
       researchQuery: match.researchQuery || null,
       deliverableHints: match.deliverableHints,
       reason: match.roleActivation === 'planned'
-        ? `${match.department ?? 'The matched department'} is planned but its agent role is not active for execution yet.`
-        : !mapping
-          ? `${match.department ?? match.capabilityId} has no activated execution agent yet. The task is not being redirected to an unrelated department.`
-          : `The matched role is not verified as an active ${mapping.agent} execution role.`,
+        ? `${match.department ?? match.capabilityId} is represented in the organization chart, but no dedicated execution agent is activated yet.`
+        : `${match.department ?? match.capabilityId} has no activated execution agent yet. The task is not being redirected to an unrelated department.`,
     };
   }
 
@@ -83,7 +82,8 @@ export function resolveExecutionRoute(match: RoutedCapability | undefined): Exec
     status: 'ready',
     capabilityId: match.capabilityId,
     department: match.department,
-    role: match.role,
+    role: mapping.title,
+    organizationRoleStatus: match.roleActivation,
     agent: mapping.agent,
     researchQuery: match.researchQuery,
     deliverableHints: match.deliverableHints,
