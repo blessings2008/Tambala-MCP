@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - org-platform-redesign
+      - org-capability-routing
   pull_request:
     branches:
       - main
