@@ -6,6 +6,7 @@ import { mcpHandler } from './index.js';
 import { getOAuthAccessClientId, handleOAuth } from './oauth.js';
 import { runWithRequestPrincipal } from './organization/request-context.js';
 import { getOrganizationSnapshot, routeOrganizationObjective } from './organization/service.js';
+import { resolveExecutionRoute } from './organization/execution-router.js';
 import { runtimeConfig } from './config/runtime.js';
 import { setCorsHeaders } from './http/cors.js';
 import { handleHealth, handleNotFound } from './http/health.js';
@@ -140,20 +141,23 @@ const server = createHttpServer(async (req, res) => {
       const body = await readJsonBody(req) as { stage?: unknown; request?: unknown; specialist?: unknown; delegation?: unknown; specialistResult?: unknown; researchEvidence?: unknown };
       if (!validStage(body.stage)) { json(res, 400, { error: 'Invalid stage. Use ceo_delegate, specialist_execute, or ceo_complete.' }); return; }
       if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 8_000) { json(res, 400, { error: 'Provide a task between 1 and 8,000 characters.' }); return; }
-      if (!specialistAgents.includes(body.specialist as SpecialistAgent)) { json(res, 400, { error: 'Choose outreach or followup as the specialist.' }); return; }
-      const specialist = body.specialist as SpecialistAgent;
       const founderMessage = body.request.trim();
 
       if (body.stage === 'ceo_delegate') {
         const routing = await routeOrganizationObjective(founderMessage);
-        const routingContext = routing.slice(0, 3).map((match) => `${match.department ?? 'unassigned'} / ${match.role ?? 'unassigned'} (score ${match.score}); research keywords: ${match.researchQuery}`).join('\n');
-        const delegation = await askTambalaAI('orchestrator', `Founder / Bless has given you this objective:\n\n${founderMessage}\n\nAct as the CEO. Own this objective from start to finish. Use the organization's capability routing below as the source of truth for departmental responsibilities:\n${routingContext || 'No capability match was found; choose an existing department and state why.'}\n\nDelegate only the specialist work. Create a precise execution brief containing ALL of these fields: task, deliverable, constraints, and short researchQuery. researchQuery must be a short keyword-style query, never a copy of the Founder objective or CEO prompt. Do not complete the department's work yourself. The department must return the actual requested deliverable, not merely advice about how to do it. Do not invent facts, locations, countries, services, or requirements that are not in the Founder objective. If something is ambiguous, instruct the department to verify it with research.`, { communicationType: 'Founder -> CEO', sender: 'Founder / Bless', recipient: 'Chief Executive Officer (CEO)', routing });
-        return json(res, 200, { stage: body.stage, routing, message: delegation });
+        const execution = resolveExecutionRoute(routing[0]);
+        const routingContext = routing.slice(0, 3).map((match) => `${match.department ?? 'unassigned'} / ${match.role ?? 'unassigned'} (score ${match.score}); role status: ${match.roleActivation ?? 'unknown'}; research keywords: ${match.researchQuery}`).join('\n');
+        const delegation = await askTambalaAI('orchestrator', `Founder / Bless has given you this objective:\n\n${founderMessage}\n\nAct as the CEO. Own this objective from start to finish. Use the organization's capability routing below as the source of truth for departmental responsibilities:\n${routingContext || 'No capability match was found; choose an existing department and state why.'}\n\nDelegate only the specialist work. Create a precise execution brief containing ALL of these fields: task, deliverable, constraints, and short researchQuery. researchQuery must be a short keyword-style query, never a copy of the Founder objective or CEO prompt. Deterministic executor decision: ${JSON.stringify(execution)}. If status is not_activated, do not pretend a department agent is available; clearly mark the proposed handoff and what agent/configuration is missing. Do not complete the department's work yourself. The department must return the actual requested deliverable, not merely advice about how to do it. Do not invent facts, locations, countries, services, or requirements that are not in the Founder objective. If something is ambiguous, instruct the department to verify it with research.`, { communicationType: 'Founder -> CEO', sender: 'Founder / Bless', recipient: 'Chief Executive Officer (CEO)', routing });
+        return json(res, 200, { stage: body.stage, routing, execution, message: delegation });
       }
 
       if (body.stage === 'specialist_execute') {
         if (typeof body.delegation !== 'string' || !body.delegation.trim()) { return json(res, 400, { error: 'The CEO delegation is required for specialist execution.' }); }
-        const researchQuery = await researchQueryFromObjective(founderMessage);
+        const routing = await routeOrganizationObjective(founderMessage);
+        const execution = resolveExecutionRoute(routing[0]);
+        if (execution.status !== 'ready') { return json(res, 409, { error: execution.reason, execution, routing }); }
+        const specialist = execution.agent;
+        const researchQuery = execution.researchQuery || await researchQueryFromObjective(founderMessage);
         const specialistTask = `CEO execution brief:\n\n${truncateForModel(body.delegation, 7000)}\n\nExecute this task now. Produce the requested deliverable itself. Do not merely describe what should be done, do not delegate it back, and do not stop at process recommendations. Respect every constraint, but verify factual assumptions against research evidence rather than blindly trusting the brief. If research is required, use the web research evidence and preserve source URLs. Return completed work to the CEO, including genuine blockers only if they prevent completion.`;
         if (taskNeedsWebResearch(`${founderMessage}\n${body.delegation}`)) {
           const researched = await askTambalaAIWithWebResearch(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: body.delegation }, researchQuery);
@@ -182,11 +186,12 @@ const server = createHttpServer(async (req, res) => {
     try {
       const body = await readJsonBody(req) as { request?: unknown; specialist?: unknown };
       if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 8_000) { json(res, 400, { error: 'Provide a task between 1 and 8,000 characters.' }); return; }
-      if (!specialistAgents.includes(body.specialist as SpecialistAgent)) { json(res, 400, { error: 'Choose outreach or followup as the specialist.' }); return; }
-      const specialist = body.specialist as SpecialistAgent;
       const founderMessage = body.request.trim();
       const routing = await routeOrganizationObjective(founderMessage);
-      const researchQuery = await researchQueryFromObjective(founderMessage);
+      const execution = resolveExecutionRoute(routing[0]);
+      if (execution.status !== 'ready') { json(res, 409, { error: execution.reason, execution, routing }); return; }
+      const specialist = execution.agent;
+      const researchQuery = execution.researchQuery || await researchQueryFromObjective(founderMessage);
       const delegation = await askTambalaAI('orchestrator', `Founder / Bless has given you this objective:\n\n${founderMessage}\n\nAct as the CEO. Use this capability routing context to assign the work correctly:\n${JSON.stringify(routing.slice(0, 3))}\n\nCreate a precise execution brief with task, deliverable, constraints, and a short researchQuery. The researchQuery must contain keywords only and must not repeat the Founder prompt. Do not invent facts, locations, countries, services, or requirements that are not in the Founder objective.`, { communicationType: 'Founder -> CEO', sender: 'Founder / Bless', recipient: 'Chief Executive Officer (CEO)', routing });
       let specialistResult: string;
       let researchEvidence: unknown = undefined;
@@ -199,7 +204,7 @@ const server = createHttpServer(async (req, res) => {
         specialistResult = await askTambalaAI(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation });
       }
       const finalResult = await askTambalaAI('orchestrator', `Complete the Founder objective end-to-end. Original objective:\n${founderMessage}\nDepartment completed work:\n${truncateForModel(specialistResult, 6000)}\nResearch evidence:\n${compactResearchEvidence(researchEvidence)}\nEvaluate the work against the original objective and return the actual final deliverable. Do not merely summarize the department report. Do not invent missing facts; evidence and the original objective take precedence over unsupported delegation claims.`, { communicationType: 'CEO -> Founder', sender: 'Chief Executive Officer (CEO)', recipient: 'Founder / Bless' });
-      json(res, 200, { flow: [
+      json(res, 200, { execution, flow: [
         { from: 'Founder / Bless', to: 'Chief Executive Officer (CEO)', type: 'objective', message: founderMessage },
         { from: 'Chief Executive Officer (CEO)', to: getAgentOperationalInfo(specialist).title, type: 'delegation', message: delegation },
         { from: getAgentOperationalInfo(specialist).title, to: 'Chief Executive Officer (CEO)', type: 'completed_work', message: specialistResult },
