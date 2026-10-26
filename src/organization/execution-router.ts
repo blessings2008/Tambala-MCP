@@ -73,7 +73,7 @@ export function resolveExecutionRoute(match: RoutedCapability | undefined): Exec
       researchQuery: match.researchQuery || null,
       deliverableHints: match.deliverableHints,
       reason: match.roleActivation === 'planned'
-        ? `${match.department ?? match.capabilityId} is represented in the organization chart, but no dedicated execution agent is activated yet.`
+        ? `${match.department ?? match.capabilityId} is represented in the organization chart as planned, but no dedicated execution agent is activated yet.`
         : `${match.department ?? match.capabilityId} has no activated execution agent yet. The task is not being redirected to an unrelated department.`,
     };
   }
