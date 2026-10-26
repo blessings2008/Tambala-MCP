@@ -10,6 +10,8 @@ export interface RoutedCapability {
   deliverableHints: string[];
 }
 
+export type DepartmentAgentName = Exclude<AgentName, 'orchestrator'>;
+
 export type ExecutionRoute =
   | {
       status: 'ready';
@@ -17,7 +19,7 @@ export type ExecutionRoute =
       department: string | null;
       role: string;
       organizationRoleStatus: 'planned' | 'active' | null;
-      agent: Extract<AgentName, 'outreach' | 'followup'>;
+      agent: DepartmentAgentName;
       researchQuery: string;
       deliverableHints: string[];
     }
@@ -67,7 +69,7 @@ export function requireConfiguredRuntime(
   };
 }
 
-const AVAILABLE_EXECUTORS: Record<string, { agent: 'outreach' | 'followup'; title: string }> = {
+const AVAILABLE_EXECUTORS: Record<string, { agent: DepartmentAgentName; title: string }> = {
   sales_prospecting: {
     agent: 'outreach',
     title: 'Head of Sales & Business Development',
@@ -76,12 +78,36 @@ const AVAILABLE_EXECUTORS: Record<string, { agent: 'outreach' | 'followup'; titl
     agent: 'followup',
     title: 'Head of Customer Relations & Support',
   },
+  web_research: {
+    agent: 'research',
+    title: 'Head of Central Research & Intelligence',
+  },
+  marketing_strategy: {
+    agent: 'marketing',
+    title: 'Head of Marketing & Brand Management',
+  },
+  media_content: {
+    agent: 'content',
+    title: 'Head of Media & Content Production',
+  },
+  finance: {
+    agent: 'finance',
+    title: 'Head of Finance & Accounting',
+  },
+  payments: {
+    agent: 'payments',
+    title: 'Head of Payments & Financial Operations',
+  },
+  technology_engineering: {
+    agent: 'engineering',
+    title: 'Head of Technology & Engineering',
+  },
 };
 
 /**
- * Resolve a capability to an actually activated agent. Never silently send a
- * Finance, Marketing, Research, Payments, or Engineering task to Sales merely
- * because Sales is the only agent currently configured.
+ * Resolve a capability to its department-specific runtime profile. Runtime
+ * readiness is checked separately; a mapping does not activate an org-chart role
+ * or grant that agent organizational authority.
  */
 export function resolveExecutionRoute(match: RoutedCapability | undefined): ExecutionRoute {
   if (!match) {
