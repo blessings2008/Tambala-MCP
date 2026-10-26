@@ -17,14 +17,18 @@ The live organization console uses deterministic capability routing before the C
 | --- | --- | --- |
 | Sales prospecting | `outreach` | Head of Sales & Business Development |
 | Customer relations | `followup` | Head of Customer Relations & Support |
+| Independent research | `research` | Head of Central Research & Intelligence |
+| Marketing strategy | `marketing` | Head of Marketing & Brand Management |
+| Media/content production | `content` | Head of Media & Content Production |
+| Finance | `finance` | Head of Finance & Accounting |
+| Payments / Tambala Pay | `payments` | Head of Payments & Financial Operations |
+| Technology & Engineering | `engineering` | Head of Technology & Engineering |
 
 These are runtime execution profiles. Their presence does not create a database role binding or change the organization-chart role activation status.
 
-## Capabilities that require dedicated execution agents
+## Runtime readiness
 
-Research & Intelligence, Marketing & Content, Finance, Payments/Tambala Pay, and Technology & Engineering are present in the capability registry, but do not yet have dedicated execution-agent mappings in this branch.
-
-For those objectives, the router returns a blocked/proposed handoff with an explicit reason. It must not silently redirect Finance work to Sales or claim a planned department agent completed work.
+The department-specific execution profiles now exist for all core capabilities, but Research, Marketing, Content, Finance, Payments, and Engineering remain unconfigured until their own API key, base URL, and model are assigned. The runtime gate returns a configuration blocker and does not call a department agent with missing settings. It must not silently redirect Finance work to Sales or claim an unconfigured agent completed work.
 
 ## Runtime configuration
 
