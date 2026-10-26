@@ -49,3 +49,11 @@ test('routes payment objectives to payments capability', () => {
 test('does not route unrelated objectives merely because departments exist', () => {
   assert.deepEqual(routeObjective(definition, 'Tell me a joke about the moon.'), []);
 });
+
+test('marketing strategy and media content route to separate capabilities', () => {
+  const marketing = routeObjective(definition, 'Plan brand positioning and campaign strategy');
+  assert.equal(marketing[0]?.capability.id, 'marketing_strategy');
+
+  const content = routeObjective(definition, 'Write a social media caption and video script');
+  assert.equal(content[0]?.capability.id, 'media_content');
+});
