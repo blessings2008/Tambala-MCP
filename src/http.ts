@@ -14,7 +14,7 @@ import { isAuthorized, unauthorized } from './http/auth.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo, type AgentName } from './services/ai.js';
 
 const nodeHandler = toNodeHandler(mcpHandler);
-const chatAgents = ['orchestrator', 'outreach', 'followup'] as const;
+const chatAgents = ['orchestrator', 'outreach', 'followup', 'research', 'marketing', 'content', 'finance', 'payments', 'engineering'] as const;
 type ChatAgent = typeof chatAgents[number];
 
 type ExecutionStage = 'ceo_delegate' | 'specialist_execute' | 'ceo_complete';
