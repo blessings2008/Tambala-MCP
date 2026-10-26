@@ -6,7 +6,7 @@ import { mcpHandler } from './index.js';
 import { getOAuthAccessClientId, handleOAuth } from './oauth.js';
 import { runWithRequestPrincipal } from './organization/request-context.js';
 import { getOrganizationSnapshot, routeOrganizationObjective } from './organization/service.js';
-import { resolveExecutionRoute, type ExecutionRoute, type RoutedCapability } from './organization/execution-router.js';
+import { requireConfiguredRuntime, resolveExecutionRoute, type ExecutionRoute, type RoutedCapability } from './organization/execution-router.js';
 import { runtimeConfig } from './config/runtime.js';
 import { setCorsHeaders } from './http/cors.js';
 import { handleHealth, handleNotFound } from './http/health.js';
@@ -78,18 +78,7 @@ async function researchQueryFromObjective(objective: string): Promise<string> {
 function resolveConfiguredExecutionRoute(match: RoutedCapability | undefined): ExecutionRoute {
   const route = resolveExecutionRoute(match);
   if (route.status !== 'ready') return route;
-  const runtime = getAgentOperationalInfo(route.agent);
-  if (runtime.ready) return route;
-
-  const missing: string[] = [];
-  if (!runtime.apiKeyConfigured) missing.push(runtime.apiKeyEnv);
-  if (!runtime.baseURL) missing.push(`TAMBALA_${route.agent.toUpperCase()}_BASE_URL`);
-  if (!runtime.model) missing.push(`TAMBALA_${route.agent.toUpperCase()}_MODEL`);
-  return {
-    ...route,
-    status: 'needs_configuration',
-    reason: `${route.role} is the mapped executor, but its runtime is not ready. Configure: ${missing.join(', ')}.`,
-  };
+  return requireConfiguredRuntime(route, getAgentOperationalInfo(route.agent));
 }
 
 function truncateForModel(value: string, maxChars: number): string {
