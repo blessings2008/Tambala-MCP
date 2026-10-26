@@ -17,7 +17,7 @@ export const AGENT_DIRECTORY = {
     unitName: 'Executive Management',
     reportsTo: 'Founder / Bless',
     manages: ['Sales & Business Development', 'Customer Relations & Support', 'future departments as activated'],
-    roleId: 'ceo',
+    roleId: null,
     roleStatus: 'planned',
   },
   outreach: {
@@ -27,7 +27,7 @@ export const AGENT_DIRECTORY = {
     unitName: 'Sales & Business Development',
     reportsTo: 'Chief Executive Officer (CEO)',
     manages: ['Sales/outreach work assigned by the CEO'],
-    roleId: 'head-sales-business-development',
+    roleId: null,
     roleStatus: 'planned',
   },
   followup: {
@@ -37,7 +37,7 @@ export const AGENT_DIRECTORY = {
     unitName: 'Customer Relations & Support',
     reportsTo: 'Chief Executive Officer (CEO)',
     manages: ['Customer follow-up work assigned by the CEO'],
-    roleId: 'head-customer-relations',
+    roleId: null,
     roleStatus: 'planned',
   },
 } as const;
