@@ -1,4 +1,5 @@
 import { getPersistedOrganizationSnapshot } from './persisted-service.js';
+import { buildResearchQuery, routeObjective } from './capability-registry.js';
 
 /**
  * Return the organization from the existing Tambala MCP database when configured.
@@ -39,4 +40,24 @@ export async function getOrganizationSummary() {
     })),
     validation: snapshot.validation,
   };
+}
+
+/**
+ * Resolve an objective to the organization's known capabilities before the CEO
+ * creates a delegation. This keeps routing deterministic and prevents a model
+ * from inventing departments or passing the entire Founder prompt to research.
+ */
+export async function routeOrganizationObjective(objective: string) {
+  const snapshot = await getOrganizationSnapshot();
+  return routeObjective(snapshot.organization, objective).map((match) => ({
+    capabilityId: match.capability.id,
+    departmentId: match.unit?.id ?? null,
+    department: match.unit?.name ?? null,
+    roleId: match.role?.id ?? null,
+    role: match.role?.title ?? null,
+    score: match.score,
+    researchQuery: buildResearchQuery(objective, match),
+    description: match.capability.description,
+    deliverableHints: match.capability.deliverableHints,
+  }));
 }
