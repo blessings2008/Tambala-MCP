@@ -5,6 +5,12 @@ const DEFAULT_LIMITS: Record<AgentName, { requestsPerMinute: number; concurrency
   orchestrator: { requestsPerMinute: 20, concurrency: 2 },
   outreach: { requestsPerMinute: 8, concurrency: 2 },
   followup: { requestsPerMinute: 8, concurrency: 2 },
+  research: { requestsPerMinute: 8, concurrency: 2 },
+  marketing: { requestsPerMinute: 8, concurrency: 2 },
+  content: { requestsPerMinute: 8, concurrency: 2 },
+  finance: { requestsPerMinute: 8, concurrency: 2 },
+  payments: { requestsPerMinute: 8, concurrency: 2 },
+  engineering: { requestsPerMinute: 8, concurrency: 2 },
 };
 
 type AgentState = { startedAt: number[]; active: number };
