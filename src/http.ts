@@ -16,8 +16,6 @@ import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo, typ
 const nodeHandler = toNodeHandler(mcpHandler);
 const chatAgents = ['orchestrator', 'outreach', 'followup'] as const;
 type ChatAgent = typeof chatAgents[number];
-const specialistAgents = ['outreach', 'followup'] as const;
-type SpecialistAgent = typeof specialistAgents[number];
 
 type ExecutionStage = 'ceo_delegate' | 'specialist_execute' | 'ceo_complete';
 
@@ -144,7 +142,7 @@ const server = createHttpServer(async (req, res) => {
   if (requestPath === '/api/chat-test/step' && req.method === 'POST') {
     if (!req.headers['content-type']?.toLowerCase().includes('application/json')) { json(res, 415, { error: 'Content-Type must be application/json.' }); return; }
     try {
-      const body = await readJsonBody(req) as { stage?: unknown; request?: unknown; specialist?: unknown; delegation?: unknown; specialistResult?: unknown; researchEvidence?: unknown };
+      const body = await readJsonBody(req) as { stage?: unknown; request?: unknown; delegation?: unknown; specialistResult?: unknown; researchEvidence?: unknown };
       if (!validStage(body.stage)) { json(res, 400, { error: 'Invalid stage. Use ceo_delegate, specialist_execute, or ceo_complete.' }); return; }
       if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 8_000) { json(res, 400, { error: 'Provide a task between 1 and 8,000 characters.' }); return; }
       const founderMessage = body.request.trim();
@@ -190,7 +188,7 @@ const server = createHttpServer(async (req, res) => {
   if (requestPath === '/api/chat-test/collaborate' && req.method === 'POST') {
     if (!req.headers['content-type']?.toLowerCase().includes('application/json')) { json(res, 415, { error: 'Content-Type must be application/json.' }); return; }
     try {
-      const body = await readJsonBody(req) as { request?: unknown; specialist?: unknown };
+      const body = await readJsonBody(req) as { request?: unknown };
       if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 8_000) { json(res, 400, { error: 'Provide a task between 1 and 8,000 characters.' }); return; }
       const founderMessage = body.request.trim();
       const routing = await routeOrganizationObjective(founderMessage);
