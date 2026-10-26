@@ -51,3 +51,12 @@ The runtime readiness gate checks these without exposing secret values. If a req
 ## Verification
 
 The CI workflow on `org-capability-routing` runs TypeScript build checks and the organization test suite, including routing and runtime-readiness tests.
+
+The token-protected `GET /api/chat-test/status` endpoint also reports:
+- whether the organization snapshot loaded successfully;
+- whether it came from the existing Supabase tables or the local seed fallback;
+- organization validation errors and unit/role counts;
+- the current department names/statuses; and
+- per-agent runtime readiness without returning API-key values.
+
+A `seed-fallback` response is explicitly **not** evidence that the live database was checked. If the persistent snapshot cannot load, the endpoint reports it as unavailable rather than presenting a successful live verification. Use this endpoint after deployment to confirm the deployed service is reading the existing organization database. Do not paste the chat-test token or any provider credentials into logs or chat.
