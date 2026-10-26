@@ -4,25 +4,21 @@ import { buildResearchQuery, routeObjective } from '../src/organization/capabili
 import type { OrganizationDefinition } from '../src/organization/model.js';
 
 const definition: OrganizationDefinition = {
-  organization: {
-    id: 'org-test',
-    name: 'Tambala Technologies',
-    mission: 'Build useful technology.',
-    ownerRoleId: 'founder',
-    boardRoleId: 'board',
-    ceoRoleId: 'ceo',
-    executiveCouncilRoleId: 'exec',
-    units: [
-      { id: 'sales', name: 'Sales & Business Development', kind: 'department', status: 'active', parentId: null, tags: ['sales', 'business-development', 'outreach'] },
-      { id: 'research', name: 'Research & Intelligence', kind: 'department', status: 'active', parentId: null, tags: ['research', 'intelligence'] },
-    ],
-    roles: [
-      { id: 'sales-head', title: 'Head of Sales & Business Development', kind: 'department_head', unitId: 'sales', reportsToRoleId: 'ceo', activation: 'active' },
-      { id: 'research-head', title: 'Head of Research & Intelligence', kind: 'department_head', unitId: 'research', reportsToRoleId: 'ceo', activation: 'active' },
-    ],
-  },
-  roles: [],
-  units: [],
+  id: 'org-test',
+  name: 'Tambala Technologies',
+  mission: 'Build useful technology.',
+  ownerRoleId: 'founder',
+  boardRoleId: 'board',
+  ceoRoleId: 'ceo',
+  executiveCouncilRoleId: 'exec',
+  units: [
+    { id: 'sales', name: 'Sales & Business Development', kind: 'department', purpose: 'Find business opportunities.', status: 'active', parentId: null, tags: ['sales', 'business-development', 'outreach'], accountableRoleIds: ['sales-head'] },
+    { id: 'research', name: 'Research & Intelligence', kind: 'department', purpose: 'Verify information.', status: 'active', parentId: null, tags: ['research', 'intelligence'], accountableRoleIds: ['research-head'] },
+  ],
+  roles: [
+    { id: 'sales-head', title: 'Head of Sales & Business Development', kind: 'ai_agent', unitId: 'sales', reportsToRoleId: 'ceo', purpose: 'Lead sales.', capabilities: ['sales'], activation: 'active' },
+    { id: 'research-head', title: 'Head of Research & Intelligence', kind: 'ai_agent', unitId: 'research', reportsToRoleId: 'ceo', purpose: 'Lead research.', capabilities: ['research'], activation: 'active' },
+  ],
 };
 
 test('routes next-client objectives to sales and produces a short research query', () => {
