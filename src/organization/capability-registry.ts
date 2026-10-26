@@ -15,6 +15,7 @@ export interface CapabilityMatch {
   unit: OrganizationUnit | null;
   role: OrganizationalRole | null;
   score: number;
+  keywordScore: number;
   researchQuery: string;
 }
 
@@ -114,21 +115,23 @@ function findRole(definition: OrganizationDefinition, tags: string[], unitId: st
 export function routeObjective(definition: OrganizationDefinition, objective: string): CapabilityMatch[] {
   return DEPARTMENT_CAPABILITIES
     .map((capability) => {
-      const score = countMatches(objective, [
+      const keywordScore = countMatches(objective, [
         ...capability.objectiveKeywords,
         ...capability.deliverableHints,
       ]);
+      const score = keywordScore + (findUnit(definition, capability.unitTags) ? 1 : 0) + (findRole(definition, capability.roleTags, findUnit(definition, capability.unitTags)?.id ?? null) ? 1 : 0);
       const unit = findUnit(definition, capability.unitTags);
       const role = findRole(definition, capability.roleTags, unit?.id ?? null);
       return {
         capability,
         unit,
         role,
-        score: score + (unit ? 1 : 0) + (role ? 1 : 0),
+        score,
+        keywordScore,
         researchQuery: capability.researchKeywords.slice(0, 4).join(', '),
       };
     })
-    .filter((match) => match.score > 0)
+    .filter((match) => match.keywordScore > 0)
     .sort((a, b) => b.score - a.score);
 }
 
