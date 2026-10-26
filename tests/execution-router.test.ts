@@ -15,7 +15,7 @@ function route(overrides: Partial<RoutedCapability> = {}): RoutedCapability {
   };
 }
 
-test('sales capability resolves to the activated sales agent', () => {
+test('sales capability resolves to the available sales runtime profile', () => {
   const result = resolveExecutionRoute(route());
   assert.equal(result.status, 'ready');
   if (result.status !== 'ready') return;
@@ -23,7 +23,7 @@ test('sales capability resolves to the activated sales agent', () => {
   assert.equal(result.department, 'Sales & Business Development');
 });
 
-test('customer relations resolves to the activated follow-up agent', () => {
+test('customer relations resolves to the available follow-up runtime profile', () => {
   const result = resolveExecutionRoute(route({
     capabilityId: 'customer_relations',
     department: 'Customer Relations & Support',
@@ -34,17 +34,38 @@ test('customer relations resolves to the activated follow-up agent', () => {
   assert.equal(result.agent, 'followup');
 });
 
-test('planned departments are not silently routed to sales', () => {
+test('planned marketing role maps to its own runtime profile, never sales', () => {
   const result = resolveExecutionRoute(route({
-    capabilityId: 'marketing_content',
-    department: 'Marketing & Content',
-    role: 'Marketing Manager',
+    capabilityId: 'marketing_strategy',
+    department: 'Marketing & Brand Management',
+    role: 'Director — Marketing & Brand Management',
     roleActivation: 'planned',
   }));
-  assert.equal(result.status, 'not_activated');
-  if (result.status !== 'not_activated') return;
-  assert.equal(result.agent, null);
-  assert.match(result.reason, /planned|no activated execution agent/i);
+  assert.equal(result.status, 'ready');
+  if (result.status !== 'ready') return;
+  assert.equal(result.agent, 'marketing');
+  assert.equal(result.organizationRoleStatus, 'planned');
+});
+
+test('all core capabilities map to the matching department profile', () => {
+  const cases = [
+    ['web_research', 'Central Research & Intelligence', 'research'],
+    ['marketing_strategy', 'Marketing & Brand Management', 'marketing'],
+    ['media_content', 'Media & Content Production', 'content'],
+    ['finance', 'Finance & Accounting', 'finance'],
+    ['payments', 'Fintech Ventures / Tambala Pay', 'payments'],
+    ['technology_engineering', 'Technology & Engineering', 'engineering'],
+  ] as const;
+  for (const [capabilityId, department, expectedAgent] of cases) {
+    const result = resolveExecutionRoute(route({
+      capabilityId,
+      department,
+      role: 'Planned department director',
+      roleActivation: 'planned',
+    }));
+    assert.equal(result.status, 'ready', `${capabilityId} should map to an execution profile`);
+    if (result.status === 'ready') assert.equal(result.agent, expectedAgent);
+  }
 });
 
 test('unknown objectives require ownership clarification', () => {
