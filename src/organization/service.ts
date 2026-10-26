@@ -55,6 +55,7 @@ export async function routeOrganizationObjective(objective: string) {
     department: match.unit?.name ?? null,
     roleId: match.role?.id ?? null,
     role: match.role?.title ?? null,
+    roleActivation: match.role?.activation ?? null,
     score: match.score,
     researchQuery: buildResearchQuery(objective, match),
     description: match.capability.description,
