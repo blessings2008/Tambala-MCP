@@ -28,8 +28,8 @@ test('the complete initial blueprint includes all core departments and business 
   assert.ok(departments.filter((unit) => unit.id !== 'research-intelligence').every((unit) => unit.parentId));
 });
 
-test('organization summary reports the expected leadership and planned units', () => {
-  const summary = getOrganizationSummary();
+test('organization summary reports the expected leadership and planned units', async () => {
+  const summary = await getOrganizationSummary();
   assert.equal(summary.name, 'Tambala Organization');
   assert.equal(summary.leadership.ceoRoleId, 'ceo');
   assert.equal(summary.validation.valid, true);
