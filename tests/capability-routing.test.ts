@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildResearchQuery, routeObjective } from '../src/organization/capability-registry.js';
 import type { OrganizationDefinition } from '../src/organization/model.js';
+import { initialOrganization } from '../src/organization/seed.js';
 
 const definition: OrganizationDefinition = {
   id: 'test-org',
@@ -56,4 +57,35 @@ test('marketing strategy and media content route to separate capabilities', () =
 
   const content = routeObjective(definition, 'Write a social media caption and video script');
   assert.equal(content[0]?.capability.id, 'media_content');
+});
+
+
+test('routes objectives across strategy, product, security, and operations', () => {
+  const cases = [
+    ['strategy_planning', 'Prepare a strategic roadmap and measurable objectives'],
+    ['product_management', 'Define product requirements and prioritize features for the MVP'],
+    ['security_it', 'Review server security, access controls, and backup reliability'],
+    ['operations_administration', 'Document the internal workflow and standard operating procedure'],
+  ] as const;
+
+  for (const [capabilityId, objective] of cases) {
+    const matches = routeObjective(initialOrganization, objective);
+    assert.equal(matches[0]?.capability.id, capabilityId, objective);
+    assert.ok(matches[0]?.unit, `Expected a department for ${capabilityId}`);
+  }
+});
+
+test('routes objectives across people, compliance, procurement, and governance', () => {
+  const cases = [
+    ['people_agent_management', 'Create an agent performance review and onboarding plan'],
+    ['legal_risk_compliance', 'Conduct a regulatory compliance and data protection risk assessment'],
+    ['procurement_resources', 'Compare suppliers and prepare a procurement shortlist'],
+    ['governance_oversight', 'Prepare a board decision brief and approval record'],
+  ] as const;
+
+  for (const [capabilityId, objective] of cases) {
+    const matches = routeObjective(initialOrganization, objective);
+    assert.equal(matches[0]?.capability.id, capabilityId, objective);
+    assert.ok(matches[0]?.unit, `Expected a department for ${capabilityId}`);
+  }
 });
