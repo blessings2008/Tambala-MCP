@@ -38,8 +38,24 @@ export function validateOrganization(
     if (unit.parentId && !unitIds.has(unit.parentId)) {
       errors.push(`Unit ${unit.id} references missing parent unit: ${unit.parentId}`);
     }
+    const accountableRoleIds = new Set<string>();
     for (const roleId of unit.accountableRoleIds) {
-      if (!roleIds.has(roleId)) errors.push(`Unit ${unit.id} references missing accountable role: ${roleId}`);
+      if (accountableRoleIds.has(roleId)) {
+        errors.push(`Unit ${unit.id} lists accountable role more than once: ${roleId}`);
+      }
+      accountableRoleIds.add(roleId);
+
+      if (!roleIds.has(roleId)) {
+        errors.push(`Unit ${unit.id} references missing accountable role: ${roleId}`);
+        continue;
+      }
+
+      const accountableRole = organization.roles.find((role) => role.id === roleId);
+      if (accountableRole && accountableRole.unitId !== unit.id) {
+        errors.push(
+          `Unit ${unit.id} lists role ${roleId} as accountable, but that role belongs to unit ${accountableRole.unitId ?? 'none'}.`,
+        );
+      }
     }
   }
 
