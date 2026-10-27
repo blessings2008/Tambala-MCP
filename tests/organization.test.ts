@@ -107,6 +107,33 @@ test('structural validator detects duplicate IDs and missing references', () => 
   assert.ok(errors.some((error) => error.includes('reports to missing role')));
 });
 
+test('structural validator rejects accountable roles owned by another unit', () => {
+  const broken = structuredClone(initialOrganization);
+  const sales = broken.units.find((unit) => unit.id === 'sales-business-development');
+  assert.ok(sales);
+  sales.accountableRoleIds = ['director-finance-accounting'];
+
+  const errors = validateOrganization(broken);
+  assert.ok(errors.some((error) =>
+    error.includes('Unit sales-business-development lists role director-finance-accounting as accountable'),
+  ));
+});
+
+test('structural validator rejects duplicate accountable role entries', () => {
+  const broken = structuredClone(initialOrganization);
+  const sales = broken.units.find((unit) => unit.id === 'sales-business-development');
+  assert.ok(sales);
+  sales.accountableRoleIds = [
+    'director-sales-business-development',
+    'director-sales-business-development',
+  ];
+
+  const errors = validateOrganization(broken);
+  assert.ok(errors.some((error) =>
+    error.includes('lists accountable role more than once: director-sales-business-development'),
+  ));
+});
+
 
 test('request identity context defaults to unknown outside an authenticated request', () => {
   assert.deepEqual(getRequestPrincipal(), { kind: 'unknown' });
