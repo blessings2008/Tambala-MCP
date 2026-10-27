@@ -47,7 +47,11 @@ export async function updateOrganizationTask(
     'status' | 'current_stage' | 'assigned_department_id' | 'assigned_role_id' |
     'research_query' | 'result' | 'error_message' | 'completed_at'>>,
 ): Promise<OrganizationTask> {
-  return supabaseUpdate<OrganizationTask>('organization_tasks', patch, `id=eq.${encodeURIComponent(id)}`);
+  return supabaseUpdate<OrganizationTask>(
+    'organization_tasks',
+    { ...patch, updated_at: new Date().toISOString() },
+    `id=eq.${encodeURIComponent(id)}`,
+  );
 }
 
 export async function getOrganizationTask(id: string): Promise<OrganizationTask | null> {
