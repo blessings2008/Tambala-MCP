@@ -119,3 +119,34 @@ test('missing department in the organization snapshot blocks execution', () => {
   if (result.status !== 'not_activated') return;
   assert.match(result.reason, /missing from the loaded organization snapshot/i);
 });
+
+test('every declared department capability has an explicit executor mapping', async () => {
+  const { DEPARTMENT_CAPABILITIES } = await import('../src/organization/capability-registry.js');
+  const declared = DEPARTMENT_CAPABILITIES.map((capability) => capability.id);
+  const expected = [
+    'sales_prospecting',
+    'web_research',
+    'customer_relations',
+    'marketing_strategy',
+    'media_content',
+    'finance',
+    'payments',
+    'technology_engineering',
+  ];
+  assert.deepEqual(declared.slice().sort(), expected.slice().sort());
+
+  for (const capabilityId of declared) {
+    const result = resolveExecutionRoute(route({ capabilityId }));
+    assert.equal(
+      result.status,
+      'ready',
+      `Declared capability ${capabilityId} must map explicitly or be removed from the executable registry.`,
+    );
+  }
+});
+
+test('missing department and unknown capability never fall back to an unrelated agent', () => {
+  const unknown = resolveExecutionRoute(route({ capabilityId: 'procurement' }));
+  assert.equal(unknown.status, 'not_activated');
+  if (unknown.status === 'not_activated') assert.equal(unknown.agent, null);
+});
