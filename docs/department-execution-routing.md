@@ -48,6 +48,14 @@ The runtime readiness gate checks these without exposing secret values. If a req
 - The same route is recalculated at specialist execution, so a client-supplied specialist field cannot override deterministic routing.
 - This is test/staging execution only. It does not grant organizational authority or enable external business actions.
 
+## Persistent task history
+
+Organization task state is now designed to persist in the existing Supabase project through `organization_tasks` and append-only `organization_task_events` tables. The task store records the Founder objective, current stage/status, department and role assignment, compact research query, result/error information, timestamps, and the execution events that led to the current state.
+
+The task store is deliberately separate from financial records. Tambala Pay remains responsible for authoritative invoices, payments, receipts, and financial events; organization task history only records orchestration and execution state.
+
+The SQL migration is located at `supabase/migrations/20261027_organization_tasks.sql`. It must be applied to the existing Tambala MCP Supabase database before persistent task creation is enabled in a deployed environment.
+
 ## Verification
 
 The CI workflow on `org-capability-routing` runs TypeScript build checks and the organization test suite, including routing and runtime-readiness tests.
