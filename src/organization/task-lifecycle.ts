@@ -7,6 +7,7 @@ import {
   type OrganizationTaskStage,
   type OrganizationTaskStatus,
 } from './task-store.js';
+import { isAllowedOrganizationTaskTransition } from './task-transition-rules.js';
 
 export type OrganizationTaskTransition = {
   status: OrganizationTaskStatus;
@@ -19,19 +20,6 @@ export type OrganizationTaskTransition = {
   errorMessage?: string | null;
   completedAt?: string | null;
   payload?: unknown;
-};
-
-const ALLOWED_TRANSITIONS: Record<OrganizationTaskStatus, OrganizationTaskStatus[]> = {
-  created: ['ceo_analyzing', 'failed'],
-  ceo_analyzing: ['delegated', 'needs_more_work', 'failed'],
-  delegated: ['executing', 'needs_more_work', 'failed'],
-  executing: ['waiting_for_tool', 'department_review', 'returned_to_ceo', 'failed'],
-  waiting_for_tool: ['executing', 'failed'],
-  department_review: ['returned_to_ceo', 'needs_more_work', 'failed'],
-  returned_to_ceo: ['completed', 'needs_more_work', 'failed'],
-  needs_more_work: ['ceo_analyzing', 'delegated', 'failed'],
-  completed: [],
-  failed: ['ceo_analyzing'],
 };
 
 /** Create the durable task before the first model call and record the Founder objective. */
@@ -49,14 +37,14 @@ export async function startPersistentOrganizationTask(input: {
   return task;
 }
 
-/** Enforce valid state transitions and append the corresponding audit event. */
+/** Enforce the shared transition rules and append the corresponding audit event. */
 export async function transitionPersistentOrganizationTask(
   taskId: string,
   transition: OrganizationTaskTransition,
 ): Promise<OrganizationTask> {
   const current = await getOrganizationTask(taskId);
   if (!current) throw new Error('Organization task was not found.');
-  if (!ALLOWED_TRANSITIONS[current.status].includes(transition.status)) {
+  if (!isAllowedOrganizationTaskTransition(current.status, transition.status)) {
     throw new Error(`Invalid organization task transition: ${current.status} -> ${transition.status}.`);
   }
 
@@ -83,13 +71,14 @@ export async function transitionPersistentOrganizationTask(
   return updated;
 }
 
+/** Mark a task failed without misreporting it as successfully completed. */
 export async function failPersistentOrganizationTask(taskId: string, message: string): Promise<OrganizationTask> {
   return transitionPersistentOrganizationTask(taskId, {
     status: 'failed',
     stage: 'failed',
     eventType: 'stage_failed',
     errorMessage: message,
-    completedAt: new Date().toISOString(),
+    completedAt: null,
     payload: { error: message },
   });
 }
