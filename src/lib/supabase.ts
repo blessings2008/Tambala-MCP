@@ -63,3 +63,31 @@ export async function supabaseInsert<T>(table: string, value: Record<string, unk
   if (!rows.length) throw new Error(`Supabase insert into ${table} returned no record`);
   return rows[0];
 }
+
+/** Update server-side records using a PostgREST filter. Never expose this helper to tool arguments. */
+export async function supabaseUpdate<T>(
+  table: string,
+  value: Record<string, unknown>,
+  filter: string,
+): Promise<T> {
+  const key = getServiceRoleKey();
+  const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify(value),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Supabase update failed (${response.status}): ${body}`);
+  }
+
+  const rows = (await response.json()) as T[];
+  if (!rows.length) throw new Error(`Supabase update on ${table} returned no record`);
+  return rows[0];
+}
