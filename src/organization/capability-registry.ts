@@ -183,7 +183,16 @@ function countMatches(text: string, keywords: string[]): number {
 }
 
 function findUnit(definition: OrganizationDefinition, tags: string[]): OrganizationUnit | null {
-  return definition.units.find((unit) => tags.some((tag) => unit.tags.map(normalize).includes(normalize(tag)))) ?? null;
+  const matches = definition.units.filter((unit) =>
+    tags.some((tag) => unit.tags.map(normalize).includes(normalize(tag)))
+  );
+  // Prefer the operational unit over a parent division sharing the same tags.
+  const priority: Record<OrganizationUnit['kind'], number> = {
+    department: 0,
+    business_unit: 1,
+    division: 2,
+  };
+  return matches.sort((a, b) => priority[a.kind] - priority[b.kind])[0] ?? null;
 }
 
 function findRole(definition: OrganizationDefinition, tags: string[], unitId: string | null): OrganizationalRole | null {
