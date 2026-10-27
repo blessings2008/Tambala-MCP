@@ -34,6 +34,12 @@ create table if not exists public.organization_task_events (
 
 create index if not exists organization_task_events_task_idx on public.organization_task_events(task_id, created_at);
 
+-- These records may contain internal business objectives and model results.
+-- Browser/anonymous clients must not read or mutate them directly. The server
+-- accesses them with the Supabase service-role key, which bypasses RLS.
+alter table public.organization_tasks enable row level security;
+alter table public.organization_task_events enable row level security;
+
 -- The server uses the Supabase service-role key for these writes. Do not expose
 -- service-role credentials to browser clients.
 comment on table public.organization_tasks is 'Persistent orchestration state for Founder -> CEO -> department workflows.';
