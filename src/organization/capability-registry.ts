@@ -186,7 +186,6 @@ function findUnit(definition: OrganizationDefinition, tags: string[]): Organizat
   const matches = definition.units.filter((unit) =>
     tags.some((tag) => unit.tags.map(normalize).includes(normalize(tag)))
   );
-  // Prefer the operational unit over a parent division sharing the same tags.
   const priority: Record<OrganizationUnit['kind'], number> = {
     department: 0,
     business_unit: 1,
@@ -225,17 +224,16 @@ export function routeObjective(definition: OrganizationDefinition, objective: st
     .sort((a, b) => b.score - a.score);
 }
 
-export function buildResearchQuery(objective: string, match: CapabilityMatch): string {
-  const objectiveTerms = normalize(objective)
-    .split(' ')
-    .filter((term) => term.length >= 4)
-    .filter((term) => !['find', 'next', 'that', 'with', 'from', 'into', 'this', 'our'].includes(term));
+/**
+ * Build a compact research query from the matched capability only.
+ * Never pass the Founder/CEO prompt through as the search query.
+ */
+export function buildResearchQuery(_objective: string, match: CapabilityMatch): string {
+  const terms = match.capability.researchKeywords
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .slice(0, 6);
 
-  const relevant = match.capability.objectiveKeywords
-    .map(normalize)
-    .filter((keyword) => objectiveTerms.some((term) => keyword.includes(term) || term.includes(keyword)));
-
-  return [...new Set([...relevant, ...match.capability.researchKeywords.slice(0, 3)])]
-    .slice(0, 6)
-    .join(', ');
+  // Keep tool input comfortably below provider/request limits even if capability metadata changes.
+  return terms.join(', ').slice(0, 500);
 }
