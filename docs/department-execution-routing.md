@@ -24,11 +24,28 @@ The live organization console uses deterministic capability routing before the C
 | Payments / Tambala Pay | `payments` | Head of Payments & Financial Operations |
 | Technology & Engineering | `engineering` | Head of Technology & Engineering |
 
-These are runtime execution profiles. Their presence does not create a database role binding or change the organization-chart role activation status.
+These are runtime execution profiles, not proof that the corresponding organizational role is active. Their presence does not create a database role binding or change the organization-chart role activation status.
+
+## Capabilities awaiting dedicated executors
+
+The registry also includes these organizational responsibilities, but they deliberately remain blocked until dedicated execution profiles and runtime safeguards are implemented:
+
+| Capability | Department | Current behavior |
+| --- | --- | --- |
+| Strategy planning | Strategy & Corporate Planning | Blocked; no dedicated executor |
+| Product management | Product Management & Innovation | Blocked; no dedicated executor |
+| Security and IT | Cybersecurity & IT | Blocked; no dedicated executor |
+| Operations administration | Operations & Administration | Blocked; no dedicated executor |
+| People and agent management | Human Resources & Agent Management | Blocked; no dedicated executor |
+| Legal, risk and compliance | Legal, Risk & Compliance | Blocked; no dedicated executor |
+| Procurement and resources | Procurement & Resource Management | Blocked; no dedicated executor |
+| Governance oversight | Board & Corporate Governance | Blocked; no dedicated executor |
+
+These routes must not fall back to Sales, Research, or another unrelated agent. This explicit blocker list is part of the test contract and must be updated whenever capabilities or executors change.
 
 ## Runtime readiness
 
-The department-specific execution profiles now exist for all core capabilities, but Research, Marketing, Content, Finance, Payments, and Engineering remain unconfigured until their own API key, base URL, and model are assigned. The runtime gate returns a configuration blocker and does not call a department agent with missing settings. It must not silently redirect Finance work to Sales or claim an unconfigured agent completed work.
+The eight mapped profiles are still subject to runtime configuration. Research, Marketing, Content, Finance, Payments, and Engineering require their own API key, base URL, and model before execution; the same dedicated-configuration rule applies to every specialist profile. The runtime gate returns a configuration blocker and does not call a department agent with missing settings. It must not silently redirect Finance work to Sales or claim an unconfigured agent completed work.
 
 ## Runtime configuration
 
