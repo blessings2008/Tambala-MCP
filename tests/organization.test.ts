@@ -37,28 +37,32 @@ test('organization summary reports the expected leadership and planned units', a
   assert.ok(summary.units.some((unit) => unit.id === 'fintech-ventures'));
 });
 
-test('every department and business unit has an accountable lead in the correct reporting chain', () => {
+test('every unit has an accountable lead in the correct reporting chain', () => {
   const unitsById = new Map(initialOrganization.units.map((unit) => [unit.id, unit]));
   const rolesById = new Map(initialOrganization.roles.map((role) => [role.id, role]));
+  const isUnitLead = (roleId: string) => roleId.startsWith('director-') || roleId.startsWith('leader-');
 
   for (const unit of initialOrganization.units) {
-    assert.equal(
-      unit.accountableRoleIds.length,
-      1,
-      `Unit ${unit.id} must have exactly one directly accountable lead.`,
-    );
+    assert.ok(unit.accountableRoleIds.length > 0, `Unit ${unit.id} must have accountable roles.`);
 
-    const leadId = unit.accountableRoleIds[0];
-    const lead = rolesById.get(leadId);
-    assert.ok(lead, `Unit ${unit.id} references a missing lead ${leadId}.`);
-    assert.equal(lead.unitId, unit.id, `Lead ${leadId} must belong to ${unit.id}.`);
+    for (const roleId of unit.accountableRoleIds) {
+      const role = rolesById.get(roleId);
+      assert.ok(role, `Unit ${unit.id} references a missing accountable role ${roleId}.`);
+      assert.equal(role.unitId, unit.id, `Accountable role ${roleId} must belong to ${unit.id}.`);
+    }
+
+    const leadIds = unit.accountableRoleIds.filter(isUnitLead);
+    assert.equal(leadIds.length, 1, `Unit ${unit.id} must have exactly one designated director or business-unit lead.`);
+    const lead = rolesById.get(leadIds[0]);
+    assert.ok(lead, `Unit ${unit.id} is missing its designated lead.`);
 
     const parent = unit.parentId ? unitsById.get(unit.parentId) : undefined;
-    const expectedManagerId = parent?.accountableRoleIds[0] ?? initialOrganization.ceoRoleId;
+    const parentLeadId = parent?.accountableRoleIds.find(isUnitLead);
+    const expectedManagerId = parentLeadId ?? initialOrganization.ceoRoleId;
     assert.equal(
       lead.reportsToRoleId,
       expectedManagerId,
-      `Lead ${leadId} must report to ${expectedManagerId} for unit ${unit.id}.`,
+      `Lead ${lead.id} must report to ${expectedManagerId} for unit ${unit.id}.`,
     );
   }
 });
