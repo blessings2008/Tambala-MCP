@@ -120,10 +120,10 @@ test('missing department in the organization snapshot blocks execution', () => {
   assert.match(result.reason, /missing from the loaded organization snapshot/i);
 });
 
-test('every declared department capability has an explicit executor mapping', async () => {
+test('every declared capability is either explicitly executable or safely blocked', async () => {
   const { DEPARTMENT_CAPABILITIES } = await import('../src/organization/capability-registry.js');
   const declared = DEPARTMENT_CAPABILITIES.map((capability) => capability.id);
-  const expected = [
+  const executable = [
     'sales_prospecting',
     'web_research',
     'customer_relations',
@@ -133,15 +133,38 @@ test('every declared department capability has an explicit executor mapping', as
     'payments',
     'technology_engineering',
   ];
-  assert.deepEqual(declared.slice().sort(), expected.slice().sort());
+  const awaitingDedicatedExecutor = [
+    'strategy_planning',
+    'product_management',
+    'security_it',
+    'operations_administration',
+    'people_agent_management',
+    'legal_risk_compliance',
+    'procurement_resources',
+    'governance_oversight',
+  ];
 
-  for (const capabilityId of declared) {
+  assert.deepEqual(
+    declared.slice().sort(),
+    [...executable, ...awaitingDedicatedExecutor].sort(),
+    'Every capability must be classified in this test when the registry changes.',
+  );
+
+  for (const capabilityId of executable) {
+    const result = resolveExecutionRoute(route({ capabilityId }));
+    assert.equal(result.status, 'ready', `Expected an explicit executor for ${capabilityId}.`);
+  }
+
+  for (const capabilityId of awaitingDedicatedExecutor) {
     const result = resolveExecutionRoute(route({ capabilityId }));
     assert.equal(
       result.status,
-      'ready',
-      `Declared capability ${capabilityId} must map explicitly or be removed from the executable registry.`,
+      'not_activated',
+      `${capabilityId} must remain blocked until a dedicated executor is implemented.`,
     );
+    if (result.status === 'not_activated') {
+      assert.equal(result.agent, null, `${capabilityId} must never fall back to an unrelated agent.`);
+    }
   }
 });
 
