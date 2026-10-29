@@ -37,6 +37,32 @@ test('organization summary reports the expected leadership and planned units', a
   assert.ok(summary.units.some((unit) => unit.id === 'fintech-ventures'));
 });
 
+test('every department and business unit has an accountable lead in the correct reporting chain', () => {
+  const unitsById = new Map(initialOrganization.units.map((unit) => [unit.id, unit]));
+  const rolesById = new Map(initialOrganization.roles.map((role) => [role.id, role]));
+
+  for (const unit of initialOrganization.units) {
+    assert.equal(
+      unit.accountableRoleIds.length,
+      1,
+      `Unit ${unit.id} must have exactly one directly accountable lead.`,
+    );
+
+    const leadId = unit.accountableRoleIds[0];
+    const lead = rolesById.get(leadId);
+    assert.ok(lead, `Unit ${unit.id} references a missing lead ${leadId}.`);
+    assert.equal(lead.unitId, unit.id, `Lead ${leadId} must belong to ${unit.id}.`);
+
+    const parent = unit.parentId ? unitsById.get(unit.parentId) : undefined;
+    const expectedManagerId = parent?.accountableRoleIds[0] ?? initialOrganization.ceoRoleId;
+    assert.equal(
+      lead.reportsToRoleId,
+      expectedManagerId,
+      `Lead ${leadId} must report to ${expectedManagerId} for unit ${unit.id}.`,
+    );
+  }
+});
+
 test('unknown actor is denied', () => {
   const result = authorizeOrganizationalAction({
     actorRole: null,
