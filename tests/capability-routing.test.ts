@@ -89,3 +89,18 @@ test('routes objectives across people, compliance, procurement, and governance',
     assert.ok(matches[0]?.unit, `Expected a department for ${capabilityId}`);
   }
 });
+
+
+test('routes executive management and research-development work to their own departments', () => {
+  const cases = [
+    ['executive_management', 'Coordinate the executive operating rhythm and cross-department management review'],
+    ['research_development', 'Conduct a feasibility study and prototype validation for a technical concept'],
+  ] as const;
+
+  for (const [capabilityId, objective] of cases) {
+    const matches = routeObjective(initialOrganization, objective);
+    assert.equal(matches[0]?.capability.id, capabilityId, objective);
+    assert.ok(matches[0]?.unit, `Expected a department for ${capabilityId}`);
+    assert.ok(matches[0]?.role, `Expected an accountable role for ${capabilityId}`);
+  }
+});
