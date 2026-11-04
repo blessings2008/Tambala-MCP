@@ -13,7 +13,7 @@ This document records the current implementation state and the target operating 
 - The CEO and department role records are still marked planned in the seeded organization model. A configured model profile is not proof that its organizational role is active.
 - The live test console is not yet the production employee workspace: the staged chat flow does not provide durable task history end-to-end.
 - Existing scheduled automation is a one-shot daily preparation job. It prepares follow-up actions and due-task flags; it does not send prospect messages.
-- Payment-specific MCP operations are not yet verified against the live Tambala Pay API.
+- **Tambala Pay is live as a separate payment system (Founder-confirmed, 4 November 2026).** The organization-side MCP adapter and live API operations remain unverified; the payment system being live does not by itself prove this repository is connected to it.
 
 ## Whole-organization operating model
 
@@ -40,7 +40,7 @@ A department is not operational merely because it exists in the organization cha
 | `marketing_strategy` | Marketing & Brand Management | Dedicated runtime mapping exists |
 | `media_content` | Media & Content Production | Dedicated runtime mapping exists |
 | `finance` | Finance & Accounting | Dedicated runtime mapping exists |
-| `payments` | Fintech Ventures / Tambala Pay | Runtime mapping exists; live API adapter still requires verified API contract |
+| `payments` | Fintech Ventures / Tambala Pay | Tambala Pay platform is live (Founder-confirmed); MCP adapter/API contract and safe end-to-end operation still need verification |
 | `technology_engineering` | Technology & Engineering | Dedicated runtime mapping exists |
 | `strategy_planning` | Strategy & Corporate Planning | No dedicated executor yet |
 | `product_management` | Product Management & Innovation | No dedicated executor yet |
@@ -78,7 +78,7 @@ Required worker properties:
 
 ## Tambala Pay integration contract
 
-The payments department must call the live Tambala Pay API through a server-side adapter. Before implementation, obtain and verify:
+Tambala Pay is now live as a separate system. The organization must connect to it through a server-side adapter only after its real API contract is obtained and verified. Before implementation, obtain and verify:
 
 - the production API base URL;
 - API documentation or OpenAPI specification;
@@ -116,14 +116,14 @@ All configuration writes must be authenticated, validated, audited and permissio
 4. Complete durable task persistence and append-only event recording in the actual execution path.
 5. Implement transactional or otherwise failure-safe task/event writes.
 6. Implement approval-backed action execution and audit enforcement.
-7. Verify the live Tambala Pay API contract and build the server-side payments adapter.
+7. Connect the already-live Tambala Pay system to the organization through a verified server-side adapter; test read-only operations first, then approval-gated money movement.
 8. Build the Founder dashboard against real read/write APIs, not hard-coded demo data.
 9. Deploy web service, background worker and scheduled jobs separately; verify health and recovery.
 10. Run end-to-end tests, then enable automation in stages with external actions disabled by default.
 
 ## Current blockers that require owner-provided configuration
 
-- Tambala Pay production API URL, API documentation and the authorized token must be supplied through a secure secret-setting path.
+- Tambala Pay is live, but the organization-side integration still needs its production API URL, API documentation and authorized token supplied through a secure secret-setting path.
 - Specialist provider credentials/models must be configured in the host environment; never paste secret values into chat or commit them.
 - The organization database migration must be applied and verified before the task engine can be treated as persistent in production.
 - The deployment must have a persistent worker process; repository changes alone do not create an always-on deployment.
