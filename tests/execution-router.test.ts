@@ -142,6 +142,8 @@ test('every declared capability is either explicitly executable or safely blocke
     'legal_risk_compliance',
     'procurement_resources',
     'governance_oversight',
+    'executive_management',
+    'research_development',
   ];
 
   assert.deepEqual(
