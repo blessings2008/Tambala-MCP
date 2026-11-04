@@ -85,3 +85,14 @@ export async function handleOAuth(req: IncomingMessage, res: ServerResponse, pat
 }
 
 export function verifyOAuthAccessToken(token: string): boolean { const payload = verify(token); return !!payload && payload.typ === 'access' && payload.scope === 'mcp'; }
+
+/**
+ * Return the verified OAuth client identifier for request-scoped identity mapping.
+ * A client ID is only a principal identifier; it is NOT itself an organization role.
+ * Legacy shared bearer tokens intentionally return null.
+ */
+export function getOAuthAccessClientId(token: string): string | null {
+  const payload = verify(token);
+  if (!payload || payload.typ !== 'access' || payload.scope !== 'mcp') return null;
+  return typeof payload.client === 'string' && payload.client.length > 0 ? payload.client : null;
+}

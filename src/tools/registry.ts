@@ -14,6 +14,7 @@ import { registerTambalaPayTools } from './tambala-pay.js';
 /** Register all MCP tool groups. Keep transport/bootstrap code out of tool modules. */
 export function registerAllTools(server: McpServer): void {
   const registrars = [
+    registerOrganizationTools,
     registerCompanyTools,
     registerPortfolioTools,
     registerLeadIntelligenceTools,
