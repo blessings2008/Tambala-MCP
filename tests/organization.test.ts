@@ -184,3 +184,36 @@ test('request identity context is isolated between concurrent requests', async (
   assert.deepEqual(first, { kind: 'oauth', clientId: 'client-one' });
   assert.deepEqual(second, { kind: 'oauth', clientId: 'client-two' });
 });
+
+test('department and business-unit leads cannot execute financial transactions', () => {
+  for (const roleId of ['director-finance-accounting', 'leader-fintech-ventures']) {
+    const result = authorizeOrganizationalAction({
+      actorRole: role(roleId),
+      action: 'execute_financial_transaction',
+      approval: {
+        authority: 'founder',
+        approved: true,
+        approvalId: 'approval-test-finance-001',
+      },
+    });
+    assert.equal(result.allowed, false, `${roleId} must not gain transaction authority from an approval alone.`);
+    assert.equal(result.requiresApproval, false);
+  }
+});
+
+test('financial transaction authority remains reserved to the Founder role', () => {
+  const founderResult = authorizeOrganizationalAction({
+    actorRole: role('founder'),
+    action: 'execute_financial_transaction',
+  });
+  const ceoResult = authorizeOrganizationalAction({
+    actorRole: role('ceo'),
+    action: 'execute_financial_transaction',
+  });
+
+  assert.equal(founderResult.allowed, true);
+  assert.equal(ceoResult.allowed, false);
+  assert.equal(ceoResult.requiresApproval, true);
+  assert.equal(ceoResult.requiredAuthority, 'founder');
+});
+
