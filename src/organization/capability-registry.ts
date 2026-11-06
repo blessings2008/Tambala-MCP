@@ -196,8 +196,14 @@ function normalize(value: string): string {
 }
 
 function countMatches(text: string, keywords: string[]): number {
-  const normalized = normalize(text);
-  return keywords.reduce((score, keyword) => score + (normalized.includes(normalize(keyword)) ? 1 : 0), 0);
+  // Match complete normalized words/phrases. Substring matching makes short
+  // terms such as "IT" fire inside unrelated words such as "website".
+  const normalized = ` ${normalize(text)} `;
+  return keywords.reduce((score, keyword) => {
+    const normalizedKeyword = normalize(keyword);
+    if (!normalizedKeyword) return score;
+    return score + (normalized.includes(` ${normalizedKeyword} `) ? 1 : 0);
+  }, 0);
 }
 
 function findUnit(definition: OrganizationDefinition, tags: string[]): OrganizationUnit | null {
