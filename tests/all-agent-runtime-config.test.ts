@@ -6,6 +6,7 @@ import {
   getAgentRuntimeInfo,
   type AgentName,
 } from '../src/services/ai/models.js';
+import { initialOrganization } from '../src/organization/seed.js';
 
 const specialistAgents = [
   'outreach', 'followup', 'research', 'marketing', 'content', 'finance',
@@ -43,6 +44,18 @@ test('every department specialist has a distinct directory identity and remains 
     assert.ok(entry.responsibility.trim(), `${agent} needs an explicit responsibility`);
     assert.ok(entry.unitId.trim(), `${agent} needs an organizational unit`);
     assert.equal(entry.roleStatus, 'planned', `${agent} must not become an active organizational role merely by having a profile`);
+  }
+});
+
+test('every specialist directory entry points to a real organization unit', () => {
+  const organizationUnitIds = new Set(initialOrganization.units.map((unit) => unit.id));
+
+  for (const agent of specialistAgents) {
+    const entry = AGENT_DIRECTORY[agent];
+    assert.ok(
+      organizationUnitIds.has(entry.unitId),
+      `${agent} points to missing organization unit ${entry.unitId}`,
+    );
   }
 });
 
