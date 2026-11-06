@@ -34,7 +34,7 @@ test('customer relations resolves to the available follow-up runtime profile', (
   assert.equal(result.agent, 'followup');
 });
 
-test('planned marketing role maps to its own runtime profile, never sales', () => {
+test('planned marketing role maps to its own profile but cannot execute', async () => {
   const result = resolveExecutionRoute(route({
     capabilityId: 'marketing_strategy',
     department: 'Marketing & Brand Management',
@@ -45,6 +45,19 @@ test('planned marketing role maps to its own runtime profile, never sales', () =
   if (result.status !== 'ready') return;
   assert.equal(result.agent, 'marketing');
   assert.equal(result.organizationRoleStatus, 'planned');
+
+  const { requireConfiguredRuntime } = await import('../src/organization/execution-router.js');
+  const blocked = requireConfiguredRuntime(result, {
+    ready: true,
+    apiKeyConfigured: true,
+    apiKeyEnv: 'TAMBALA_MARKETING_API_KEY',
+    baseURL: 'https://api.example/v1',
+    model: 'example-model',
+  });
+  assert.equal(blocked.status, 'not_activated');
+  if (blocked.status !== 'not_activated') return;
+  assert.equal(blocked.agent, null);
+  assert.match(blocked.reason, /role is not active/i);
 });
 
 test('all core capabilities map to the matching department profile', () => {
@@ -61,7 +74,7 @@ test('all core capabilities map to the matching department profile', () => {
       capabilityId,
       department,
       role: 'Planned department director',
-      roleActivation: 'planned',
+      roleActivation: 'active',
     }));
     assert.equal(result.status, 'ready', `${capabilityId} should map to an execution profile`);
     if (result.status === 'ready') assert.equal(result.agent, expectedAgent);
