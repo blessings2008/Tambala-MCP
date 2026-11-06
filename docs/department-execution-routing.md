@@ -51,6 +51,10 @@ The orchestrator's shared Groq credential is not a fallback for specialist agent
 
 All specialist directory entries currently remain `planned` in the organization chart. Runtime configuration alone must never activate a role or create an organizational authority binding.
 
+**Execution now enforces this distinction:** a mapped specialist route is blocked with `not_activated` unless the matched organizational role is explicitly `active`. This remains true even when the provider API key, base URL, and model are configured. Only after the role is active does the runtime readiness gate check its dedicated provider configuration. This prevents a configured model from silently becoming an employee or receiving delegated work without an organizational appointment.
+
+The Founder has confirmed that Tambala Pay is live. That is a product-level operating fact supplied by the Founder, not a verification of the Payments agent's API credentials, permissions, or transaction integration. The Payments department may coordinate work around Tambala Pay, but it must not claim to have executed, reconciled, refunded, or verified a transaction unless the payment system returns authoritative evidence.
+
 ## Routing and execution safeguards
 
 - Every declared capability has an explicit specialist mapping, and tests verify the mapping set.
