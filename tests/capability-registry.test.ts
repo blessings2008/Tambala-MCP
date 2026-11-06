@@ -62,3 +62,48 @@ test('every declared capability resolves to a real unit and an accountable role 
     );
   }
 });
+
+
+test('high-risk and cross-functional objectives stay with their accountable specialist departments', async () => {
+  const { initialOrganization } = await import('../src/organization/seed.js');
+  const cases = [
+    { objective: 'Check Tambala Pay payment status and issue an invoice receipt record.', capability: 'payments', unit: 'fintech-ventures' },
+    { objective: 'Review monthly expenses, budget variance and financial reporting.', capability: 'finance', unit: 'finance-accounting' },
+    { objective: 'Develop the marketing strategy and brand positioning for a new service.', capability: 'marketing_strategy', unit: 'marketing-brand' },
+    { objective: 'Create social media content posts and a short video script.', capability: 'media_content', unit: 'media-content' },
+    { objective: 'Review legal compliance and regulatory obligations for a client contract.', capability: 'legal_risk_compliance', unit: 'legal-risk-compliance' },
+    { objective: 'Audit security access controls, vulnerabilities and system reliability.', capability: 'security_it', unit: 'cybersecurity-it' },
+  ];
+
+  for (const item of cases) {
+    const top = routeObjective(initialOrganization, item.objective)[0];
+    assert.ok(top, `Expected a route for: ${item.objective}`);
+    assert.equal(top.capability.id, item.capability, `Wrong specialist selected for: ${item.objective}`);
+    assert.equal(top.unit?.id, item.unit, `Wrong department selected for: ${item.objective}`);
+    assert.ok(top.role, `${item.capability} must resolve to an accountable role`);
+    assert.ok(top.unit?.accountableRoleIds.includes(top.role.id));
+  }
+});
+
+test('capability registry identifiers are unique and every capability has complete routing metadata', async () => {
+  const { initialOrganization } = await import('../src/organization/seed.js');
+  const { DEPARTMENT_CAPABILITIES } = await import('../src/organization/capability-registry.js');
+  const ids = DEPARTMENT_CAPABILITIES.map((capability) => capability.id);
+
+  assert.equal(new Set(ids).size, ids.length, 'Capability IDs must be unique');
+
+  for (const capability of DEPARTMENT_CAPABILITIES) {
+    assert.ok(capability.unitTags.length > 0, `${capability.id} needs unit tags`);
+    assert.ok(capability.roleTags.length > 0, `${capability.id} needs role tags`);
+    assert.ok(capability.objectiveKeywords.length > 0, `${capability.id} needs objective keywords`);
+    assert.ok(capability.researchKeywords.length > 0, `${capability.id} needs research keywords`);
+    assert.ok(capability.deliverableHints.length > 0, `${capability.id} needs deliverable hints`);
+
+    const sample = capability.objectiveKeywords.at(-1) ?? capability.description;
+    const match = routeObjective(initialOrganization, sample)
+      .find((candidate) => candidate.capability.id === capability.id);
+    assert.ok(match?.unit, `${capability.id} must resolve to an organization unit`);
+    assert.ok(match?.role, `${capability.id} must resolve to an accountable role`);
+    assert.ok(match.unit.accountableRoleIds.includes(match.role.id));
+  }
+});
