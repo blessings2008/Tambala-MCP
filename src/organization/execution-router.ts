@@ -102,6 +102,16 @@ const AVAILABLE_EXECUTORS: Record<string, { agent: DepartmentAgentName; title: s
     agent: 'engineering',
     title: 'Head of Technology & Engineering',
   },
+  strategy_planning: { agent: 'strategy', title: 'Head of Strategy & Corporate Planning' },
+  product_management: { agent: 'product', title: 'Head of Product Management & Innovation' },
+  security_it: { agent: 'security', title: 'Head of Cybersecurity & IT' },
+  operations_administration: { agent: 'operations', title: 'Head of Operations & Administration' },
+  people_agent_management: { agent: 'people', title: 'Head of Human Resources & Agent Management' },
+  legal_risk_compliance: { agent: 'legal', title: 'Head of Legal, Risk & Compliance' },
+  procurement_resources: { agent: 'procurement', title: 'Head of Procurement & Resource Management' },
+  executive_management: { agent: 'executive', title: 'Head of Executive Management' },
+  research_development: { agent: 'rnd', title: 'Head of Research & Development' },
+  governance_oversight: { agent: 'governance', title: 'Head of Board & Corporate Governance' },
 };
 
 /**
