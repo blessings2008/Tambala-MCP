@@ -40,3 +40,25 @@ test('research query stays keyword-oriented for web research', () => {
   assert.match(query, /official sources|recent information|verified evidence/i);
   assert.ok(query.length <= 500);
 });
+
+test('every declared capability resolves to a real unit and an accountable role in the full organization', async () => {
+  const { initialOrganization } = await import('../src/organization/seed.js');
+  const { DEPARTMENT_CAPABILITIES } = await import('../src/organization/capability-registry.js');
+
+  assert.equal(DEPARTMENT_CAPABILITIES.length, 18);
+
+  for (const capability of DEPARTMENT_CAPABILITIES) {
+    const objective = capability.objectiveKeywords.at(-1) ?? capability.description;
+    const match = routeObjective(initialOrganization, objective)
+      .find((candidate) => candidate.capability.id === capability.id);
+
+    assert.ok(match, `Expected a match for ${capability.id}`);
+    assert.ok(match.unit, `${capability.id} must resolve to a real organization unit`);
+    assert.ok(match.role, `${capability.id} must resolve to an accountable role`);
+    assert.equal(match.role.unitId, match.unit.id, `${capability.id} role must belong to its routed unit`);
+    assert.ok(
+      match.unit.accountableRoleIds.includes(match.role.id),
+      `${capability.id} role must be listed as accountable by its unit`,
+    );
+  }
+});
