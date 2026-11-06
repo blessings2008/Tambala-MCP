@@ -104,3 +104,38 @@ test('routes executive management and research-development work to their own dep
     assert.ok(matches[0]?.role, `Expected an accountable role for ${capabilityId}`);
   }
 });
+
+test('every organization capability resolves to its intended department and accountable role', () => {
+  const cases = [
+    ['sales_prospecting', 'Find and qualify new business prospects for outreach'],
+    ['web_research', 'Investigate a market and verify information with evidence'],
+    ['customer_relations', 'Resolve a customer complaint and plan client follow-up'],
+    ['marketing_strategy', 'Develop brand positioning and a marketing campaign strategy'],
+    ['media_content', 'Produce social media content, captions and a video script'],
+    ['finance', 'Prepare a revenue and expense budget reconciliation report'],
+    ['payments', 'Create an invoice, issue a receipt and reconcile a payment transaction'],
+    ['technology_engineering', 'Build an API and fix a software database bug'],
+    ['strategy_planning', 'Prepare a strategic roadmap with measurable objectives'],
+    ['product_management', 'Define product requirements and prioritize MVP features'],
+    ['security_it', 'Review cybersecurity, access controls and backup reliability'],
+    ['operations_administration', 'Improve the internal workflow and document an SOP'],
+    ['people_agent_management', 'Prepare agent onboarding and a performance review'],
+    ['legal_risk_compliance', 'Review regulatory compliance and data protection risks'],
+    ['procurement_resources', 'Compare suppliers and prepare an equipment procurement plan'],
+    ['executive_management', 'Prepare an executive management review and coordinate departments'],
+    ['research_development', 'Run a technical feasibility study and validate a prototype'],
+    ['governance_oversight', 'Prepare a board oversight report and approval decision record'],
+  ] as const;
+
+  assert.equal(cases.length, 18);
+  for (const [capabilityId, objective] of cases) {
+    const matches = routeObjective(initialOrganization, objective);
+    const match = matches.find((candidate) => candidate.capability.id === capabilityId);
+    assert.ok(match, `Expected ${objective} to match ${capabilityId}`);
+    assert.ok(match.unit, `${capabilityId} must resolve to an organization unit`);
+    assert.ok(match.role, `${capabilityId} must resolve to an accountable role`);
+    assert.equal(match.role.unitId, match.unit.id, `${capabilityId} role must belong to its routed unit`);
+    assert.ok(match.researchQuery.length > 0, `${capabilityId} must define a bounded research query`);
+  }
+});
+
