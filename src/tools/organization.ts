@@ -85,7 +85,7 @@ export function registerOrganizationTools(server: McpServer): void {
         return {
           ...runtime,
           unitRoles,
-          executionEligible: runtime.ready && unitRoles.some((role) => role.activation === 'active'),
+          unitHasActiveRole: unitRoles.some((role) => role.activation === 'active'),
         };
       });
 
@@ -95,12 +95,9 @@ export function registerOrganizationTools(server: McpServer): void {
         validationErrors: snapshot.validation.errors,
         agentCount: agents.length,
         readyRuntimeCount: agents.filter((agent) => agent.ready).length,
-        activeUnitRoleCount: agents.filter((agent) => agents.some((candidate) =>
-          candidate.unitId === agent.unitId && candidate.unitRoles.some((role) => role.activation === 'active'),
-        )).length,
-        executionEligibleCount: agents.filter((agent) => agent.executionEligible).length,
+        activeOrganizationRoleCount: snapshot.organization.roles.filter((role) => role.activation === 'active').length,
         agents,
-        note: 'Runtime readiness is not organizational appointment or permission. Execution still requires an active mapped role, trusted identity, and the applicable authorization checks.',
+        note: 'Runtime readiness and an active role in the same unit do not prove that this agent is appointed or authorized. Every agent profile still requires an explicit trusted role binding and applicable authorization checks before execution.',
       });
     },
   );
