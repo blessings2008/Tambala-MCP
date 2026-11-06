@@ -106,6 +106,20 @@ function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t
 document.getElementById('notifications').addEventListener('click',()=>toast('Notifications will appear when the event feed is connected.'));
 document.getElementById('newTask').addEventListener('click',()=>{window.location.href='/chat-live'});document.getElementById('openTaskConsole').addEventListener('click',()=>{window.location.href='/chat-live'});
 document.getElementById('integrationInfo').addEventListener('click',()=>toast('The payment service is live. Next: configure the organization-side secret, implement the adapter, then verify safe read-only calls.'));
-document.getElementById('globalSearch').addEventListener('input',e=>{const q=e.target.value.toLowerCase();if(!q)return;const match=departments.find(d=>d.join(' ').toLowerCase().includes(q));if(match)showView('departments')});
+const globalSearch=document.getElementById('globalSearch');
+function runWorkspaceSearch(){
+ const q=globalSearch.value.trim().toLowerCase();
+ if(!q)return;
+ const navMatch=[...document.querySelectorAll('.nav[data-view]')].find(n=>n.textContent.toLowerCase().includes(q));
+ if(navMatch){showView(navMatch.dataset.view);return}
+ const deptMatches=departments.filter(d=>d.join(' ').toLowerCase().includes(q));
+ const unitMatches=['Financial Technology','Software & Digital Services','Media & Publishing'].filter(n=>n.toLowerCase().includes(q));
+ if(deptMatches.length||unitMatches.length){showView('departments');const cards=[...grid.children];cards.forEach(card=>{card.hidden=!card.textContent.toLowerCase().includes(q)});toast((deptMatches.length+unitMatches.length)+' organization match(es)');return}
+ const viewMatch=[...document.querySelectorAll('.view')].find(v=>v.textContent.toLowerCase().includes(q));
+ if(viewMatch){showView(viewMatch.id.replace('view-',''));return}
+ toast('No matching department, team or workspace section found.');
+}
+globalSearch.addEventListener('keydown',e=>{if(e.key==='Enter')runWorkspaceSearch();if(e.key==='Escape'){globalSearch.value='';[...grid.children].forEach(card=>card.hidden=false)}});
+globalSearch.addEventListener('input',()=>{if(!globalSearch.value.trim())[...grid.children].forEach(card=>card.hidden=false)});
 </script>
 </body></html>
