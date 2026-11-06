@@ -14,7 +14,7 @@ This document records the current implementation state and the target operating 
 - The CEO and department role records are still marked planned in the seeded organization model. A configured model profile is not proof that its organizational role is active.
 - The live test console is not yet the production employee workspace: the staged chat flow does not provide durable task history end-to-end.
 - Existing scheduled automation is a one-shot daily preparation job. It prepares follow-up actions and due-task flags; it does not send prospect messages.
-- **Tambala Pay is live as a separate payment system (Founder-confirmed, 4 November 2026).** The organization-side MCP adapter and live API operations remain unverified; the payment system being live does not by itself prove this repository is connected to it.
+- **Tambala Pay is live as a separate payment system (Founder reconfirmed, 6 November 2026).** The organization-side MCP adapter and live API operations remain unverified; the payment system being live does not by itself prove this repository is connected to it.
 
 ## Whole-organization operating model
 
