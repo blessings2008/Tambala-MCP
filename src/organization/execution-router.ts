@@ -57,7 +57,24 @@ export function requireConfiguredRuntime(
   route: ExecutionRoute,
   runtime: ExecutorRuntimeReadiness,
 ): ExecutionRoute {
-  if (route.status !== 'ready' || runtime.ready) return route;
+  if (route.status !== 'ready') return route;
+
+  // A runtime profile is not an organizational appointment. Do not execute work
+  // for a role that is still planned, even when its provider credentials exist.
+  if (route.organizationRoleStatus !== 'active') {
+    return {
+      status: 'not_activated',
+      capabilityId: route.capabilityId,
+      department: route.department,
+      role: route.role,
+      agent: null,
+      researchQuery: route.researchQuery || null,
+      deliverableHints: route.deliverableHints,
+      reason: `${route.role} has a mapped runtime profile, but its organizational role is not active. Complete trusted role assignment and activation before execution.`,
+    };
+  }
+
+  if (runtime.ready) return route;
   const missing: string[] = [];
   if (!runtime.apiKeyConfigured) missing.push(runtime.apiKeyEnv);
   if (!runtime.baseURL) missing.push(`TAMBALA_${route.agent.toUpperCase()}_BASE_URL`);
