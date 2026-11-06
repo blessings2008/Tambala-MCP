@@ -286,3 +286,34 @@ test('Founder-reserved action policy is consistent across departments and busine
     assert.equal(result.allowed, false, `${roleId} must not inherit transaction capability through approval.`);
   }
 });
+
+test('every department has an accountable lead connected to its reporting structure', () => {
+  const departments = initialOrganization.units.filter((unit) => unit.kind === 'department');
+  assert.equal(departments.length, 18);
+
+  for (const department of departments) {
+    assert.equal(
+      department.accountableRoleIds.length,
+      1,
+      `${department.name} must have one clearly accountable department lead`,
+    );
+
+    const leadId = department.accountableRoleIds[0];
+    const lead = initialOrganization.roles.find((candidate) => candidate.id === leadId);
+    assert.ok(lead, `${department.name} must reference an existing lead role`);
+    assert.equal(lead.unitId, department.id, `${department.name} lead must belong to that department`);
+    assert.equal(lead.kind, 'ai_agent', `${department.name} lead must have an explicit agent role definition`);
+
+    const parent = initialOrganization.units.find((unit) => unit.id === department.parentId);
+    const expectedManager = parent
+      ? parent.accountableRoleIds.find((roleId) => roleId.startsWith('director-'))
+      : initialOrganization.ceoRoleId;
+    assert.ok(expectedManager, `${department.name} must have a defined reporting manager`);
+    assert.equal(
+      lead.reportsToRoleId,
+      expectedManager,
+      `${department.name} lead must report to its division director or the CEO`,
+    );
+  }
+});
+
