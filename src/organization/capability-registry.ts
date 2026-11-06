@@ -84,7 +84,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   {
     id: 'payments',
     unitTags: ['tambala-pay', 'fintech', 'payments'],
-    roleTags: ['payments', 'finance', 'financial operations'],
+    roleTags: ['payments', 'finance', 'financial operations', 'financial technology', 'fintech'],
     description: 'Operate Tambala Pay and payment collection workflows for the organization.',
     objectiveKeywords: ['payment', 'invoice', 'receipt', 'partial payment', 'balance', 'refund', 'transaction', 'Tambala Pay'],
     researchKeywords: ['payment provider', 'payment integration', 'transaction reconciliation'],
