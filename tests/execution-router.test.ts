@@ -120,56 +120,66 @@ test('missing department in the organization snapshot blocks execution', () => {
   assert.match(result.reason, /missing from the loaded organization snapshot/i);
 });
 
-test('every declared capability is either explicitly executable or safely blocked', async () => {
+test('every declared department capability has its own dedicated runtime mapping', async () => {
   const { DEPARTMENT_CAPABILITIES } = await import('../src/organization/capability-registry.js');
-  const declared = DEPARTMENT_CAPABILITIES.map((capability) => capability.id);
-  const executable = [
-    'sales_prospecting',
-    'web_research',
-    'customer_relations',
-    'marketing_strategy',
-    'media_content',
-    'finance',
-    'payments',
-    'technology_engineering',
-  ];
-  const awaitingDedicatedExecutor = [
-    'strategy_planning',
-    'product_management',
-    'security_it',
-    'operations_administration',
-    'people_agent_management',
-    'legal_risk_compliance',
-    'procurement_resources',
-    'governance_oversight',
-    'executive_management',
-    'research_development',
-  ];
+  const expectedExecutors: Record<string, string> = {
+    sales_prospecting: 'outreach',
+    web_research: 'research',
+    customer_relations: 'followup',
+    marketing_strategy: 'marketing',
+    media_content: 'content',
+    finance: 'finance',
+    payments: 'payments',
+    technology_engineering: 'engineering',
+    strategy_planning: 'strategy',
+    product_management: 'product',
+    security_it: 'security',
+    operations_administration: 'operations',
+    people_agent_management: 'people',
+    legal_risk_compliance: 'legal',
+    procurement_resources: 'procurement',
+    executive_management: 'executive',
+    research_development: 'rnd',
+    governance_oversight: 'governance',
+  };
 
+  const declared = DEPARTMENT_CAPABILITIES.map((capability) => capability.id);
   assert.deepEqual(
     declared.slice().sort(),
-    [...executable, ...awaitingDedicatedExecutor].sort(),
-    'Every capability must be classified in this test when the registry changes.',
+    Object.keys(expectedExecutors).sort(),
+    'Every declared capability must have an explicit executor classification.',
   );
 
-  for (const capabilityId of executable) {
+  for (const [capabilityId, expectedAgent] of Object.entries(expectedExecutors)) {
     const result = resolveExecutionRoute(route({ capabilityId }));
-    assert.equal(result.status, 'ready', `Expected an explicit executor for ${capabilityId}.`);
-  }
-
-  for (const capabilityId of awaitingDedicatedExecutor) {
-    const result = resolveExecutionRoute(route({ capabilityId }));
-    assert.equal(
-      result.status,
-      'not_activated',
-      `${capabilityId} must remain blocked until a dedicated executor is implemented.`,
-    );
-    if (result.status === 'not_activated') {
-      assert.equal(result.agent, null, `${capabilityId} must never fall back to an unrelated agent.`);
+    assert.equal(result.status, 'ready', `Expected a dedicated route for ${capabilityId}.`);
+    if (result.status === 'ready') {
+      assert.equal(result.agent, expectedAgent, `${capabilityId} must not route to an unrelated agent.`);
     }
   }
 });
 
+test('every routed agent has a directory entry, prompt rules and bounded runtime limits', async () => {
+  const { AGENT_DIRECTORY, AGENT_DEFAULT_MODELS } = await import('../src/services/ai/models.js');
+  const { AGENT_PROMPT_RULES } = await import('../src/services/ai/rules.js');
+  const { getAgentLimitInfo } = await import('../src/services/ai/limits.js');
+  const expectedAgents = [
+    'orchestrator', 'outreach', 'followup', 'research', 'marketing', 'content',
+    'finance', 'payments', 'engineering', 'strategy', 'product', 'security',
+    'operations', 'people', 'legal', 'procurement', 'executive', 'rnd', 'governance',
+  ].sort();
+
+  assert.deepEqual(Object.keys(AGENT_DIRECTORY).sort(), expectedAgents);
+  assert.deepEqual(Object.keys(AGENT_DEFAULT_MODELS).sort(), expectedAgents);
+  assert.deepEqual(Object.keys(AGENT_PROMPT_RULES).sort(), expectedAgents);
+
+  for (const agent of expectedAgents as Array<keyof typeof AGENT_DIRECTORY>) {
+    const limits = getAgentLimitInfo(agent);
+    assert.ok(limits.requestsPerMinute > 0, `${agent} must have a positive request limit.`);
+    assert.ok(limits.concurrency > 0, `${agent} must have a positive concurrency limit.`);
+    assert.equal(AGENT_DIRECTORY[agent].roleStatus, 'planned', `${agent} must not be auto-activated by adding a runtime profile.`);
+  }
+});
 test('missing department and unknown capability never fall back to an unrelated agent', () => {
   const unknown = resolveExecutionRoute(route({ capabilityId: 'procurement' }));
   assert.equal(unknown.status, 'not_activated');
