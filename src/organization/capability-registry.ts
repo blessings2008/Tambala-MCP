@@ -138,7 +138,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   {
     id: 'people_agent_management',
     unitTags: ['people', 'agents', 'roles'],
-    roleTags: ['human resources', 'agent management'],
+    roleTags: ['human resources', 'agent management', 'director'],
     description: 'Define responsibilities, staffing or agent needs, role activation, evaluation, and development.',
     objectiveKeywords: ['human resources', 'HR', 'agent performance', 'role assignment', 'staffing', 'onboarding', 'performance review', 'agent lifecycle'],
     researchKeywords: ['role requirements', 'performance criteria', 'agent evaluation'],
