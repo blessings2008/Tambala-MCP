@@ -146,7 +146,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'legal_risk_compliance',
-    unitTags: ['legal', 'risk', 'compliance'],
+    unitTags: ['legal', 'compliance'],
     roleTags: ['legal', 'risk', 'compliance'],
     description: 'Identify legal, policy, regulatory, and operational risks and recommend controls.',
     objectiveKeywords: ['legal', 'compliance', 'regulation', 'regulatory', 'risk assessment', 'policy review', 'contract risk', 'data protection'],
