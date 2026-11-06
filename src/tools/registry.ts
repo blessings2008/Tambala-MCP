@@ -10,6 +10,7 @@ import { registerDailyReportTools } from './daily-report.js';
 import { registerEmailReportTools } from './email-report.js';
 import { registerAutomationTools } from './automation.js';
 import { registerTambalaPayTools } from './tambala-pay.js';
+import { registerOrganizationTools } from './organization.js';
 
 /** Register all MCP tool groups. Keep transport/bootstrap code out of tool modules. */
 export function registerAllTools(server: McpServer): void {
