@@ -7,9 +7,10 @@ This document records the current implementation state and the target operating 
 - Work branch: `org-capability-routing`.
 - The HTTP service exposes a token-protected live agent test console and the MCP tool registry.
 - The organization chart contains four divisions, eighteen departments, and three business units.
-- Capability routing currently has eighteen declared capabilities.
-- Eight department capabilities have dedicated runtime mappings: sales prospecting, customer relations, central research, marketing strategy, media content, finance, payments, and technology engineering.
-- Other capabilities are deliberately blocked rather than silently redirected to an unrelated agent.
+- Capability routing has eighteen declared capabilities, and all eighteen now have dedicated agent profiles and explicit department-to-agent mappings.
+- The ten newly covered profiles are strategy, product, cybersecurity/IT, operations, people/agent management, legal/risk/compliance, procurement, executive management, research & development, and governance.
+- These profiles are deliberately still marked planned. A route/profile definition is not proof that its provider credentials, model, tools, role binding or production workflow are configured.
+- The Founder confirmed that the main organization dashboard URL is live on 6 November 2026. The deployed dashboard is currently an honest control-plane preview; its task, approval, workforce, audit and automation data APIs are not yet connected end-to-end.
 - The CEO and department role records are still marked planned in the seeded organization model. A configured model profile is not proof that its organizational role is active.
 - The live test console is not yet the production employee workspace: the staged chat flow does not provide durable task history end-to-end.
 - Existing scheduled automation is a one-shot daily preparation job. It prepares follow-up actions and due-task flags; it does not send prospect messages.
@@ -34,24 +35,24 @@ A department is not operational merely because it exists in the organization cha
 
 | Capability | Department | Current execution state |
 |---|---|---|
-| `sales_prospecting` | Sales & Business Development | Dedicated runtime mapping exists |
-| `customer_relations` | Customer Relations & Support | Dedicated runtime mapping exists |
-| `web_research` | Central Research & Intelligence | Dedicated runtime mapping exists |
-| `marketing_strategy` | Marketing & Brand Management | Dedicated runtime mapping exists |
-| `media_content` | Media & Content Production | Dedicated runtime mapping exists |
-| `finance` | Finance & Accounting | Dedicated runtime mapping exists |
-| `payments` | Fintech Ventures / Tambala Pay | Tambala Pay platform is live (Founder-confirmed); MCP adapter/API contract and safe end-to-end operation still need verification |
-| `technology_engineering` | Technology & Engineering | Dedicated runtime mapping exists |
-| `strategy_planning` | Strategy & Corporate Planning | No dedicated executor yet |
-| `product_management` | Product Management & Innovation | No dedicated executor yet |
-| `security_it` | Cybersecurity & IT | No dedicated executor yet |
-| `operations_administration` | Operations & Administration | No dedicated executor yet |
-| `people_agent_management` | Human Resources & Agent Management | No dedicated executor yet |
-| `legal_risk_compliance` | Legal, Risk & Compliance | No dedicated executor yet |
-| `procurement_resources` | Procurement & Resource Management | No dedicated executor yet |
-| `executive_management` | Executive Management | No dedicated executor yet |
-| `research_development` | Research & Development | No dedicated executor yet |
-| `governance_oversight` | Board & Corporate Governance | No dedicated executor yet |
+| `sales_prospecting` | Sales & Business Development | Dedicated agent profile and route defined; verify runtime and role binding |
+| `customer_relations` | Customer Relations & Support | Dedicated agent profile and route defined; verify runtime and role binding |
+| `web_research` | Central Research & Intelligence | Dedicated agent profile and route defined; verify runtime and role binding |
+| `marketing_strategy` | Marketing & Brand Management | Dedicated agent profile and route defined; verify runtime and role binding |
+| `media_content` | Media & Content Production | Dedicated agent profile and route defined; verify runtime and role binding |
+| `finance` | Finance & Accounting | Dedicated agent profile and route defined; verify runtime and role binding |
+| `payments` | Fintech Ventures / Tambala Pay | Dedicated agent profile and route defined; verify the separate live service's API contract and safe adapter |
+| `technology_engineering` | Technology & Engineering | Dedicated agent profile and route defined; verify runtime and role binding |
+| `strategy_planning` | Strategy & Corporate Planning | Dedicated agent profile and route defined; runtime and role binding not yet verified |
+| `product_management` | Product Management & Innovation | Dedicated agent profile and route defined; runtime and role binding not yet verified |
+| `security_it` | Cybersecurity & IT | Dedicated agent profile and route defined; runtime and role binding not yet verified |
+| `operations_administration` | Operations & Administration | Dedicated agent profile and route defined; runtime and role binding not yet verified |
+| `people_agent_management` | Human Resources & Agent Management | Dedicated agent profile and route defined; runtime and role binding not yet verified |
+| `legal_risk_compliance` | Legal, Risk & Compliance | Dedicated agent profile and route defined; runtime and role binding not yet verified |
+| `procurement_resources` | Procurement & Resource Management | Dedicated agent profile and route defined; runtime and role binding not yet verified |
+| `executive_management` | Executive Management | Dedicated agent profile and route defined; runtime and role binding not yet verified |
+| `research_development` | Research & Development | Dedicated agent profile and route defined; runtime and role binding not yet verified |
+| `governance_oversight` | Board & Corporate Governance | Dedicated agent profile and route defined; runtime and role binding not yet verified |
 
 Do not mark these departments active until their dedicated execution contracts and safeguards are implemented and tested.
 
@@ -111,7 +112,7 @@ All configuration writes must be authenticated, validated, audited and permissio
 ## Delivery gates
 
 1. Restore green CI and keep routing tests exhaustive as the registry grows.
-2. Implement the missing department runtime profiles and dedicated execution mappings.
+2. Configure and verify the dedicated runtime profiles, scoped tools and role bindings for every department; all eighteen capability routes now have explicit agent assignments.
 3. Complete trusted identity and role binding for the Founder and each service/agent principal.
 4. Complete durable task persistence and append-only event recording in the actual execution path.
 5. Implement transactional or otherwise failure-safe task/event writes.
