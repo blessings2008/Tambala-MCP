@@ -296,3 +296,32 @@ test('inbound: private @lid senders, echoes, other events and other instances ar
   assert.equal(messageText({ imageMessage: { caption: 'photo caption' } }), 'photo caption');
   assert.equal(senderNumber({ key: { remoteJid: 'x@lid' }, senderPn: '265888123456@s.whatsapp.net' }), '265888123456');
 });
+
+
+test('inbound: ordinary Founder messages are delivered to the CEO as structured instructions', async () => {
+  const envelopes: any[] = [];
+  const h = inboundHarness({
+    handleFounderInstruction: async (envelope) => {
+      envelopes.push(envelope);
+      return 'CEO received your instruction and reviewed the department route.';
+    },
+  });
+  const s = await handleEvolutionWebhook(h.deps, evt(`${FOUNDER}@s.whatsapp.net`, 'URGENT: prepare a sales pipeline report', 'F5'));
+  assert.equal(s.stored, 1);
+  assert.equal(s.routedToOrganization, 1);
+  assert.equal(s.founderCommands, 0);
+  assert.equal(envelopes.length, 1);
+  assert.equal(envelopes[0].channel, 'whatsapp');
+  assert.equal(envelopes[0].recipient.role_id, 'ceo');
+  assert.equal(envelopes[0].message_type, 'founder_instruction');
+  assert.equal(envelopes[0].priority, 'high');
+  assert.match(envelopes[0].content.text, /sales pipeline report/);
+  assert.match(h.replies[0], /CEO received/);
+});
+
+test('inbound: media without captions is retained as a readable inbound message', () => {
+  assert.equal(messageText({ imageMessage: {} }), '[Incoming image attachment]');
+  assert.equal(messageText({ videoMessage: { fileName: 'brief.mp4' } }), '[Incoming video attachment: brief.mp4]');
+  assert.equal(messageText({ audioMessage: { ptt: true } }), '[Incoming audio message]');
+  assert.equal(messageText({ ephemeralMessage: { message: { documentMessage: { fileName: 'quote.pdf' } } }), '[Incoming document attachment: quote.pdf]');
+});
