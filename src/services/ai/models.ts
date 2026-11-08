@@ -232,15 +232,21 @@ export function getAgentRuntimeConfig(agent: AgentName): AgentRuntimeConfig {
   const dedicatedKeyName = `TAMBALA_${upper}_API_KEY`;
   const requestedProvider = process.env[`TAMBALA_${upper}_PROVIDER`]?.toLowerCase();
   const useOpenRouter = requestedProvider === 'openrouter';
-  const dedicatedKey = process.env[dedicatedKeyName];
+  const normalizeCredential = (value: string | undefined): string | undefined => {
+    const trimmed = value?.trim();
+    if (!trimmed) return undefined;
+    // Accept either a raw provider key or a pasted Bearer value; the SDK adds the header scheme.
+    return trimmed.replace(/^Bearer\\s+/i, '').trim() || undefined;
+  };
+  const dedicatedKey = normalizeCredential(process.env[dedicatedKeyName]);
   const sharedGroqEnabled = process.env.TAMBALA_ALLOW_SHARED_GROQ_KEY === 'true';
   const sharedGroqKey = sharedGroqEnabled
-    ? process.env.GROQ_API_KEY ?? process.env.TAMBALA_ORCHESTRATOR_API_KEY
+    ? normalizeCredential(process.env.GROQ_API_KEY) ?? normalizeCredential(process.env.TAMBALA_ORCHESTRATOR_API_KEY)
     : undefined;
   const apiKey = useOpenRouter
-    ? process.env.OPENROUTER_API_KEY
+    ? normalizeCredential(process.env.OPENROUTER_API_KEY)
     : dedicatedKey
-      ?? (agent === 'orchestrator' ? process.env.GROQ_API_KEY : undefined)
+      ?? (agent === 'orchestrator' ? normalizeCredential(process.env.GROQ_API_KEY) : undefined)
       ?? sharedGroqKey;
   const apiKeySource = useOpenRouter
     ? 'OPENROUTER_API_KEY'
@@ -253,8 +259,8 @@ export function getAgentRuntimeConfig(agent: AgentName): AgentRuntimeConfig {
           : dedicatedKeyName;
   const provider = useOpenRouter ? 'openrouter' : requestedProvider === 'groq' || !requestedProvider ? 'groq' : 'custom';
   const defaultBaseURL = useOpenRouter ? 'https://openrouter.ai/api/v1' : GROQ_BASE_URL;
-  const baseURL = process.env[`TAMBALA_${upper}_BASE_URL`] ?? defaultBaseURL;
-  const model = process.env[`TAMBALA_${upper}_MODEL`] ?? AGENT_DEFAULT_MODELS[agent];
+  const baseURL = process.env[`TAMBALA_${upper}_BASE_URL`]?.trim() || defaultBaseURL;
+  const model = process.env[`TAMBALA_${upper}_MODEL`]?.trim() || AGENT_DEFAULT_MODELS[agent];
   if (!apiKey) throw new Error(useOpenRouter
     ? `No OpenRouter API key configured for the ${agent} agent. Set OPENROUTER_API_KEY.`
     : `No API key configured for the ${agent} agent. Set ${dedicatedKeyName}; specialist agents do not fall back to GROQ_API_KEY unless shared-key mode is enabled.`);
@@ -276,8 +282,8 @@ export function getAgentRuntimeInfo(agent: AgentName) {
     ? Boolean(process.env.OPENROUTER_API_KEY)
     : Boolean(process.env[dedicatedKeyName] || legacyOrchestratorKey || sharedGroqConfigured);
   const provider = useOpenRouter ? 'openrouter' : requestedProvider === 'groq' || !requestedProvider ? 'groq' : 'custom';
-  const baseURL = process.env[`TAMBALA_${upper}_BASE_URL`] ?? (useOpenRouter ? 'https://openrouter.ai/api/v1' : GROQ_BASE_URL);
-  const model = process.env[`TAMBALA_${upper}_MODEL`] ?? AGENT_DEFAULT_MODELS[agent];
+  const baseURL = process.env[`TAMBALA_${upper}_BASE_URL`]?.trim() || (useOpenRouter ? 'https://openrouter.ai/api/v1' : GROQ_BASE_URL);
+  const model = process.env[`TAMBALA_${upper}_MODEL`]?.trim() || AGENT_DEFAULT_MODELS[agent];
   return {
     agent,
     ...AGENT_DIRECTORY[agent],
