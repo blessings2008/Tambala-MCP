@@ -189,7 +189,8 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
       );
       if (!isUsableDepartmentReport(item.department, result)) {
         throw new Error(`The ${item.department} agent returned an empty, placeholder, or truncated report. Its assignment remains outstanding.`);
-      }\n      await advanceTrackedTask(child.taskId, [
+      }
+      await advanceTrackedTask(child.taskId, [
         { status: 'department_review', stage: 'review', eventType: 'department_report_returned_for_review', departmentId: AGENT_DIRECTORY[item.agent].unitId, roleId: item.roleId, result: { parentTaskId: parent.taskId, response: result.slice(0, 1800) } },
         { status: 'returned_to_ceo', stage: 'review', eventType: 'department_report_accepted_by_ceo', departmentId: AGENT_DIRECTORY[item.agent].unitId, roleId: item.roleId },
         { status: 'completed', stage: 'complete', eventType: 'department_report_assignment_completed', departmentId: AGENT_DIRECTORY[item.agent].unitId, roleId: item.roleId, completedAt: new Date().toISOString() },
