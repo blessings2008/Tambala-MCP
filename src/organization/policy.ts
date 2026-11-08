@@ -48,7 +48,7 @@ const ACTION_CAPABILITY: Record<OrganizationalAction, string | null> = {
   advise_on_decision: 'decisions.advise',
   review_strategy: 'strategy.review',
   resolve_founder_approval: 'approvals.resolve_founder',
-  resolve_board_approval: 'approvals.resolve_board',
+  resolve_board_approval: null,
   launch_major_venture: 'ventures.launch',
   commit_material_funds: 'finance.commit_material',
   change_mission: 'organization.mission.change',
@@ -86,6 +86,15 @@ export function authorizeOrganizationalAction(
     };
   }
 
+  if (action === 'resolve_board_approval') {
+    return {
+      allowed: false,
+      requiresApproval: false,
+      requiredAuthority: null,
+      reason: 'Denied: the Board is advisory and cannot approve, reject, or resolve organizational approval requests.',
+    };
+  }
+
   const requiredCapability = ACTION_CAPABILITY[action];
   if (requiredCapability && !actorRole.capabilities.includes(requiredCapability)) {
     return {
@@ -102,15 +111,6 @@ export function authorizeOrganizationalAction(
       requiresApproval: false,
       requiredAuthority: null,
       reason: 'Denied: only the Founder role may resolve Founder approval requests.',
-    };
-  }
-
-  if (action === 'resolve_board_approval' && actorRole.id !== 'board') {
-    return {
-      allowed: false,
-      requiresApproval: false,
-      requiredAuthority: null,
-      reason: 'Denied: only the Board role may resolve Board approval requests.',
     };
   }
 
