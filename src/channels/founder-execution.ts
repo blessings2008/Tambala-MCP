@@ -142,6 +142,16 @@ async function loadStatusData(): Promise<{ context: Record<string, unknown>; sal
     sales.leads = compactRows(validLeads, ['id', 'name', 'business_name', 'status', 'next_follow_up_at', 'created_at'], 20);
     sales.total_leads = validLeads.length;
     sales.leads_by_status = countByStatus(validLeads);
+    const latestLeadRecordCreatedAt = validLeads
+      .map((row) => typeof row.created_at === 'string' ? row.created_at : '')
+      .filter(Boolean)
+      .sort()
+      .at(-1) ?? null;
+    sales.data_freshness = {
+      latest_lead_record_created_at: latestLeadRecordCreatedAt,
+      report_generated_at: context.generated_at,
+      timestamp_note: 'created_at is when a lead record was created; it is not evidence of the latest outreach action or status update.',
+    };
     customers.clients = compactRows(validClients, ['id', 'name', 'business_name', 'status', 'created_at'], 15);
     customers.projects = compactRows(validProjects, ['id', 'name', 'status', 'client_id', 'due_date', 'created_at'], 15);
     customers.tasks = compactRows(validTasks, ['id', 'title', 'status', 'due_at', 'client_id', 'project_id', 'created_at'], 20);
@@ -211,7 +221,9 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
           `You are the department head for ${item.department}, reporting to the CEO of Tambala Technologies.`,
           `STRICT OWNERSHIP: Produce ONLY the ${item.department} section. Do not write, summarize, estimate, or make claims about Sales, Operations, Technology, Finance, or any other department outside your own assigned scope.`,
           `Your exclusive scope: ${item.focus}`,
-          'Begin with the exact department name as your heading. Use only the supplied records for your department. Do not report for other departments. Do not invent names, counts, revenue, outcomes, dates, incidents, or activity. Separate verified facts from gaps. ZERO DATA IS A VALID REPORT: if no records exist, explicitly say that no records are currently available and identify which measures cannot be verified; do not imply that no activity occurred. Acknowledge partial data honestly. Do not use web research to fill gaps in internal company records. End with a complete sentence. Return only your own department section, at most 150 words.',
+          'Begin with the exact department name as your heading. Use only the supplied records for your department. Do not report for other departments. Do not invent names, counts, revenue, outcomes, dates, incidents, or activity. Separate verified facts from gaps. ZERO DATA IS A VALID, COMPLETE DEPARTMENT REPORT: if no records exist, explicitly say that no records are currently available and identify which measures cannot be verified; do not imply that no activity occurred. Acknowledge partial data honestly. Do not use web research to fill gaps in internal company records. End with a complete sentence. Return only your own department section, at most 150 words.',
+          'Sales data freshness: when source records include data_freshness, state the latest_lead_record_created_at date as the latest available lead-record date and distinguish it from the report generation date. Do not describe that date as the latest outreach activity or status update, and do not present an older CRM snapshot as current without flagging its age.',
+          'Finance reporting: when accounting records are unavailable, clearly state that the Finance & Accounting report is complete based on the records supplied, but financial performance cannot be assessed. Do not call the section or report incomplete, and do not say the report is pending documents; describe unavailable documents as a data limitation, not an unfinished submission.',
           `Parent Founder objective (context only; not an expansion of your authority): ${objective}`,
           `Department source records (source of truth): ${JSON.stringify(item.agent === 'outreach' ? sales : item.agent === 'operations' ? { organization: context.organization ?? null, record_counts: context.record_counts ?? null, projects: customers.projects, tasks: customers.tasks, totals: customers.totals, source_availability: 'CRM project and task records are available; no formal process-change log or risk register was supplied.' } : item.agent === 'engineering' ? { organization: context.organization ?? null, source_availability: 'No deployment inventory, monitoring feed, incident log, or infrastructure report was supplied.' } : { source_availability: 'No accounting ledger, revenue report, expense report, budget target, or cash-position statement was supplied.' })}`,
         ].join('\n\n'),
