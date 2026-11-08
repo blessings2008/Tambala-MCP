@@ -164,6 +164,13 @@ export async function channelStatus() {
     configured, state, error, instance: evolutionConfig()?.instance ?? null,
     founderNumber: founder ? maskNumber(founder) : null, founderConfigured: Boolean(founder),
     webhookTokenSet: Boolean(process.env.EVOLUTION_WEBHOOK_TOKEN && process.env.EVOLUTION_WEBHOOK_TOKEN.length >= 16),
+    webhookPath: '/webhooks/evolution',
+    webhookEvent: 'MESSAGES_UPSERT',
+    outboxWorker: {
+      mode: process.env.TAMBALA_WHATSAPP_OUTBOX_SCHEDULER === 'true' ? 'in_process' : 'external_cron',
+      intervalMinutes: Math.max(1, Number(process.env.TAMBALA_WHATSAPP_OUTBOX_INTERVAL_MINUTES) || 1),
+      endpoint: '/api/channels/outbox/run',
+    },
     sentToday: { clients: await store.sentSince(dayStart, 'client').catch(() => 0), founder: await store.sentSince(dayStart, 'founder').catch(() => 0) },
     limits: { clients: CLIENT_DAILY_LIMIT(), founder: FOUNDER_DAILY_LIMIT() },
     blocked: (await store.blockedNumbers().catch(() => new Set<string>())).size,
