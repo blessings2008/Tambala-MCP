@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canFinalizeStatusReport, isCompanyStatusRequest, STATUS_REPORT_DEPARTMENTS } from '../src/channels/founder-execution.ts';
+import { canFinalizeStatusReport, isCompanyStatusRequest, isUsableDepartmentReport, STATUS_REPORT_DEPARTMENTS } from '../src/channels/founder-execution.ts';
 
 test('Founder company status requests trigger coordinated department reporting', () => {
   for (const prompt of [
@@ -36,4 +36,22 @@ test('status report cannot be finalized while any department is incomplete or bl
     assert.equal(canFinalizeStatusReport(completed, [missing]), false, missing);
   }
   assert.equal(canFinalizeStatusReport(STATUS_REPORT_DEPARTMENTS.slice(0, 3), []), false);
+});
+
+test('department report validation rejects missing, placeholder, and truncated reports', () => {
+  assert.equal(isUsableDepartmentReport('Operations & Administration', 'No Operations & Administration report was supplied.'), false);
+  assert.equal(isUsableDepartmentReport('Operations & Administration', 'No Operations report supplied; the report is unavailable.'), false);
+  assert.equal(isUsableDepartmentReport('Sales & Business Development', 'The report is truncated — further details not provided.'), false);
+  assert.equal(isUsableDepartmentReport('Finance & Accounting', '   '), false);
+});
+
+test('department report validation accepts a substantive report that transparently identifies missing records', () => {
+  assert.equal(isUsableDepartmentReport(
+    'Operations & Administration',
+    'Operations reviewed the available task and project records. Three active projects are recorded; no formal process-change log or risk register is available, so those measures remain unverified.',
+  ), true);
+  assert.equal(isUsableDepartmentReport(
+    'Finance & Accounting',
+    'No accounting ledger, expense register, or cash-position statement is recorded. Revenue, expenses, cash position, and upcoming obligations therefore remain unavailable for verification.',
+  ), true);
 });
