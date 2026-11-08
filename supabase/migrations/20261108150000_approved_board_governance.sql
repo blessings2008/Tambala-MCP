@@ -126,7 +126,8 @@ insert into public.organization_board_members (role_id, seat_title, member_type,
 on conflict (role_id) do update set seat_title = excluded.seat_title, member_type = excluded.member_type, active = excluded.active, voting_rights = false, updated_at = now();
 
 update public.organization_roles
-set purpose = 'Provide strategic oversight, challenge assumptions, review performance and risk, and submit non-binding recommendations to the Founder. The Board has no independent approval or execution authority.',
+set title = 'AI Advisory Board',
+    purpose = 'Provide strategic oversight, challenge assumptions, review performance and risk, and submit non-binding recommendations to the Founder. The Board has no independent approval or execution authority.',
     capabilities = array_remove(coalesce(capabilities, array[]::text[]), 'approvals.resolve_board'),
     updated_at = now()
 where id = 'board';
