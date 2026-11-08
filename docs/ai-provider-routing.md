@@ -2,7 +2,7 @@
 
 ## Routing policy
 
-Each specialist can use a dedicated credential, endpoint, and model. For a small single-provider deployment, the Founder may explicitly enable `TAMBALA_ALLOW_SHARED_GROQ_KEY=true`; this allows agents without dedicated keys to use the existing `GROQ_API_KEY` (or `TAMBALA_ORCHESTRATOR_API_KEY`) with Groq defaults. The shared credential is never used unless this switch is explicitly enabled. Dedicated agent keys always take precedence. All agents sharing one key also share that provider account's quota and billing.
+Each specialist can use a dedicated credential, endpoint, and model. Set `TAMBALA_<AGENT>_PROVIDER=openrouter` to route that agent through the shared `OPENROUTER_API_KEY`; the OpenRouter endpoint defaults to `https://openrouter.ai/api/v1`. This explicit provider selection takes precedence over that agent's dedicated Groq key. The current Research default model is `nvidia/nemotron-3-ultra:free`. For a small single-provider deployment, the Founder may explicitly enable `TAMBALA_ALLOW_SHARED_GROQ_KEY=true`; this allows agents without dedicated keys to use the existing `GROQ_API_KEY` (or `TAMBALA_ORCHESTRATOR_API_KEY`) with Groq defaults. The shared credential is never used unless this switch is explicitly enabled. Dedicated agent keys always take precedence. All agents sharing one key also share that provider account's quota and billing.
 
 | Agent | Responsibility | API credential | Endpoint | Model default | Status until configured |
 |---|---|---|---|---|---|
@@ -16,7 +16,7 @@ Each specialist can use a dedicated credential, endpoint, and model. For a small
 | Payments | Payments & Financial Operations | `TAMBALA_PAYMENTS_API_KEY` only | `TAMBALA_PAYMENTS_BASE_URL` | `TAMBALA_PAYMENTS_MODEL` | Planned profile; requires its own settings |
 | Engineering | Technology & Engineering | `TAMBALA_ENGINEERING_API_KEY` only | `TAMBALA_ENGINEERING_BASE_URL` | `TAMBALA_ENGINEERING_MODEL` | Planned profile; requires its own settings |
 
-The application uses the OpenAI SDK's **Chat Completions** interface, so each configured endpoint must be OpenAI-compatible for `/chat/completions`. The default for all agents is Groq's OpenAI-compatible endpoint and `openai/gpt-oss-20b` for specialists (`openai/gpt-oss-120b` for the CEO). Set per-agent overrides when assigning different providers or models.
+OpenRouter free models are rate-limited and their availability can change. `nvidia/nemotron-3-ultra:free` is the current Research assignment; verify the free model catalogue before changing it. One OpenRouter key is shared by every agent assigned to OpenRouter, so their usage shares the same account limits. The `openrouter/free` alias is available when automatic free-model selection is preferred, but it can select a different model over time.\n\nThe application uses the OpenAI SDK's **Chat Completions** interface, so each configured endpoint must be OpenAI-compatible for `/chat/completions`. The default for all agents is Groq's OpenAI-compatible endpoint and `openai/gpt-oss-20b` for specialists (`openai/gpt-oss-120b` for the CEO). Set per-agent overrides when assigning different providers or models.
 
 ## Environment configuration
 
@@ -31,7 +31,7 @@ TAMBALA_ORCHESTRATOR_API_KEY=
 TAMBALA_ORCHESTRATOR_BASE_URL=https://api.groq.com/openai/v1
 TAMBALA_ORCHESTRATOR_MODEL=openai/gpt-oss-120b
 
-# Add a separate provider or separate key for outreach
+# Route Research through the shared OpenRouter key (overrides its dedicated Groq key)\nTAMBALA_RESEARCH_PROVIDER=openrouter\nTAMBALA_RESEARCH_MODEL=nvidia/nemotron-3-ultra:free\n\n# Add a separate provider or separate key for outreach
 TAMBALA_OUTREACH_API_KEY=
 TAMBALA_OUTREACH_BASE_URL=
 TAMBALA_OUTREACH_MODEL=
