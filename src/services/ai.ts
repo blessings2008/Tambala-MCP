@@ -64,17 +64,29 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
     const userInput = boundText(input, MAX_USER_INPUT_CHARS);
     const contextText = context === undefined ? '' : '\n\nTambala business context:\n' + serializeBoundedContext(context);
     const userMessage = boundText(userInput + contextText, MAX_USER_INPUT_CHARS + MAX_CONTEXT_CHARS + 40);
+    const requestPayload = {
+      model: config.model,
+      messages: [
+        { role: 'system' as const, content: systemPrompt },
+        { role: 'user' as const, content: userMessage },
+      ],
+      max_completion_tokens: MAX_COMPLETION_TOKENS,
+      temperature: 0.2,
+    };
+    const requestBodyBytes = new TextEncoder().encode(JSON.stringify(requestPayload)).byteLength;
+    console.info('AI request size', JSON.stringify({
+      agent,
+      provider: config.provider,
+      model: config.model,
+      requestBodyBytes,
+      systemPromptChars: systemPrompt.length,
+      userMessageChars: userMessage.length,
+      contextChars: contextText.length,
+      maxCompletionTokens: MAX_COMPLETION_TOKENS,
+    }));
     let response: { choices: Array<{ message: { content: string | null } }> };
     try {
-      response = await getClient(agent).chat.completions.create({
-        model: config.model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        max_completion_tokens: MAX_COMPLETION_TOKENS,
-        temperature: 0.2,
-      });
+      response = await getClient(agent).chat.completions.create(requestPayload);
     } catch (error) {
       const providerError = error as { status?: number; code?: string; request_id?: string; message?: string };
       const status = typeof providerError.status === 'number' ? providerError.status : undefined;
