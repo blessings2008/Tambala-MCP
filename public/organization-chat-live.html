@@ -27,7 +27,13 @@ el('clear').addEventListener('click',()=>{el('chatlog').replaceChildren(Object.a
 async function runStep(stage,payload){const r=await fetch('/api/chat-test/step',{method:'POST',headers:authHeaders(),body:JSON.stringify({stage,...payload})});const d=await r.json();if(!r.ok)throw Error(d.error||stage+' failed');return d}
 el('form').addEventListener('submit',async e=>{e.preventDefault();if(busy)return;if(!token()){el('connectionStatus').textContent='Enter the chat test token first.';el('token').focus();return}const prompt=el('prompt').value.trim();if(!prompt)return;busy=true;el('send').disabled=true;el('send').textContent='Organization working…';addMessage('Founder / Bless',prompt,'user','OBJECTIVE');el('prompt').value='';try{if(el('mode').value==='collaborate'){
 const ceoWork=working('Chief Executive Officer (CEO)','Analyzing the Founder objective and resolving the responsible department and activated executor…');
-const ceo=await runStep('ceo_delegate',{request:prompt});ceoWork.remove();const taskId=ceo.taskId;
+const ceo=await runStep('ceo_delegate',{request:prompt});ceoWork.remove();
+if(ceo.workflow==='four_department_status_report'){
+const completed=ceo.status==='completed';addMessage('Chief Executive Officer (CEO) → Founder / Bless',ceo.message,completed?'review':'report',completed?'FINAL STATUS REPORT':'STATUS · WAITING FOR DEPARTMENTS');
+el('connectionStatus').textContent=completed?'All four department reports completed. CEO consolidation finished.':'Status report is waiting. Only completed department work is shown; outstanding departments have not been marked complete.';
+return;
+}
+const taskId=ceo.taskId;
 if(!ceo.execution||ceo.execution.status!=='ready'){addMessage('Chief Executive Officer (CEO)',ceo.message,'delegation','PROPOSED HANDOFF');addMessage('Execution Router',ceo.execution?.reason||'No activated department executor was returned.','review','EXECUTION BLOCKED');el('routeStatus').textContent=ceo.execution?.reason||'No activated executor is available for this task.';el('connectionStatus').textContent='Routing completed, but execution needs an activated department agent.';return}
 const specialist=ceo.execution.agent;const specialistTitle=ceo.execution.role;el('routeStatus').textContent='Routed to '+specialistTitle+' via '+ceo.execution.department+'.';addMessage('Chief Executive Officer (CEO) → '+specialistTitle,ceo.message,'delegation','DELEGATION · '+ceo.execution.capabilityId);
 const deptWork=working(specialistTitle,'Executing the delegated task…');
