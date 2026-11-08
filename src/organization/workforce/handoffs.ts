@@ -186,7 +186,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
     if (!(await deps.store.claim(h.id))) { outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'already_taken', roomId: h.room_id ?? undefined }); continue; }
     const attempt = h.attempts + 1;
     const [sender, recipient] = await Promise.all([deps.senderLabel(h.from_role_id), deps.recipientLabel(agent)]);
-    const { taskId } = await deps.tasks.begin(`[Room ${h.room_id ?? h.id}] [Handoff from ${sender}] ${h.request.slice(0, 160)}`);
+    const taskId = h.task_id ?? (await deps.tasks.begin(`[Room ${h.room_id ?? h.id}] [Handoff from ${sender}] ${h.request.slice(0, 160)}`)).taskId;
     try {
       await deps.store.update(h.id, { attempts: attempt, task_id: taskId, error: null });
       if (h.room_id) {
