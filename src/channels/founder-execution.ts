@@ -66,12 +66,12 @@ export function isUsableDepartmentReport(department: string, value: string): boo
     'Technology & Engineering',
     'Finance & Accounting',
   ].filter((name) => name !== department);
+  const markdownHeadings = report.split(/\\r?\\n/).map((line) => line.replace(/^\\s{0,3}#{1,6}\\s*/, '').trim().toLowerCase());
   for (const other of otherDepartments) {
-    const shortOther = other.startsWith('Sales ') ? 'Sales'
-      : other.startsWith('Operations ') ? 'Operations'
-        : other.startsWith('Technology ') ? 'Technology' : 'Finance';
-    const heading = new RegExp('^\\\\s{0,3}#{1,6}\\\\s*' + shortOther + '\\\\b', 'im');
-    if (heading.test(report)) return false;
+    const shortOther = other.startsWith('Sales ') ? 'sales'
+      : other.startsWith('Operations ') ? 'operations'
+        : other.startsWith('Technology ') ? 'technology' : 'finance';
+    if (markdownHeadings.some((heading) => heading === shortOther || heading.startsWith(shortOther + ' '))) return false;
   }
   return true;
 }
