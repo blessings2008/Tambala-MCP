@@ -123,7 +123,8 @@ function outboxHarness(over: Partial<OutboxDeps> & { nowIso?: string; founder?: 
     loadDocument: async (id) => (id === 'doc-1' ? { base64: 'JVBERi0=', fileName: 'TT-Q-2026-0001.pdf' } : null),
     sign: async () => ({ block: '— TT-002 · Head of Sales\n  ✍ AAAA-BBBB-CCCC-DDDD', fingerprint: 'AAAA-BBBB-CCCC-DDDD' }),
     approvals: { create: async (a) => { approvals.push(a); return `abcdef12-0000-4000-8000-000000000${approvals.length}`; } },
-    senderLabel: (r) => `TT-002 ${r}`, pauseMs: 0, ...over,
+    senderLabel: (r) => `TT-002 ${r}`, pauseMs: 0,
+    verifyOutreachLead: async (_number) => 'Verified Test Lodge (lead)', ...over,
   };
   return { deps, store, sent, approvals, setNow: (v: string) => { nowIso = v; } };
 }
