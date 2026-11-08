@@ -9,7 +9,7 @@ import type { AgentName } from '../../services/ai/models.js';
 import { type ContextKind, type StandingDuty } from './duties.js';
 import { dbConfigured as dbOn } from './db-util.js';
 import { loadDuties, requireConfigStore, saveBuiltinOverride, saveCustomDuty, SupabaseDutyConfigStore, type DutyConfigStore } from './duty-config.js';
-import { InMemoryHandoffStore, SupabaseHandoffStore, processHandoffs, queueHandoff, type Handoff, type HandoffDeps, type HandoffOutcome, type HandoffStore } from './handoffs.js';
+import { InMemoryHandoffStore, SupabaseHandoffStore, processHandoffs, queueHandoff, resumeFounderHandoff, type Handoff, type HandoffDeps, type HandoffOutcome, type HandoffStore } from './handoffs.js';
 import { identityMark, signingAvailable } from './signing.js';
 import { signWork, signatureStore } from './sign-work.js';
 import { describeResults, executeActions, type ActionExecDeps } from './actions-exec.js';
@@ -219,7 +219,7 @@ export async function runDutiesOnce(opts: { dutyId?: string; force?: boolean; ha
 }
 
 /** The Founder assigns work directly to an employee; it lands in their inbox. */
-export async function assignWork(agent: AgentName, request: string): Promise<Handoff> {
+export async function clarifyTaskRoom(handoffId: string, clarification: string): Promise<Handoff> {\n  const store = handoffStore();\n  const resumed = await resumeFounderHandoff(store, handoffId, clarification);\n  await processHandoffs(productionHandoffDeps(store));\n  return resumed;\n}\n\nexport async function assignWork(agent: AgentName, request: string): Promise<Handoff> {
   return queueHandoff(handoffStore(), { fromRoleId: 'founder', toAgent: agent, request, sign: signWork });
 }
 
