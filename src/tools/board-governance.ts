@@ -5,6 +5,7 @@ import { resolveOrganizationIdentity } from '../organization/identity-service.js
 import { recordAudit } from '../organization/audit.js';
 
 type Identity = Awaited<ReturnType<typeof resolveOrganizationIdentity>>;
+type AuthenticatedIdentity = Extract<Identity, { authenticated: true; principalType: 'oauth' }>;
 type Member = { role_id: string; seat_title: string; member_type: string; active: boolean };
 type Meeting = { id: string; meeting_number: number; title: string; meeting_type: string; status: string; scheduled_at: string | null; purpose: string };
 
@@ -16,12 +17,12 @@ function required(value: string, label: string, max = 2000): string {
   if (!cleaned || cleaned.length > max) throw new Error(`${label} is required and must be no longer than ${max} characters.`);
   return cleaned;
 }
-async function identity(): Promise<Identity> {
+async function identity(): Promise<AuthenticatedIdentity> {
   const actor = await resolveOrganizationIdentity();
   if (!actor.authenticated || actor.principalType !== 'oauth') throw new Error('A verified OAuth identity with an active organization role is required.');
   return actor;
 }
-async function requireRole(allowed: string[]): Promise<Identity> {
+async function requireRole(allowed: string[]): Promise<AuthenticatedIdentity> {
   const actor = await identity();
   if (!allowed.includes(actor.role.id)) throw new Error(`Role ${actor.role.id} is not authorized for this Board governance action.`);
   return actor;
@@ -31,7 +32,7 @@ async function activeBoardMember(roleId: string): Promise<Member> {
   if (!rows.length) throw new Error('Only an active appointed Board member or the Founder may submit a Board recommendation.');
   return rows[0];
 }
-async function audit(actor: Identity, action: string, targetId: string, reason: string): Promise<void> {
+async function audit(actor: AuthenticatedIdentity, action: string, targetId: string, reason: string): Promise<void> {
   await recordAudit({ actorRoleId: actor.role.id, action, targetType: 'board_governance', targetId, outcome: 'success', reason });
 }
 
