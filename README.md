@@ -4,16 +4,22 @@ Model Context Protocol server for Tambala Technologies.
 
 ## Current status
 
-The development branch includes organization structure and governance scaffolding, per-agent AI provider routing, a visual-only organization chat preview, and a **token-gated live AI agent test console**.
+The development branch contains the full organizational blueprint (4 divisions, 18 departments, and 3 business units), deterministic capability routing for all 18 department capabilities, governance and authorization rules, per-agent AI provider routing, task-lifecycle foundations, a visual-only organization chat preview, and a **token-gated live AI agent test console**.
+
+The organization is designed to work as one coordinated company: the CEO coordinates objectives, specialist departments own their work, Central Research & Intelligence serves the whole organization, and Founder-reserved decisions remain behind explicit approval controls. A department appearing in the blueprint or having a runtime profile does not mean it is activated or authorized to act.
 
 - `/chat` — visual organization chat preview. Messages are simulated.
 - `/chat-live` — live test console for calling the configured Orchestrator, Outreach, and Follow-up AI routes.
 - `/api/chat-test/status` and `/api/chat-test` — test-only endpoints gated by `TAMBALA_CHAT_TEST_TOKEN`.
 - `get_tambala_info` — basic Tambala Technologies information.
 
-The live console is an agent testing surface, not the completed persistent multi-agent organization chat. It does not persist conversations, coordinate multi-agent tasks, send external messages, or execute business actions. Keep it on a separate staging deployment.
+The live console is an agent testing surface, not the completed persistent multi-agent organization workspace. It does not yet provide persistent conversations or end-to-end persistent task execution. It must not be treated as proof that every department is active, or as permission to send external messages or execute consequential business actions. Keep it on a separate staging deployment.
+
+See [the department execution map and activation rules](docs/department-execution-routing.md), [the redesign roadmap](docs/REDESIGN_ROADMAP.md), and [AI provider routing](docs/ai-provider-routing.md).
 
 See [live agent testing and staging deployment](docs/live-agent-testing.md) and [the organization chat preview notes](docs/organization-chat-preview.md).
+
+See [SETUP](docs/SETUP.md) for the steps that make the organization functional (migrations, role activation, env, role enforcement).
 
 ## Requirements
 
@@ -72,5 +78,6 @@ verified receipt retrieval. Payment creation produces an incoming customer check
 does not transfer funds out. Payment status must be read from Tambala Pay's server-verified
 records, never inferred from a browser redirect.
 
-The tools are registered automatically by the MCP registry. After setting the secrets, deploy the
-MCP service and test `tambala_pay_health` before enabling the finance agent to use write tools.
+**Tambala Pay is live as a product**, as confirmed by the Founder. Its authoritative invoices, payment statuses, receipts, and financial events remain in Tambala Pay; the organization must not duplicate or invent those records.
+
+The tools are registered automatically by the MCP registry. The live payment product does not, by itself, prove that the MCP-to-Pay server connection is configured or healthy. After setting the secrets, test `tambala_pay_health` from the deployed MCP service and verify the required permissions before enabling payment workflows. Never treat a successful checkout redirect as proof of payment.

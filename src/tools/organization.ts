@@ -3,6 +3,8 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { supabaseSelect } from '../lib/supabase.js';
 import { getPersistedOrganizationSnapshot } from '../organization/persisted-service.js';
 import { resolveOrganizationIdentity } from '../organization/identity-service.js';
+import { AGENT_DIRECTORY } from '../services/ai/models.js';
+import { getAgentOperationalInfo, type AgentName } from '../services/ai.js';
 
 function text(value: unknown): { content: Array<{ type: 'text'; text: string }> } {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
@@ -57,6 +59,45 @@ export function registerOrganizationTools(server: McpServer): void {
         roles: includePlanned ? organization.roles : organization.roles.filter((role) => role.activation === 'active'),
         validation: snapshot.validation,
         source: snapshot.source,
+      });
+    },
+  );
+
+  server.registerTool(
+    'get_organization_agent_readiness',
+    {
+      description: 'Read a whole-organization readiness snapshot for every configured AI agent profile, including its department, reporting line, model/provider readiness, safe rate limits, and corresponding organizational role activation. Never returns API-key values. Read-only.',
+      inputSchema: {},
+    },
+    async () => {
+      const snapshot = await getPersistedOrganizationSnapshot();
+      const agents = (Object.keys(AGENT_DIRECTORY) as AgentName[]).map((agent) => {
+        const runtime = getAgentOperationalInfo(agent);
+        const unitRoles = snapshot.organization.roles
+          .filter((role) => role.unitId === runtime.unitId)
+          .map((role) => ({
+            id: role.id,
+            title: role.title,
+            activation: role.activation,
+            capabilities: role.capabilities,
+          }));
+
+        return {
+          ...runtime,
+          unitRoles,
+          unitHasActiveRole: unitRoles.some((role) => role.activation === 'active'),
+        };
+      });
+
+      return text({
+        source: snapshot.source,
+        organizationValid: snapshot.validation.valid,
+        validationErrors: snapshot.validation.errors,
+        agentCount: agents.length,
+        readyRuntimeCount: agents.filter((agent) => agent.ready).length,
+        activeOrganizationRoleCount: snapshot.organization.roles.filter((role) => role.activation === 'active').length,
+        agents,
+        note: 'Runtime readiness and an active role in the same unit do not prove that this agent is appointed or authorized. Every agent profile still requires an explicit trusted role binding and applicable authorization checks before execution.',
       });
     },
   );

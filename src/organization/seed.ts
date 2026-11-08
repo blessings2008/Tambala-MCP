@@ -153,7 +153,7 @@ const units: OrganizationUnit[] = [
   {
     id: 'people-agent-management', name: 'Human Resources & Agent Management', kind: 'department', parentId: 'corporate-services',
     purpose: 'Define role requirements, agent lifecycle, capability assignment proposals, and performance reviews.', status: 'planned',
-    accountableRoleIds: ['director-people-agent-management'], tags: ['people', 'agents', 'roles'],
+    accountableRoleIds: ['director-people-agent-management'], tags: ['people', 'agent-management', 'roles'],
   },
   {
     id: 'legal-risk-compliance', name: 'Legal, Risk & Compliance', kind: 'department', parentId: 'corporate-services',

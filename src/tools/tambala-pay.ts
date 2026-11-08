@@ -1,25 +1,8 @@
 import * as z from 'zod/v4';
 import type { McpServer } from '@modelcontextprotocol/server';
 
-type Json = Record<string, unknown>;
-const baseUrl = () => (process.env.TAMBALA_PAY_API_URL || 'https://tambala-pay.onrender.com').replace(/\/$/, '');
-function token(): string {
-  const value = process.env.TAMBALA_PAY_API_TOKEN;
-  if (!value || value.length < 32) throw new Error('Tambala Pay is not configured: set TAMBALA_PAY_API_TOKEN (minimum 32 characters).');
-  return value;
-}
-async function payRequest(path: string, init: RequestInit = {}): Promise<Json> {
-  const response = await fetch(baseUrl() + path, {
-    ...init,
-    headers: { authorization: `Bearer ${token()}`, accept: 'application/json', ...(init.body ? { 'content-type': 'application/json' } : {}), ...init.headers },
-    signal: AbortSignal.timeout(20000),
-  });
-  const raw = await response.text();
-  let data: Json = {};
-  try { data = raw ? JSON.parse(raw) as Json : {}; } catch { data = { message: raw.slice(0, 500) }; }
-  if (!response.ok) throw new Error(`Tambala Pay API ${response.status}: ${String(data.error ?? data.message ?? response.statusText)}`);
-  return data;
-}
+import { payBaseUrl as baseUrl, payRequest } from '../payments/tambala-pay.js';
+
 function result(value: unknown) { return { content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] }; }
 const money = z.number().finite().positive().max(100000000);
 const email = z.string().email().max(254);

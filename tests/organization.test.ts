@@ -217,3 +217,103 @@ test('financial transaction authority remains reserved to the Founder role', () 
   assert.equal(ceoResult.requiredAuthority, 'founder');
 });
 
+
+
+test('all Founder-reserved actions reject delegated roles without a valid Founder approval', () => {
+  const restrictedActions = [
+    'launch_major_venture',
+    'commit_material_funds',
+    'change_mission',
+    'close_major_business_unit',
+    'send_sensitive_external_communication',
+    'execute_financial_transaction',
+  ] as const;
+
+  for (const action of restrictedActions) {
+    const denied = authorizeOrganizationalAction({
+      actorRole: role('ceo'),
+      action,
+    });
+    assert.equal(denied.allowed, false, `CEO must not perform ${action} without Founder approval.`);
+    assert.equal(denied.requiresApproval, true, `${action} must explicitly request Founder approval.`);
+    assert.equal(denied.requiredAuthority, 'founder');
+  }
+});
+
+test('Founder-reserved actions reject malformed, unapproved, or wrong-authority approval records', () => {
+  const malformedApprovals = [
+    { authority: 'founder', approved: false, approvalId: 'approval-denied' },
+    { authority: 'board', approved: true, approvalId: 'approval-wrong-authority' },
+    { authority: 'founder', approved: true, approvalId: '   ' },
+  ] as const;
+
+  for (const approval of malformedApprovals) {
+    const result = authorizeOrganizationalAction({
+      actorRole: role('ceo'),
+      action: 'commit_material_funds',
+      approval,
+    });
+    assert.equal(result.allowed, false);
+    assert.equal(result.requiresApproval, true);
+    assert.equal(result.requiredAuthority, 'founder');
+  }
+});
+
+test('Founder-reserved action policy is consistent across departments and business units', () => {
+  const delegatedRoleIds = [
+    'director-executive-governance',
+    'director-technology-engineering',
+    'director-marketing-brand',
+    'director-sales-business-development',
+    'director-customer-relations',
+    'director-finance-accounting',
+    'director-operations-administration',
+    'director-legal-risk-compliance',
+    'leader-fintech-ventures',
+    'leader-software-digital-services',
+  ];
+
+  for (const roleId of delegatedRoleIds) {
+    const result = authorizeOrganizationalAction({
+      actorRole: role(roleId),
+      action: 'execute_financial_transaction',
+      approval: {
+        authority: 'founder',
+        approved: true,
+        approvalId: `approval-${roleId}`,
+      },
+    });
+    assert.equal(result.allowed, false, `${roleId} must not inherit transaction capability through approval.`);
+  }
+});
+
+test('every department has an accountable lead connected to its reporting structure', () => {
+  const departments = initialOrganization.units.filter((unit) => unit.kind === 'department');
+  assert.equal(departments.length, 18);
+
+  for (const department of departments) {
+    assert.equal(
+      department.accountableRoleIds.length,
+      1,
+      `${department.name} must have one clearly accountable department lead`,
+    );
+
+    const leadId = department.accountableRoleIds[0];
+    const lead = initialOrganization.roles.find((candidate) => candidate.id === leadId);
+    assert.ok(lead, `${department.name} must reference an existing lead role`);
+    assert.equal(lead.unitId, department.id, `${department.name} lead must belong to that department`);
+    assert.equal(lead.kind, 'ai_agent', `${department.name} lead must have an explicit agent role definition`);
+
+    const parent = initialOrganization.units.find((unit) => unit.id === department.parentId);
+    const expectedManager = parent
+      ? parent.accountableRoleIds.find((roleId) => roleId.startsWith('director-'))
+      : initialOrganization.ceoRoleId;
+    assert.ok(expectedManager, `${department.name} must have a defined reporting manager`);
+    assert.equal(
+      lead.reportsToRoleId,
+      expectedManager,
+      `${department.name} lead must report to its division director or the CEO`,
+    );
+  }
+});
+

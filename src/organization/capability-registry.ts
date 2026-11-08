@@ -2,6 +2,8 @@ import type { OrganizationDefinition, OrganizationalRole, OrganizationUnit } fro
 
 export interface DepartmentCapability {
   id: string;
+  /** Exact owning unit. Preferred over tag matching so shared tags can never reroute a capability. */
+  unitId?: string;
   unitTags: string[];
   roleTags: string[];
   description: string;
@@ -29,15 +31,17 @@ export interface CapabilityMatch {
 export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   {
     id: 'sales_prospecting',
+    unitId: 'sales-business-development',
     unitTags: ['sales', 'business-development', 'outreach'],
     roleTags: ['sales', 'business development', 'outreach'],
     description: 'Find, qualify, prioritize and pursue new business opportunities.',
-    objectiveKeywords: ['client', 'customer', 'prospect', 'lead', 'sales', 'outreach', 'business development', 'deal'],
+    objectiveKeywords: ['client', 'customer', 'prospect', 'prospects', 'lead', 'leads', 'sales', 'outreach', 'business development', 'deal', 'hotel', 'hotels', 'lodge', 'lodges', 'tourism', 'website', 'websites', 'businesses', 'target businesses', 'pitch'],
     researchKeywords: ['prospective client', 'business lead', 'decision maker', 'company contact'],
     deliverableHints: ['qualified prospect', 'lead shortlist', 'outreach target'],
   },
   {
     id: 'web_research',
+    unitId: 'research-intelligence',
     unitTags: ['research', 'intelligence'],
     roleTags: ['research', 'intelligence'],
     description: 'Conduct independent web research and return verified evidence.',
@@ -47,6 +51,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'customer_relations',
+    unitId: 'customer-relations',
     unitTags: ['customer-relations', 'support', 'client-success'],
     roleTags: ['customer relations', 'support', 'client success'],
     description: 'Manage existing client relationships, support and follow-up.',
@@ -56,6 +61,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'marketing_strategy',
+    unitId: 'marketing-brand',
     unitTags: ['marketing', 'brand'],
     roleTags: ['marketing', 'brand', 'campaign', 'audience'],
     description: 'Own brand positioning, campaign strategy, audience development and marketing performance.',
@@ -65,6 +71,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'media_content',
+    unitId: 'media-content',
     unitTags: ['media-content', 'content', 'communications'],
     roleTags: ['media', 'content', 'production', 'social media'],
     description: 'Produce content drafts, social posts, scripts, creative briefs and media production plans.',
@@ -74,6 +81,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'finance',
+    unitId: 'finance-accounting',
     unitTags: ['finance', 'accounts', 'financial-management'],
     roleTags: ['finance', 'accounts', 'financial'],
     description: 'Manage internal financial records, reporting and controls.',
@@ -83,8 +91,9 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'payments',
+    unitId: 'fintech-ventures',
     unitTags: ['tambala-pay', 'fintech', 'payments'],
-    roleTags: ['payments', 'finance', 'financial operations'],
+    roleTags: ['payments', 'finance', 'financial operations', 'financial technology', 'fintech'],
     description: 'Operate Tambala Pay and payment collection workflows for the organization.',
     objectiveKeywords: ['payment', 'invoice', 'receipt', 'partial payment', 'balance', 'refund', 'transaction', 'Tambala Pay'],
     researchKeywords: ['payment provider', 'payment integration', 'transaction reconciliation'],
@@ -92,6 +101,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'technology_engineering',
+    unitId: 'technology-engineering',
     unitTags: ['engineering', 'software', 'ai-automation'],
     roleTags: ['technology', 'engineering', 'developer', 'ai', 'automation'],
     description: 'Build and maintain software, infrastructure, AI systems and automation.',
@@ -101,6 +111,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'strategy_planning',
+    unitId: 'strategy-planning',
     unitTags: ['strategy', 'planning'],
     roleTags: ['strategy', 'planning'],
     description: 'Turn approved organizational direction into priorities, plans, objectives, and measurable outcomes.',
@@ -110,6 +121,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'product_management',
+    unitId: 'product-innovation',
     unitTags: ['product', 'innovation'],
     roleTags: ['product', 'innovation'],
     description: 'Shape product requirements, validate user needs, prioritize features, and coordinate product delivery.',
@@ -119,6 +131,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'security_it',
+    unitId: 'cybersecurity-it',
     unitTags: ['security', 'it'],
     roleTags: ['cybersecurity', 'security', 'IT'],
     description: 'Assess security risks, access controls, reliability, incidents, and infrastructure operations.',
@@ -128,6 +141,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'operations_administration',
+    unitId: 'operations-administration',
     unitTags: ['operations', 'administration'],
     roleTags: ['operations', 'administration'],
     description: 'Improve internal processes, records, coordination, procedures, and operational efficiency.',
@@ -137,8 +151,9 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'people_agent_management',
-    unitTags: ['people', 'agents', 'roles'],
-    roleTags: ['human resources', 'agent management'],
+    unitId: 'people-agent-management',
+    unitTags: ['people', 'agent-management', 'roles'],
+    roleTags: ['human resources', 'agent management', 'director'],
     description: 'Define responsibilities, staffing or agent needs, role activation, evaluation, and development.',
     objectiveKeywords: ['human resources', 'HR', 'agent performance', 'role assignment', 'staffing', 'onboarding', 'performance review', 'agent lifecycle'],
     researchKeywords: ['role requirements', 'performance criteria', 'agent evaluation'],
@@ -146,7 +161,8 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'legal_risk_compliance',
-    unitTags: ['legal', 'risk', 'compliance'],
+    unitId: 'legal-risk-compliance',
+    unitTags: ['legal', 'compliance'],
     roleTags: ['legal', 'risk', 'compliance'],
     description: 'Identify legal, policy, regulatory, and operational risks and recommend controls.',
     objectiveKeywords: ['legal', 'compliance', 'regulation', 'regulatory', 'risk assessment', 'policy review', 'contract risk', 'data protection'],
@@ -155,6 +171,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'procurement_resources',
+    unitId: 'procurement-resources',
     unitTags: ['procurement', 'resources'],
     roleTags: ['procurement', 'resource management'],
     description: 'Compare suppliers, document requirements, and plan approved resource acquisition.',
@@ -164,6 +181,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'executive_management',
+    unitId: 'executive-management',
     unitTags: ['executive', 'coordination'],
     roleTags: ['executive management'],
     description: 'Coordinate organizational operating rhythms, cross-department execution, performance reviews, and executive reporting.',
@@ -173,6 +191,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'research_development',
+    unitId: 'research-development',
     unitTags: ['technical-research', 'r-and-d'],
     roleTags: ['research & development'],
     description: 'Investigate technical concepts, test feasibility, and validate prototypes through controlled experiments.',
@@ -182,6 +201,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
   },
   {
     id: 'governance_oversight',
+    unitId: 'board-governance',
     unitTags: ['board', 'governance'],
     roleTags: ['governance', 'board'],
     description: 'Prepare governance records, decision briefs, approval requests, and oversight materials.',
@@ -196,11 +216,19 @@ function normalize(value: string): string {
 }
 
 function countMatches(text: string, keywords: string[]): number {
-  const normalized = normalize(text);
-  return keywords.reduce((score, keyword) => score + (normalized.includes(normalize(keyword)) ? 1 : 0), 0);
+  // Match complete normalized words/phrases. Substring matching makes short
+  // terms such as "IT" fire inside unrelated words such as "website".
+  const normalized = ` ${normalize(text)} `;
+  return keywords.reduce((score, keyword) => {
+    const normalizedKeyword = normalize(keyword);
+    if (!normalizedKeyword) return score;
+    return score + (normalized.includes(` ${normalizedKeyword} `) ? 1 : 0);
+  }, 0);
 }
 
-function findUnit(definition: OrganizationDefinition, tags: string[]): OrganizationUnit | null {
+function findUnit(definition: OrganizationDefinition, tags: string[], unitId?: string): OrganizationUnit | null {
+  const exact = unitId ? definition.units.find((unit) => unit.id === unitId) : undefined;
+  if (exact) return exact;
   const matches = definition.units.filter((unit) =>
     tags.some((tag) => unit.tags.map(normalize).includes(normalize(tag)))
   );
@@ -226,7 +254,7 @@ export function routeObjective(definition: OrganizationDefinition, objective: st
         ...capability.objectiveKeywords,
         ...capability.deliverableHints,
       ]);
-      const unit = findUnit(definition, capability.unitTags);
+      const unit = findUnit(definition, capability.unitTags, capability.unitId);
       const role = findRole(definition, capability.roleTags, unit?.id ?? null);
       const score = keywordScore + (unit ? 1 : 0) + (role ? 1 : 0);
       return {

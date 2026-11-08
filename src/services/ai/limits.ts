@@ -11,6 +11,16 @@ const DEFAULT_LIMITS: Record<AgentName, { requestsPerMinute: number; concurrency
   finance: { requestsPerMinute: 8, concurrency: 2 },
   payments: { requestsPerMinute: 8, concurrency: 2 },
   engineering: { requestsPerMinute: 8, concurrency: 2 },
+  strategy: { requestsPerMinute: 6, concurrency: 1 },
+  product: { requestsPerMinute: 8, concurrency: 2 },
+  security: { requestsPerMinute: 4, concurrency: 1 },
+  operations: { requestsPerMinute: 8, concurrency: 2 },
+  people: { requestsPerMinute: 6, concurrency: 1 },
+  legal: { requestsPerMinute: 4, concurrency: 1 },
+  procurement: { requestsPerMinute: 6, concurrency: 1 },
+  executive: { requestsPerMinute: 8, concurrency: 2 },
+  rnd: { requestsPerMinute: 6, concurrency: 1 },
+  governance: { requestsPerMinute: 4, concurrency: 1 },
 };
 
 type AgentState = { startedAt: number[]; active: number };

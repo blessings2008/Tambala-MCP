@@ -91,3 +91,17 @@ export async function supabaseUpdate<T>(
   if (!rows.length) throw new Error(`Supabase update on ${table} returned no record`);
   return rows[0];
 }
+
+/** Delete rows matching a PostgREST filter, e.g. `id=eq.abc`. A filter is mandatory so a bug can never wipe a table. */
+export async function supabaseDelete(table: string, filter: string): Promise<void> {
+  if (!filter || !/=/.test(filter)) throw new Error('supabaseDelete requires a filter');
+  const key = getServiceRoleKey();
+  const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+    method: 'DELETE',
+    headers: { apikey: key, Authorization: `Bearer ${key}` },
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Supabase delete failed (${response.status}): ${body}`);
+  }
+}

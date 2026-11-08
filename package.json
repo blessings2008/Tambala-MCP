@@ -1,6 +1,6 @@
 {
   "name": "tambala-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Model Context Protocol server for Tambala Technologies.",
   "type": "module",
@@ -11,18 +11,21 @@
     "inspect": "npx @modelcontextprotocol/inspector npx tsx src/index.ts",
     "automation": "node dist/automation/job.js",
     "daily-report": "node dist/daily-report-job.js",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "seed:sql": "tsx scripts/generate-seed-sql.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/node": "latest",
-    "@modelcontextprotocol/server": "latest",
+    "@modelcontextprotocol/node": "2.1.2",
+    "@modelcontextprotocol/server": "2.4.0",
     "openai": "^6.0.0",
-    "zod": "latest"
+    "pdfkit": "0.17.2",
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "tsx": "latest",
-    "typescript": "latest",
-    "@types/node": "latest"
+    "@types/node": "26.6.6",
+    "@types/pdfkit": "0.17.7",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
   },
   "engines": {
     "node": ">=20"

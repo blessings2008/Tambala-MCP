@@ -44,6 +44,10 @@ export async function getPersistedOrganizationSnapshot(): Promise<{
   // than silently hiding stale or unavailable persistent state.
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     const organization = structuredClone(initialOrganization);
+    // Local development only: no database exists to hold role activation, so allow an explicit opt-in.
+    if (process.env.TAMBALA_DEV_ACTIVE_ROLES === 'true') {
+      for (const role of organization.roles) if (role.kind === 'ai_agent') role.activation = 'active';
+    }
     const errors = validateOrganization(organization);
     return { organization, validation: { valid: errors.length === 0, errors }, source: 'seed-fallback' };
   }
