@@ -169,6 +169,15 @@ test('outbox: first-contact Outreach is queued autonomously and strips internal 
   assert.doesNotMatch(h.sent.at(-1)!.text, /CEO|TT[- ]?001|Prepared by/i);
 });
 
+test('outbox: autonomous first contact is rejected when the number is not a CRM lead', async () => {
+  const h = outboxHarness({ verifyOutreachLead: async () => null });
+  await assert.rejects(
+    queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello there.', purpose: 'outreach', contactLabel: 'Unverified Prospect' }),
+    /matching CRM lead/,
+  );
+  assert.equal(h.store.rows.length, 0);
+});
+
 test('outbox: customer cooldown is enforced between separate worker runs', async () => {
   const h = outboxHarness({ cooldownMs: 90_000 });
   const first = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello first prospect.', purpose: 'outreach', contactLabel: 'First Lodge' });
