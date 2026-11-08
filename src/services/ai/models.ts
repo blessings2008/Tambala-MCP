@@ -275,9 +275,9 @@ export function getAgentRuntimeInfo(agent: AgentName) {
   const dedicatedKeyName = `TAMBALA_${upper}_API_KEY`;
   const requestedProvider = process.env[`TAMBALA_${upper}_PROVIDER`]?.toLowerCase();
   const useOpenRouter = requestedProvider === 'openrouter';
-  const legacyOrchestratorKey = agent === 'orchestrator' && Boolean(process.env.GROQ_API_KEY);
+  const legacyOrchestratorKey = agent === 'orchestrator' && Boolean(process.env.GROQ_API_KEY?.trim());
   const sharedGroqEnabled = process.env.TAMBALA_ALLOW_SHARED_GROQ_KEY === 'true';
-  const sharedGroqConfigured = sharedGroqEnabled && Boolean(process.env.GROQ_API_KEY || process.env.TAMBALA_ORCHESTRATOR_API_KEY);
+  const sharedGroqConfigured = sharedGroqEnabled && Boolean(process.env.GROQ_API_KEY?.trim() || process.env.TAMBALA_ORCHESTRATOR_API_KEY?.trim());
   const apiKeyConfigured = useOpenRouter
     ? Boolean(process.env.OPENROUTER_API_KEY?.trim())
     : Boolean(process.env[dedicatedKeyName]?.trim() || legacyOrchestratorKey || sharedGroqConfigured);
