@@ -29,6 +29,8 @@ import { isAuthorized, unauthorized } from './http/auth.js';
 import { advanceTrackedTask, beginTrackedTask, failTrackedTask } from './organization/task-tracking.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo, type AgentName } from './services/ai.js';
 import { hasResearchSourceUrls } from './services/web-research.js';
+import { supabaseSelect } from './lib/supabase.js';
+import { isExcluded } from './services/ai/context.js';
 import { isCompanyStatusRequest, runCompanyStatusReport } from './channels/founder-execution.js';
 
 const nodeHandler = toNodeHandler(mcpHandler);
@@ -146,6 +148,45 @@ function compactResearchEvidence(value: unknown): string {
   if (!value) return 'No web research evidence was returned.';
   const raw = JSON.stringify(value);
   return truncateForModel(raw, 4500);
+}
+
+/** Resolve explicit entity mentions against Tambala's own client/project records before web search. */
+async function resolveInternalEntityContext(objective: string): Promise<{ context: string; researchSubject: string | null }> {
+  const tokens = new Set(objective.toLowerCase().match(/[a-z0-9]{4,}/g) ?? []);
+  if (!tokens.size) return { context: 'No matching internal client or project record was found.', researchSubject: null };
+  try {
+    const [clients, projects] = await Promise.all([
+      supabaseSelect<Record<string, unknown>>('clients', 'select=id,name,business_name,status&order=created_at.desc&limit=100'),
+      supabaseSelect<Record<string, unknown>>('projects', 'select=id,name,status,client_id&order=created_at.desc&limit=100'),
+    ]);
+    const matches = [
+      ...clients.filter((row) => !isExcluded(row)).map((row) => ({ kind: 'client', row })),
+      ...projects.filter((row) => !isExcluded(row)).map((row) => ({ kind: 'project', row })),
+    ].filter(({ row }) => {
+      const names = [row.name, row.business_name].filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+      return names.some((name) => {
+        const normalized = name.toLowerCase();
+        if (normalized.length >= 4 && objective.toLowerCase().includes(normalized)) return true;
+        return (normalized.match(/[a-z0-9]{4,}/g) ?? []).some((token) => tokens.has(token));
+      });
+    }).slice(0, 8);
+    if (!matches.length) return { context: 'No matching internal client or project record was found. Do not guess an entity identity.', researchSubject: null };
+    const entities = matches.map(({ kind, row }) => ({
+      record_type: kind,
+      name: typeof row.name === 'string' ? row.name : null,
+      business_name: typeof row.business_name === 'string' ? row.business_name : null,
+      status: typeof row.status === 'string' ? row.status : null,
+      client_id: typeof row.client_id === 'string' ? row.client_id : null,
+    }));
+    const distinctNames = [...new Set(entities.map((item) => item.business_name || item.name).filter((v): v is string => Boolean(v)))];
+    return {
+      context: JSON.stringify({ source: 'Tambala internal CRM/project records', entities }),
+      researchSubject: distinctNames.length === 1 ? distinctNames[0] : null,
+    };
+  } catch (error) {
+    console.warn('Internal entity context lookup unavailable:', error instanceof Error ? error.message : error);
+    return { context: 'Internal CRM/project lookup was unavailable. Do not guess an entity identity.', researchSubject: null };
+  }
 }
 
 function validStage(value: unknown): value is ExecutionStage {
@@ -318,8 +359,12 @@ const server = createHttpServer(async (req, res) => {
         if (execution.status !== 'ready') { return json(res, 409, { error: execution.reason, execution, routing }); }
         const specialist = execution.agent;
         await advanceTrackedTask(stepTaskId, [{ status: 'executing', stage: 'department', eventType: 'department_execution_started', roleId: null }]);
-        const researchQuery = execution.researchQuery || await researchQueryFromObjective(founderMessage);
-        const specialistTask = `CEO execution brief:\n\n${truncateForModel(body.delegation, 7000)}\n\nExecute this task now. Produce the requested deliverable itself. Do not merely describe what should be done, do not delegate it back, and do not stop at process recommendations. Respect every constraint, but verify factual assumptions against research evidence rather than blindly trusting the brief. If research is required, use the web research evidence and preserve source URLs. Return completed work to the CEO, including genuine blockers only if they prevent completion.`;
+        const entityContext = await resolveInternalEntityContext(founderMessage);
+        const routedResearchQuery = execution.researchQuery || await researchQueryFromObjective(founderMessage);
+        const researchQuery = entityContext.researchSubject
+          ? `${entityContext.researchSubject} Malawi official sources verified information`.slice(0, 500)
+          : routedResearchQuery;
+        const specialistTask = `CEO execution brief:\n\n${truncateForModel(body.delegation, 7000)}\n\nINTERNAL ENTITY CONTEXT (trusted CRM/project records; use this to disambiguate the subject before searching):\n${entityContext.context}\n\nExecute this task now. Produce the requested deliverable itself. Do not merely describe what should be done, do not delegate it back, and do not stop at process recommendations. Respect every constraint, but verify factual assumptions against research evidence rather than blindly trusting the brief. If research is required, use the web research evidence and preserve source URLs. Return completed work to the CEO, including genuine blockers only if they prevent completion.`;
         if (taskNeedsWebResearch(`${founderMessage}\n${body.delegation}`)) {
           const researched = await askTambalaAIWithWebResearch(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: body.delegation }, researchQuery);
           const tracking = await advanceTrackedTask(stepTaskId, [{ status: 'returned_to_ceo', stage: 'review', eventType: 'department_work_returned', result: { summary: researched.response.slice(0, 4000) } }]);
