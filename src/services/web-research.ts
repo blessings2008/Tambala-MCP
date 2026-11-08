@@ -10,6 +10,13 @@ export interface WebResearchResult {
   }>;
 }
 
+/** True only when the current research payload contains at least one actual HTTP(S) source URL. */
+export function hasResearchSourceUrls(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+  return /https?:\/\/[^\s"'<>]+/i.test(serialized);
+}
+
 export interface WebResearchOptions {
   maxResults?: number;
   searchDepth?: 'ultra-fast' | 'fast' | 'basic' | 'advanced';

@@ -28,6 +28,9 @@ import { handleHealth, handleNotFound } from './http/health.js';
 import { isAuthorized, unauthorized } from './http/auth.js';
 import { advanceTrackedTask, beginTrackedTask, failTrackedTask } from './organization/task-tracking.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo, type AgentName } from './services/ai.js';
+import { hasResearchSourceUrls } from './services/web-research.js';
+import { supabaseSelect } from './lib/supabase.js';
+import { isExcluded } from './services/ai/context.js';
 import { isCompanyStatusRequest, runCompanyStatusReport } from './channels/founder-execution.js';
 
 const nodeHandler = toNodeHandler(mcpHandler);
@@ -145,6 +148,45 @@ function compactResearchEvidence(value: unknown): string {
   if (!value) return 'No web research evidence was returned.';
   const raw = JSON.stringify(value);
   return truncateForModel(raw, 4500);
+}
+
+/** Resolve explicit entity mentions against Tambala's own client/project records before web search. */
+async function resolveInternalEntityContext(objective: string): Promise<{ context: string; researchSubject: string | null }> {
+  const tokens = new Set(objective.toLowerCase().match(/[a-z0-9]{4,}/g) ?? []);
+  if (!tokens.size) return { context: 'No matching internal client or project record was found.', researchSubject: null };
+  try {
+    const [clients, projects] = await Promise.all([
+      supabaseSelect<Record<string, unknown>>('clients', 'select=id,name,business_name,status&order=created_at.desc&limit=100'),
+      supabaseSelect<Record<string, unknown>>('projects', 'select=id,name,status,client_id&order=created_at.desc&limit=100'),
+    ]);
+    const matches = [
+      ...clients.filter((row) => !isExcluded(row)).map((row) => ({ kind: 'client', row })),
+      ...projects.filter((row) => !isExcluded(row)).map((row) => ({ kind: 'project', row })),
+    ].filter(({ row }) => {
+      const names = [row.name, row.business_name].filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+      return names.some((name) => {
+        const normalized = name.toLowerCase();
+        if (normalized.length >= 4 && objective.toLowerCase().includes(normalized)) return true;
+        return (normalized.match(/[a-z0-9]{4,}/g) ?? []).some((token) => tokens.has(token));
+      });
+    }).slice(0, 8);
+    if (!matches.length) return { context: 'No matching internal client or project record was found. Do not guess an entity identity.', researchSubject: null };
+    const entities = matches.map(({ kind, row }) => ({
+      record_type: kind,
+      name: typeof row.name === 'string' ? row.name : null,
+      business_name: typeof row.business_name === 'string' ? row.business_name : null,
+      status: typeof row.status === 'string' ? row.status : null,
+      client_id: typeof row.client_id === 'string' ? row.client_id : null,
+    }));
+    const distinctNames = [...new Set(entities.map((item) => item.business_name || item.name).filter((v): v is string => Boolean(v)))];
+    return {
+      context: JSON.stringify({ source: 'Tambala internal CRM/project records', entities }),
+      researchSubject: distinctNames.length === 1 ? distinctNames[0] : null,
+    };
+  } catch (error) {
+    console.warn('Internal entity context lookup unavailable:', error instanceof Error ? error.message : error);
+    return { context: 'Internal CRM/project lookup was unavailable. Do not guess an entity identity.', researchSubject: null };
+  }
 }
 
 function validStage(value: unknown): value is ExecutionStage {
@@ -317,8 +359,12 @@ const server = createHttpServer(async (req, res) => {
         if (execution.status !== 'ready') { return json(res, 409, { error: execution.reason, execution, routing }); }
         const specialist = execution.agent;
         await advanceTrackedTask(stepTaskId, [{ status: 'executing', stage: 'department', eventType: 'department_execution_started', roleId: null }]);
-        const researchQuery = execution.researchQuery || await researchQueryFromObjective(founderMessage);
-        const specialistTask = `CEO execution brief:\n\n${truncateForModel(body.delegation, 7000)}\n\nExecute this task now. Produce the requested deliverable itself. Do not merely describe what should be done, do not delegate it back, and do not stop at process recommendations. Respect every constraint, but verify factual assumptions against research evidence rather than blindly trusting the brief. If research is required, use the web research evidence and preserve source URLs. Return completed work to the CEO, including genuine blockers only if they prevent completion.`;
+        const entityContext = await resolveInternalEntityContext(founderMessage);
+        const routedResearchQuery = execution.researchQuery || await researchQueryFromObjective(founderMessage);
+        const researchQuery = entityContext.researchSubject
+          ? `${entityContext.researchSubject} Malawi official sources verified information`.slice(0, 500)
+          : routedResearchQuery;
+        const specialistTask = `CEO execution brief:\n\n${truncateForModel(body.delegation, 7000)}\n\nINTERNAL ENTITY CONTEXT (trusted CRM/project records; use this to disambiguate the subject before searching):\n${entityContext.context}\n\nExecute this task now. Produce the requested deliverable itself. Do not merely describe what should be done, do not delegate it back, and do not stop at process recommendations. Respect every constraint, but verify factual assumptions against research evidence rather than blindly trusting the brief. If research is required, use the web research evidence and preserve source URLs. Return completed work to the CEO, including genuine blockers only if they prevent completion.`;
         if (taskNeedsWebResearch(`${founderMessage}\n${body.delegation}`)) {
           const researched = await askTambalaAIWithWebResearch(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: body.delegation }, researchQuery);
           const tracking = await advanceTrackedTask(stepTaskId, [{ status: 'returned_to_ceo', stage: 'review', eventType: 'department_work_returned', result: { summary: researched.response.slice(0, 4000) } }]);
@@ -333,10 +379,16 @@ const server = createHttpServer(async (req, res) => {
       const delegationContext = truncateForModel(body.delegation, 3500);
       const specialistContext = truncateForModel(body.specialistResult, 6000);
       const researchContext = compactResearchEvidence(body.researchEvidence);
+      if (taskNeedsWebResearch(founderMessage) && !hasResearchSourceUrls(body.researchEvidence)) {
+        const message = 'INCONCLUSIVE — this task requires web research, but no usable source URLs were returned. The CEO cannot finalize or add factual claims until the specialist supplies verifiable evidence or the Founder clarifies the entity.';
+        const tracking = await advanceTrackedTask(stepTaskId, [{ status: 'needs_more_work', stage: 'review', eventType: 'research_evidence_missing', result: { reason: message } }]);
+        return json(res, 422, { stage: body.stage, tracking, status: 'inconclusive', message, researchEvidence: researchContext });
+      }
       const finalPrompt = `Complete the Founder objective end-to-end.\n\nORIGINAL FOUNDER OBJECTIVE:\n${founderMessage}\n\nCEO DELEGATION (may contain mistakes; do not treat its factual assumptions as truth):\n${delegationContext}\n\nDEPARTMENT COMPLETED WORK:\n${specialistContext}\n\nWEB RESEARCH EVIDENCE:\n${researchContext}\n\nYou are accountable for the final result. Evaluate the department work against the original objective and every constraint. Evidence and the original Founder objective take precedence over unsupported claims in the delegation or report. Correct factual errors when the supplied evidence supports the correction. Do not merely summarize or relay the department report. Produce the actual final deliverable requested by the Founder. If research was requested, present the researched findings and preserve source URLs. If the evidence is insufficient, clearly state what remains unknown rather than fabricating it.`;
       const finalResult = await askTambalaAI('orchestrator', finalPrompt, { communicationType: 'CEO -> Founder', sender: 'Chief Executive Officer (CEO)', recipient: 'Founder / Bless', founderObjective: founderMessage, delegation: delegationContext, specialistResult: specialistContext, researchEvidence: researchContext });
-      const tracking = await advanceTrackedTask(stepTaskId, [{ status: 'completed', stage: 'complete', eventType: 'ceo_completed_objective', result: { final: finalResult.slice(0, 8000) }, completedAt: new Date().toISOString() }]);
-      return json(res, 200, { stage: body.stage, tracking, message: finalResult });
+      const completionHasEvidence = !taskNeedsWebResearch(founderMessage) || hasResearchSourceUrls(body.researchEvidence);
+      const tracking = await advanceTrackedTask(stepTaskId, [{ status: completionHasEvidence ? 'completed' : 'needs_more_work', stage: completionHasEvidence ? 'complete' : 'review', eventType: completionHasEvidence ? 'ceo_completed_objective' : 'research_evidence_missing', result: { final: finalResult.slice(0, 8000) }, ...(completionHasEvidence ? { completedAt: new Date().toISOString() } : {}) }]);
+      return json(res, completionHasEvidence ? 200 : 422, { stage: body.stage, tracking, status: completionHasEvidence ? 'completed' : 'inconclusive', message: finalResult });
       } catch (stageError) {
         await failTrackedTask(stepTaskId, stageError instanceof Error ? stageError.message : 'Stage failed.');
         throw stageError;

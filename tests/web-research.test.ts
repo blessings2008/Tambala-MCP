@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import {
   formatResearchContext,
+  hasResearchSourceUrls,
   normalizeResearchQuery,
   webResearch,
 } from '../src/services/web-research.js';
@@ -135,4 +136,13 @@ test('allows zero-day news freshness and rejects days on non-news searches', asy
     () => webResearch('Malawi technology', { topic: 'general', days: 3 }),
     /only supported for news searches/,
   );
+});
+
+test('research evidence validator requires an actual HTTP(S) source URL', () => {
+  assert.equal(hasResearchSourceUrls(undefined), false);
+  assert.equal(hasResearchSourceUrls('No usable sources were returned.'), false);
+  assert.equal(hasResearchSourceUrls('[1] source citation without a URL'), false);
+  assert.equal(hasResearchSourceUrls('Source: https://example.com/report'), true);
+  assert.equal(hasResearchSourceUrls({ sources: [{ url: 'https://example.org/news' }] }), true);
+  assert.equal(hasResearchSourceUrls('javascript:alert(1)'), false);
 });

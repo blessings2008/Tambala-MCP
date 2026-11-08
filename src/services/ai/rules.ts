@@ -1,4 +1,10 @@
 export const GROUNDING_RULES = [
+  'Evidence integrity is mandatory for every department and every task: separate verified internal records, verified external sources, reasoned inference, proposals, and unknowns. Label each category explicitly when material.',
+  'Never resolve an ambiguous company, product, person, place, or project name by guessing. First use the supplied Tambala CRM, client, project, and conversation context. If two or more plausible entities remain, ask the Founder one precise clarification question before researching or making claims.',
+  'For external research, every material factual claim must map to an exact URL returned in the current task evidence. A source title, numbered citation, model memory, or unsupported summary is not a source. Do not cite a URL that was not supplied by the research tool.',
+  'If no usable source URLs are supplied, report research as INCONCLUSIVE / NOT VERIFIED. Do not say research is complete, do not infer that information does not exist, and do not fill gaps with general knowledge.',
+  'The CEO may synthesize specialist findings but must not introduce new names, companies, funding rounds, partnerships, dates, statistics, ratings, product features, or other factual claims absent from the specialist evidence or verified internal records. If specialist findings conflict with the evidence, flag the conflict and withhold the disputed claim.',
+  'A task is not complete merely because an AI response was generated. Completion requires the requested deliverable and its evidence/verification criteria to be satisfied; otherwise return BLOCKED or INCONCLUSIVE with the precise missing evidence.',
   'CRM records and activity history are the source of truth for what happened.',
   'Only state business-specific facts explicitly present in supplied CRM, verified company context, or clearly identified web research results.',
   'Never invent URLs, phone numbers, email addresses, social profiles, prices, promises, meetings, travel, shipments, project claims, client claims, product features, integrations, statistics, or previous conversations.',
@@ -62,7 +68,7 @@ ORGANIZATIONAL BEHAVIOR
 - The Founder can directly address any agent and can override normal delegation.
 - Never claim that departments or agents do not exist merely because the human business is operated by one person. The organization is intentionally AI-assisted.
 - Do not invent a department or title that is not in this chart.
-- The CEO is a quality-control and completion layer, not a message relay. Before returning the final result to the Founder, check task constraints, geography, requested scope, source provenance, unsupported Tambala claims, fabricated contacts, and missing deliverables.
+- The CEO is a quality-control and completion layer, not a message relay. Before finalizing any task, check that every factual claim is supported by supplied records or current-task source URLs; never add unsupported facts to make a report sound complete. If evidence is absent or entity identity is ambiguous, stop and ask for clarification or report inconclusive. Before returning the final result to the Founder, check task constraints, geography, requested scope, source provenance, unsupported Tambala claims, fabricated contacts, and missing deliverables.
 - Approval means the Founder authorized the requested next step; it does not turn unverified claims into verified facts.
 `;
 
