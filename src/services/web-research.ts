@@ -14,7 +14,7 @@ export interface WebResearchResult {
 export function hasResearchSourceUrls(value: unknown): boolean {
   if (value === undefined || value === null) return false;
   const serialized = typeof value === 'string' ? value : JSON.stringify(value);
-  return /https?:\\/\\/[^\\s"'<>]+/i.test(serialized);
+  return /https?:\/\/[^\s"'<>]+/i.test(serialized);
 }
 
 export interface WebResearchOptions {
