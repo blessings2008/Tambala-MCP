@@ -140,7 +140,17 @@ export async function queueHandoff(store: HandoffStore, input: {
   return created;
 }
 
-export async function resumeFounderHandoff(store: HandoffStore, handoffId: string, clarification: string, actorRoleId = 'founder'): Promise<Handoff> {\n  const answer = clarification.trim();\n  if (answer.length < 2 || answer.length > 2000) throw new HandoffError('Provide a clarification between 2 and 2,000 characters.');\n  const handoff = await store.get(handoffId);\n  if (!handoff || handoff.status !== 'awaiting_founder' || !handoff.room_id) throw new HandoffError('This handoff is not waiting for Founder clarification.');\n  const context = [handoff.context_summary, `FOUNDER CLARIFICATION: ${answer}`].filter(Boolean).join('\\n\\n').slice(0, 3000);\n  await store.update(handoff.id, { status: 'queued', context_summary: context, error: null, completed_at: null });\n  await store.updateRoom(handoff.room_id, { status: 'active', blocker: null });\n  await store.roomEvent(handoff.room_id, 'founder_clarification_received', actorRoleId, { clarification: answer });\n  return { ...handoff, status: 'queued', context_summary: context, error: null, completed_at: null };\n}\nexport interface HandoffDeps {
+export async function resumeFounderHandoff(store: HandoffStore, handoffId: string, clarification: string, actorRoleId = 'founder'): Promise<Handoff> {
+  const answer = clarification.trim();
+  if (answer.length < 2 || answer.length > 2000) throw new HandoffError('Provide a clarification between 2 and 2,000 characters.');
+  const handoff = await store.get(handoffId);
+  if (!handoff || handoff.status !== 'awaiting_founder' || !handoff.room_id) throw new HandoffError('This handoff is not waiting for Founder clarification.');
+  const context = [handoff.context_summary, `FOUNDER CLARIFICATION: ${answer}`].filter(Boolean).join('\n\n').slice(0, 3000);
+  await store.update(handoff.id, { status: 'queued', context_summary: context, error: null, completed_at: null });
+  await store.updateRoom(handoff.room_id, { status: 'active', blocker: null });
+  await store.roomEvent(handoff.room_id, 'founder_clarification_received', actorRoleId, { clarification: answer });
+  return { ...handoff, status: 'queued', context_summary: context, error: null, completed_at: null };
+}\nexport interface HandoffDeps {
   store: HandoffStore; now: () => Date;
   agentUnavailableReason(agent: AgentName): Promise<string | null>;
   senderLabel(roleId: string): Promise<string>;
