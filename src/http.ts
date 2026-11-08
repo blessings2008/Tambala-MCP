@@ -64,6 +64,14 @@ function chatTokenMatches(provided: string | null): boolean {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
+function founderApprovalTokenMatches(provided: string | null): boolean {
+  const expectedValue = process.env.TAMBALA_FOUNDER_APPROVAL_TOKEN;
+  if (!expectedValue || expectedValue.length < 32 || !provided) return false;
+  const expected = Buffer.from(expectedValue, 'utf8');
+  const actual = Buffer.from(provided, 'utf8');
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
 function schedulerTokenMatches(provided: string | null): boolean {
   const expectedValue = process.env.TAMBALA_SCHEDULER_TOKEN;
   if (!expectedValue || expectedValue.length < 24 || !provided) return false;
@@ -188,7 +196,15 @@ const server = createHttpServer(async (req, res) => {
 
 
   if ((requestPath === '/api/chat-test/status' || requestPath === '/api/chat-test' || requestPath === '/api/chat-test/collaborate' || requestPath === '/api/chat-test/step' || requestPath === '/api/dashboard' || requestPath === '/api/dashboard/approvals/decide' || requestPath.startsWith('/api/dashboard/')) && (req.method === 'GET' || req.method === 'POST')) {
-    if (!chatTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized. Check the chat test token.' }); return; }
+    const authorized = requestPath === '/api/dashboard/approvals/decide'
+      ? founderApprovalTokenMatches(bearerToken(req))
+      : chatTokenMatches(bearerToken(req));
+    if (!authorized) {
+      json(res, 401, { error: requestPath === '/api/dashboard/approvals/decide'
+        ? 'Founder approval authentication is required.'
+        : 'Unauthorized. Check the chat test token.' });
+      return;
+    }
   }
 
   if (requestPath === '/api/chat-test/status' && req.method === 'GET') {
@@ -360,7 +376,7 @@ const server = createHttpServer(async (req, res) => {
   if (requestPath === '/api/dashboard/approvals/decide' && req.method === 'POST') {
     try {
       const body = await readJsonBody(req) as { id?: unknown; decision?: unknown; note?: unknown };
-      const approval = await decideApproval({ id: String(body.id ?? ''), decision: body.decision as 'approved' | 'rejected', note: typeof body.note === 'string' ? body.note : undefined });
+      const approval = await decideApproval({ id: String(body.id ?? ''), decision: body.decision as 'approved' | 'rejected', note: typeof body.note === 'string' ? body.note : undefined, deciderRoleId: 'founder' });
       json(res, 200, { ok: true, approval: { id: approval.id, status: approval.status }, signature: approval.signature });
     } catch (error) {
       if (error instanceof ApprovalError) { json(res, error.status, { error: error.message }); return; }
