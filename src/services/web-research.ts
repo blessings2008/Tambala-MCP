@@ -25,7 +25,8 @@ export interface WebResearchOptions {
 
 const TAVILY_URL = 'https://api.tavily.com/search';
 const DEFAULT_TIMEOUT_MS = 20_000;
-const MAX_RESULTS = 5;
+const MAX_RESULTS = 20;
+const MAX_CONTEXT_SOURCES = 5;
 const MAX_SNIPPET_LENGTH = 900;
 const TRACKING_PARAMS = new Set([
   'fbclid', 'gclid', 'mc_cid', 'mc_eid', 'ref', 'ref_src',
@@ -199,7 +200,7 @@ export function formatResearchContext(research: WebResearchResult): string {
   if (!research.results.length) {
     return `WEB RESEARCH RESULT\nQuery: ${research.query}\nNo usable sources were returned. Do not invent sources or treat this as evidence that no information exists.`;
   }
-  const sources = research.results.map((item, index) => [
+  const sources = research.results.slice(0, MAX_CONTEXT_SOURCES).map((item, index) => [
     `[SOURCE ${index + 1}] ${item.title}`,
     `URL: ${item.url}`,
     item.publishedDate ? `Published: ${item.publishedDate}` : '',
