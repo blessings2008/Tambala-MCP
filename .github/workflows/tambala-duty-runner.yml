@@ -8,6 +8,16 @@ on:
       timezone: Africa/Blantyre
     - cron: '0 8 * * 1-5'
       timezone: Africa/Blantyre
+    - cron: '5 8 * * 1-5'
+      timezone: Africa/Blantyre
+    - cron: '10 8 * * 1-5'
+      timezone: Africa/Blantyre
+    - cron: '15 8 * * 1-5'
+      timezone: Africa/Blantyre
+    - cron: '20 8 * * 1-5'
+      timezone: Africa/Blantyre
+    - cron: '25 8 * * 1-5'
+      timezone: Africa/Blantyre
     - cron: '30 8 * * 1-5'
       timezone: Africa/Blantyre
     - cron: '0 9 * * 1-5'
