@@ -30,8 +30,8 @@ import { advanceTrackedTask, beginTrackedTask, failTrackedTask } from './organiz
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo, type AgentName } from './services/ai.js';
 
 const nodeHandler = toNodeHandler(mcpHandler);
-const chatAgents = ['orchestrator', 'outreach', 'followup', 'research', 'marketing', 'content', 'finance', 'payments', 'engineering'] as const;
-type ChatAgent = typeof chatAgents[number];
+const chatAgents = Object.keys(AGENT_DIRECTORY) as AgentName[];
+type ChatAgent = AgentName;
 
 type ExecutionStage = 'ceo_delegate' | 'specialist_execute' | 'ceo_complete';
 
@@ -171,9 +171,15 @@ const server = createHttpServer(async (req, res) => {
   }
 
   if (requestPath === '/api/chat-test/status' && req.method === 'GET') {
-    const agents = chatAgents.map((agent) => getAgentOperationalInfo(agent));
+    const runtimeAgents = chatAgents.map((agent) => getAgentOperationalInfo(agent));
     try {
       const snapshot = await getOrganizationSnapshot();
+      const agents = runtimeAgents.map((agent) => {
+        const role = agent.agent === 'orchestrator'
+          ? snapshot.organization.roles.find((candidate) => candidate.id === 'ceo')
+          : snapshot.organization.roles.find((candidate) => candidate.unitId === agent.unitId && candidate.kind === 'ai_agent');
+        return { ...agent, roleId: role?.id ?? null, roleStatus: role?.activation ?? 'unassigned' };
+      });
       json(res, 200, {
         agents,
         organization: {
@@ -198,7 +204,7 @@ const server = createHttpServer(async (req, res) => {
       const message = error instanceof Error ? error.message : 'Organization snapshot could not be loaded.';
       console.error('Chat test status could not load organization snapshot:', message);
       json(res, 503, {
-        agents,
+        agents: runtimeAgents,
         organization: {
           status: 'unavailable',
           note: 'The configured persistent organization snapshot could not be loaded; routing should not be treated as live-verified.',
@@ -212,7 +218,7 @@ const server = createHttpServer(async (req, res) => {
     if (!req.headers['content-type']?.toLowerCase().includes('application/json')) { json(res, 415, { error: 'Content-Type must be application/json.' }); return; }
     try {
       const body = await readJsonBody(req) as { agent?: unknown; request?: unknown };
-      if (!body || typeof body !== 'object' || !chatAgents.includes(body.agent as ChatAgent)) { json(res, 400, { error: 'Choose one of the available agents: orchestrator, outreach, followup, research, marketing, content, finance, payments, or engineering.' }); return; }
+      if (!body || typeof body !== 'object' || !chatAgents.includes(body.agent as ChatAgent)) { json(res, 400, { error: 'Choose an agent from the configured organization directory.' }); return; }
       if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 10_000) { json(res, 400, { error: 'Provide a prompt between 1 and 10,000 characters.' }); return; }
       const agent = body.agent as ChatAgent;
       if (taskNeedsWebResearch(body.request)) {
@@ -407,6 +413,19 @@ const server = createHttpServer(async (req, res) => {
       if (error instanceof Error && /Only custom duties|Nothing to save/.test(error.message)) { json(res, 400, { error: error.message }); return; }
       console.error('Dashboard action failed:', error instanceof Error ? error.message : error);
       json(res, 500, { error: 'The change could not be saved.' });
+    }
+    return;
+  }
+
+  // External cron endpoint for Render's free/sleeping instances. The dedicated scheduler token
+  // is separate from the chat-test token and never grants access to dashboard actions.
+  if (requestPath === '/api/channels/outbox/run' && req.method === 'POST') {
+    if (!schedulerTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized.' }); return; }
+    try {
+      json(res, 200, { ok: true, results: await runOutbox() });
+    } catch (error) {
+      console.error('Scheduled WhatsApp outbox run failed:', error instanceof Error ? error.message : error);
+      json(res, 500, { error: 'WhatsApp outbox could not be processed.' });
     }
     return;
   }
