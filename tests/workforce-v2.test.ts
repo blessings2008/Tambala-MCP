@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { STANDING_DUTIES } from '../src/organization/workforce/duties.ts';
 import { resolveDuties, validateCustomDuty, validateOverride, DutyConfigError, saveCustomDuty, InMemoryDutyConfigStore } from '../src/organization/workforce/duty-config.ts';
-import { extractHandoffs, queueHandoff, processHandoffs, InMemoryHandoffStore, HandoffError, colleagueList, type HandoffDeps } from '../src/organization/workforce/handoffs.ts';
+import { extractHandoffs, queueHandoff, processHandoffs, InMemoryHandoffStore, HandoffError, colleagueList, isFounderClarificationRequest, resumeFounderHandoff, type HandoffDeps } from '../src/organization/workforce/handoffs.ts';
 import { buildDutyPrompt, runDuty, type DutyDeps } from '../src/organization/workforce/duty-runner.ts';
 import { InMemoryDutyStore } from '../src/organization/workforce/duty-store.ts';
 import { EMPLOYEE_NUMBERS, getEmployeeProfiles } from '../src/organization/workforce/profiles.ts';
@@ -79,7 +79,7 @@ function handoffDeps(over: Partial<HandoffDeps> = {}) {
   const deps: HandoffDeps = {
     store, now: () => at('2026-11-09T07:00:00Z'), agentUnavailableReason: async () => null,
     senderLabel: async (r) => (r === 'founder' ? 'The Founder' : r), recipientLabel: async () => 'employee TT-005, Head of Marketing', actions: { run: async () => '' }, sign: async () => ({ block: '— TT-005\n  ✍ TEST-SIG' }),
-    buildContext: async () => ({}), askAgent: async (_a, prompt) => { asked.push(prompt); return 'Here is the overview.'; },
+    buildContext: async () => ({}), askAgent: async (agent, prompt) => { asked.push(prompt); return agent === 'orchestrator' ? 'DECISION: ACCEPT\\nThe deliverable meets the request.' : 'Here is the overview.'; },
     tasks: { begin: async () => ({ taskId: 't' }), advance: async () => {}, fail: async () => {} }, ...over,
   };
   return { deps, store, asked };
@@ -93,10 +93,44 @@ test('the Founder assigns work and the employee completes it', async () => {
   assert.equal(out[0].status, 'completed');
   assert.equal(store.rows[0].status, 'completed');
   assert.equal(store.rows[0].result, 'Here is the overview.\n\n— TT-005\n  ✍ TEST-SIG');
-  assert.match(asked[0], /The Founder has asked for your help/); assert.match(asked[0], /Do not hand work on/);
+  assert.match(asked[0], /The Founder has assigned this work to your room/); assert.match(asked[0], /Do not hand work on/);
   assert.equal((await processHandoffs(deps)).length, 0); // nothing left in the inbox
 });
 
+test('task rooms pause on clarification and retain their history instead of completing', async () => {
+  assert.equal(isFounderClarificationRequest('Clarification Required — do you mean Malabi Exclusive Lodges or the dessert?'), true);
+  assert.equal(isFounderClarificationRequest('The lodge is in Lilongwe. Would you like a summary?'), false);
+  const { deps, store } = handoffDeps({ askAgent: async () => '## Clarification Required\\nDo you mean Malabi Exclusive Lodges in Lilongwe or the dessert?' });
+  const h = await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'research', request: 'Research Malabi and verify the correct entity' });
+  assert.ok(h.room_id);
+  const out = await processHandoffs(deps);
+  assert.equal(out[0].status, 'waiting');
+  assert.equal(store.rows[0].status, 'awaiting_founder');
+  assert.equal(store.rooms[0].status, 'awaiting_founder');
+  assert.equal(store.rooms[0].closed_at, null);
+  assert.ok(store.roomEvents.some((event) => event.event_type === 'clarification_requested'));
+  assert.equal((await processHandoffs(deps)).length, 0);
+});
+test('Founder clarification reopens the same room and resumes its original task', async () => {
+  let answer = 'Clarification Required: which Malabi do you mean?';
+  let starts = 0;
+  const { deps, store } = handoffDeps({
+    askAgent: async (agent) => agent === 'orchestrator' ? 'DECISION: ACCEPT\\nThe deliverable meets the request.' : answer,
+    tasks: { begin: async () => { starts += 1; return { taskId: 'same-task' }; }, advance: async () => {}, fail: async () => {} },
+  });
+  const handoff = await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'research', request: 'Research Malabi and verify the correct entity' });
+  await processHandoffs(deps);
+  const roomId = store.rows[0].room_id;
+  await resumeFounderHandoff(store, handoff.id, 'I mean Malabi Exclusive Lodges in Lilongwe.');
+  answer = 'Verified findings and source links are ready.';
+  await processHandoffs(deps);
+  assert.equal(starts, 1);
+  assert.equal(store.rows[0].status, 'completed');
+  assert.equal(store.rows[0].room_id, roomId);
+  assert.equal(store.rows[0].task_id, 'same-task');
+  assert.equal(store.rooms[0].status, 'archived');
+  assert.ok(store.roomEvents.some((event) => event.event_type === 'founder_clarification_received'));
+});
 test('an unavailable colleague leaves the work waiting without rewriting it every tick', async () => {
   const { deps, store } = handoffDeps({ agentUnavailableReason: async () => 'Role is not active.' });
   await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'marketing', request: 'Draft a one-page overview of our web services' });

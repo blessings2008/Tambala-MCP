@@ -9,7 +9,7 @@ import type { AgentName } from '../../services/ai/models.js';
 import { type ContextKind, type StandingDuty } from './duties.js';
 import { dbConfigured as dbOn } from './db-util.js';
 import { loadDuties, requireConfigStore, saveBuiltinOverride, saveCustomDuty, SupabaseDutyConfigStore, type DutyConfigStore } from './duty-config.js';
-import { InMemoryHandoffStore, SupabaseHandoffStore, processHandoffs, queueHandoff, type Handoff, type HandoffDeps, type HandoffOutcome, type HandoffStore } from './handoffs.js';
+import { InMemoryHandoffStore, SupabaseHandoffStore, processHandoffs, queueHandoff, resumeFounderHandoff, type Handoff, type HandoffDeps, type HandoffOutcome, type HandoffStore } from './handoffs.js';
 import { identityMark, signingAvailable } from './signing.js';
 import { signWork, signatureStore } from './sign-work.js';
 import { describeResults, executeActions, type ActionExecDeps } from './actions-exec.js';
@@ -219,6 +219,12 @@ export async function runDutiesOnce(opts: { dutyId?: string; force?: boolean; ha
 }
 
 /** The Founder assigns work directly to an employee; it lands in their inbox. */
+export async function clarifyTaskRoom(handoffId: string, clarification: string): Promise<Handoff> {
+  const store = handoffStore();
+  const resumed = await resumeFounderHandoff(store, handoffId, clarification);
+  await processHandoffs(productionHandoffDeps(store));
+  return (await store.get(handoffId)) ?? resumed;
+}
 export async function assignWork(agent: AgentName, request: string): Promise<Handoff> {
   return queueHandoff(handoffStore(), { fromRoleId: 'founder', toAgent: agent, request, sign: signWork });
 }
@@ -284,7 +290,7 @@ export async function buildWorkforce(now: Date = new Date()) {
     return {
       ...p, status, activation: role?.activation ?? 'unknown', modelReady: info.ready, duties: myDuties,
       identity: identityMark(p.employeeNumber), signingReady: signing,
-      inbox: { queued: inbox.filter((h) => h.status === 'queued' || h.status === 'running').length, completed: inbox.filter((h) => h.status === 'completed').length },
+      inbox: { queued: inbox.filter((h) => h.status === 'queued' || h.status === 'running' || h.status === 'awaiting_founder').length, completed: inbox.filter((h) => h.status === 'completed').length },
       week: { completed: mineRuns.filter((r) => r.status === 'completed' || r.status === 'awaiting_approval').length, failed: mineRuns.filter((r) => r.status === 'failed').length, skipped: mineRuns.filter((r) => r.status === 'skipped').length, tasks: tasks.filter((t) => t.assigned_role_id === p.roleId).length },
     };
   });
@@ -297,7 +303,7 @@ export async function buildWorkforce(now: Date = new Date()) {
     signing,
     today: { scheduled: all.length, done: all.filter((d) => d.state === 'done' || d.state === 'awaiting_approval').length, overdue: all.filter((d) => d.state === 'overdue').length, failed: all.filter((d) => d.state === 'failed').length, skipped: all.filter((d) => d.state === 'skipped').length },
     employees,
-    handoffs: handoffRows.slice(0, 30).map((h) => ({ id: h.id, from: labelFor(h.from_role_id), to: labelFor(h.to_role_id), toAgent: h.to_agent, request: h.request, status: h.status, error: h.error, result: h.result, createdAt: h.created_at, completedAt: h.completed_at })),
+    handoffs: handoffRows.slice(0, 30).map((h) => ({ id: h.id, roomId: h.room_id, from: labelFor(h.from_role_id), to: labelFor(h.to_role_id), toAgent: h.to_agent, request: h.request, status: h.status, error: h.error, result: h.result, createdAt: h.created_at, completedAt: h.completed_at })),
     briefing: await getLatestBriefing().catch(() => null),
   };
 }
