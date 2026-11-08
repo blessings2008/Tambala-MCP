@@ -36,6 +36,13 @@ const STATUS_WORKSTREAMS: {
   },
 ];
 
+export const STATUS_REPORT_DEPARTMENTS = STATUS_WORKSTREAMS.map((item) => item.department);
+
+export function canFinalizeStatusReport(completedDepartments: string[], outstandingDepartments: string[]): boolean {
+  return outstandingDepartments.length === 0
+    && STATUS_REPORT_DEPARTMENTS.every((department) => completedDepartments.includes(department));
+}
+
 export function isCompanyStatusRequest(value: string): boolean {
   const text = value.toLowerCase();
   return /\b(status report|current status|company status|business status|operational status|overall status)\b/.test(text)
@@ -119,7 +126,7 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
     roleId: 'ceo',
   }]);
 
-  const { context, sales, customers, warnings } = await loadStatusData();
+  const { context, sales } = await loadStatusData();
   const snapshot = await getOrganizationSnapshot().catch(() => null);
   const assignments = STATUS_WORKSTREAMS.map((workstream) => {
     const roleId = roleIdFor(workstream.agent);
@@ -177,7 +184,7 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
 
   // The CEO may synthesize only after every required department has returned
   // and its child task has been marked complete. Partial results are not a final report.
-  const allDepartmentsCompleted = results.length === STATUS_WORKSTREAMS.length && blocked.length === 0;
+  const allDepartmentsCompleted = canFinalizeStatusReport(results.map((item) => item.department), blocked.map((item) => item.department));
   if (!allDepartmentsCompleted) {
     if (ready.length && results.length) {
       await advanceTrackedTask(parent.taskId, [
@@ -194,17 +201,17 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
       }]);
     }
 
-    const completedSections = results.map((item) => `## ${item.department} — completed\\n${item.result}`).join('\\n\\n');
-    const pendingSections = blocked.map((item) => `- ${item.department}: ${item.blocker}`).join('\\n');
+    const completedSections = results.map((item) => `## ${item.department} — completed\n${item.result}`).join('\n\n');
+    const pendingSections = blocked.map((item) => `- ${item.department}: ${item.blocker}`).join('\n');
     const date = new Intl.DateTimeFormat('en-GB', { dateStyle: 'long', timeZone: 'Africa/Blantyre' }).format(new Date());
     return [
       `**Organizational status report — ${date}**`,
       'The CEO has not issued a final consolidated report because not all required department reports have completed.',
       completedSections,
-      pendingSections ? `**Departments still outstanding**\\n${pendingSections}` : '',
+      pendingSections ? `**Departments still outstanding**\n${pendingSections}` : '',
       'The report will be consolidated only after all four department heads return their own completed sections.',
       parent.tracking === 'recorded' ? `Parent task: ${parent.taskId} (waiting for department work).` : 'Task tracking is unavailable; this progress update has no durable task record.',
-    ].filter(Boolean).join('\\n\\n');
+    ].filter(Boolean).join('\n\n');
   }
 
   let report: string;
@@ -218,7 +225,7 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
       `Verified organization snapshot: ${JSON.stringify(context)}`,
       `Department findings: ${JSON.stringify(results.map(({ department, result }) => ({ department, result: result.slice(0, 1200) }))) }`,
       'Write a concise executive report (maximum 350 words) with a short executive summary followed by Sales, Operations, Technology and Finance. Preserve each department head’s evidence limits. Mark missing metrics unavailable, never zero. Do not claim work was done unless a department report confirms it. Do not include a date; the server will add the authoritative date.',
-    ].join('\\n\\n'),
+    ].join('\n\n'),
     { communicationType: 'CEO consolidated status report', sender: 'CEO workflow', recipient: 'Founder / Bless', messageId: envelope.message_id, parentTaskId: parent.taskId },
     );
   } catch (error) {
@@ -227,7 +234,7 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
     throw error;
   }
   const reportDate = new Intl.DateTimeFormat('en-GB', { dateStyle: 'long', timeZone: 'Africa/Blantyre' }).format(new Date());
-  report = `**Prepared for Founder / Bless — ${reportDate}**\\n\\n${report}`;
+  report = `**Prepared for Founder / Bless — ${reportDate}**\n\n${report}`;
 
   await advanceTrackedTask(parent.taskId, [
     { status: 'department_review', stage: 'review', eventType: 'ceo_department_reports_reviewed', roleId: 'ceo', result: { departmentsCompleted: results.map((item) => item.department) } },
