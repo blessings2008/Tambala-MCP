@@ -87,7 +87,7 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
 
   // Founder-authorized autonomous first contact: only Outreach may send, and only for a named CRM prospect.
   // Other customer-facing purposes remain behind the normal approval gate.
-  if (base.audience === 'client' && input.purpose === 'outreach' && input.agent === 'outreach' && input.contactLabel?.trim()) {
+  if (base.audience === 'client' && input.purpose === 'outreach' && input.agent === 'outreach' && input.roleId === 'director-sales-business-development' && input.contactLabel?.trim()) {
     await deps.store.update(row.id, { ...patch, status: 'queued', reason: null });
     return { id: row.id, status: 'queued' };
   }
