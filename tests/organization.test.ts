@@ -1,3 +1,4 @@
+import { Script } from 'node:vm';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -350,4 +351,12 @@ test('Board governance migration preserves advisory-only and Founder decision sa
   assert.match(migration, /revoke all on public\.organization_board_meetings from public, anon, authenticated/);
   assert.match(migration, /commit;\s*$/i);
   assert.doesNotMatch(migration, /commit\(\)/i);
+});
+
+
+test('Board dashboard inline JavaScript parses successfully', () => {
+  const html = readFileSync(new URL('../public/organization-dashboard.html', import.meta.url), 'utf8');
+  const scripts = [...html.matchAll(/<script>([\\s\\S]*?)<\\/script>/g)];
+  assert.ok(scripts.length > 0, 'Dashboard should contain an inline script.');
+  for (const script of scripts) assert.doesNotThrow(() => new Script(script[1]));
 });
