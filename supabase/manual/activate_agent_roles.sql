@@ -13,11 +13,11 @@ where u.status='planned'
     join public.organization_roles r on r.id = accountable.role_id
     where r.activation='active'
   );
--- Roll back the same units and roles if you intentionally deactivate this activation wave.
-update public.organization_units
-set status='planned'
-where id in (
-  select unit_id from public.organization_roles
-  where id in ('ceo','director-sales-business-development','director-research-intelligence','director-customer-relations','director-marketing-brand','director-media-content','director-finance-accounting','leader-fintech-ventures','director-technology-engineering','director-strategy-planning','director-product-innovation','director-cybersecurity-it','director-operations-administration','director-people-agent-management','director-legal-risk-compliance','director-procurement-resources','director-executive-management','director-research-development','director-board-governance')
-);
+-- Optional rollback: run these statements manually only when intentionally deactivating this wave.
+-- update public.organization_units
+-- set status='planned'
+-- where id in (
+--   select unit_id from public.organization_roles
+--   where id in ('ceo','director-sales-business-development','director-research-intelligence','director-customer-relations','director-marketing-brand','director-media-content','director-finance-accounting','leader-fintech-ventures','director-technology-engineering','director-strategy-planning','director-product-innovation','director-cybersecurity-it','director-operations-administration','director-people-agent-management','director-legal-risk-compliance','director-procurement-resources','director-executive-management','director-research-development','director-board-governance')
+-- );
 -- Roll back: update public.organization_roles set activation='planned' where id in ('ceo','director-sales-business-development','director-research-intelligence','director-customer-relations','director-marketing-brand','director-media-content','director-finance-accounting','leader-fintech-ventures','director-technology-engineering','director-strategy-planning','director-product-innovation','director-cybersecurity-it','director-operations-administration','director-people-agent-management','director-legal-risk-compliance','director-procurement-resources','director-executive-management','director-research-development','director-board-governance');
