@@ -1,7 +1,6 @@
 # Getting Tambala MCP fully functional
 
-1. **Run the migrations** in `supabase/migrations/` in filename order (SQL editor). They are idempotent.
-   The last one loads the 25 units and 29 roles (all `planned`).
+1. **Run the migrations** in `supabase/migrations/` in filename order (SQL editor). They are idempotent. Apply `20261108_whatsapp_outbox_claims.sql` after `20261101_channels_documents_payments.sql` and before enabling the WhatsApp worker.
 2. **Activate the agents you want working:** review then run `supabase/manual/activate_agent_roles.sql`.
    Execution only happens for `active` roles; this is deliberately not a migration.
 3. **Set environment variables** from `.env.example` (at minimum the Supabase key, the orchestrator and each
