@@ -42,13 +42,16 @@ export function registerBoardGovernanceTools(server: McpServer): void {
     inputSchema: { limit: z.number().int().min(1).max(50).optional().default(20) },
   }, async ({ limit }) => {
     const actor = await identity();
-    const [members, meetings, recommendations, actions] = await Promise.all([
+    const [members, meetings, attendance, agenda, minutes, recommendations, actions] = await Promise.all([
       supabaseSelect<Member>('organization_board_members', 'select=role_id,seat_title,member_type,active,voting_rights&order=created_at.asc'),
       supabaseSelect<Meeting>('organization_board_meetings', `select=id,meeting_number,title,meeting_type,status,scheduled_at,purpose,created_at&order=scheduled_at.desc.nullslast,created_at.desc&limit=${limit}`),
+      supabaseSelect<Record<string, unknown>>('organization_board_attendance', `select=id,meeting_id,role_id,seat_title,attendance_status,recorded_at&order=recorded_at.desc&limit=${limit * 10}`),
+      supabaseSelect<Record<string, unknown>>('organization_board_agenda_items', `select=id,meeting_id,item_number,title,background,presenter_role_id,status,created_at&order=meeting_id.asc,item_number.asc&limit=${limit * 10}`),
+      supabaseSelect<Record<string, unknown>>('organization_board_minutes', `select=id,meeting_id,summary,discussion_notes,evidence_refs,prepared_by_role_id,founder_confirmed_at,founder_confirmed_by_role_id,created_at,updated_at&order=updated_at.desc&limit=${limit}`),
       supabaseSelect<Record<string, unknown>>('organization_board_recommendations', `select=id,meeting_id,title,recommendation,rationale,risk_level,status,proposed_by_role_id,founder_decision_note,founder_decided_at,created_at&order=created_at.desc&limit=${limit}`),
       supabaseSelect<Record<string, unknown>>('organization_board_actions', `select=id,meeting_id,recommendation_id,title,description,assigned_role_id,due_at,status,completion_evidence,created_at&order=due_at.asc.nullslast,created_at.desc&limit=${limit}`),
     ]);
-    return result({ authority: 'The Board is advisory and non-voting. Only the Founder may decide recommendations or reserved matters.', viewerRole: actor.role.id, members, meetings, recommendations, actions });
+    return result({ authority: 'The Board is advisory and non-voting. Only the Founder may decide recommendations or reserved matters.', viewerRole: actor.role.id, members, meetings, attendance, agenda, minutes, recommendations, actions });
   });
 
   server.registerTool('create_board_meeting', {
