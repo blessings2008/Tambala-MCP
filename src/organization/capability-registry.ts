@@ -45,7 +45,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
     unitTags: ['research', 'intelligence'],
     roleTags: ['research', 'intelligence'],
     description: 'Conduct independent web research and return verified evidence.',
-    objectiveKeywords: ['research', 'investigate', 'find information', 'verify', 'market', 'competitor', 'source', 'evidence'],
+    objectiveKeywords: ['research', 'investigate', 'find information', 'verify', 'market', 'competitor', 'source', 'evidence', 'web search', 'search the web', 'search online', 'online search', 'internet search', 'web lookup', 'look up', 'look online', 'find public information', 'public information', 'find official information', 'check online', 'find sources', 'search for information'],
     researchKeywords: ['research topic', 'official sources', 'recent information', 'verified evidence'],
     deliverableHints: ['research brief', 'source list', 'evidence summary'],
   },
