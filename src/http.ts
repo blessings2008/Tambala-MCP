@@ -28,6 +28,7 @@ import { handleHealth, handleNotFound } from './http/health.js';
 import { isAuthorized, unauthorized } from './http/auth.js';
 import { advanceTrackedTask, beginTrackedTask, failTrackedTask } from './organization/task-tracking.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo, type AgentName } from './services/ai.js';
+import { isCompanyStatusRequest, runCompanyStatusReport } from './channels/founder-execution.js';
 
 const nodeHandler = toNodeHandler(mcpHandler);
 const chatAgents = Object.keys(AGENT_DIRECTORY) as AgentName[];
@@ -265,6 +266,33 @@ const server = createHttpServer(async (req, res) => {
       if (!validStage(body.stage)) { json(res, 400, { error: 'Invalid stage. Use ceo_delegate, specialist_execute, or ceo_complete.' }); return; }
       if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 8_000) { json(res, 400, { error: 'Provide a task between 1 and 8,000 characters.' }); return; }
       const founderMessage = body.request.trim();
+
+      // Company status reports use the dedicated four-department executor, not the
+      // generic single-specialist chat flow. It returns only after each department
+      // has completed or is explicitly marked outstanding.
+      if (body.stage === 'ceo_delegate' && isCompanyStatusRequest(founderMessage)) {
+        const receivedAt = new Date().toISOString();
+        const message = await runCompanyStatusReport({
+          message_id: 'chat-test-' + receivedAt.replace(/[^0-9]/g, '').slice(0, 14),
+          channel: 'whatsapp',
+          direction: 'inbound',
+          sender: { name: 'Founder / Bless', phone: 'chat-test' },
+          recipient: { role_id: 'ceo', title: 'Chief Executive Officer' },
+          message_type: 'founder_instruction',
+          priority: 'normal',
+          content: { text: founderMessage, attachments: [] },
+          routing: { assigned_by: 'inbound_gateway', department: null, capability_id: null },
+          status: 'received',
+          received_at: receivedAt,
+        });
+        const completed = message.startsWith('**Prepared for Founder / Bless —');
+        return json(res, 200, {
+          stage: body.stage,
+          workflow: 'four_department_status_report',
+          status: completed ? 'completed' : 'waiting_for_departments',
+          message,
+        });
+      }
 
       let stepTaskId: unknown = (body as { taskId?: unknown }).taskId;
       try {
