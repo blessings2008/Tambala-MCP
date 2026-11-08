@@ -58,16 +58,16 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
   const now = deps.now();
   const autonomousOutreach = input.purpose === 'outreach' && input.agent === 'outreach' && input.roleId === 'director-sales-business-development';
   let verifiedContactLabel = input.contactLabel?.trim() || null;
-  if (autonomousOutreach) {
+  const founder = deps.founderNumber();
+  const blocked = await deps.store.blockedNumbers();
+  const base = decide({ to, purpose: input.purpose, agent: input.agent, text: input.text, hasDocument: Boolean(input.documentId) }, { founderNumber: founder, blocked });
+  if (base.audience === 'client' && autonomousOutreach) {
     const crmLabel = await deps.verifyOutreachLead?.(to);
     if (!crmLabel || !/\(lead\)$/i.test(crmLabel)) {
       throw new OutboxError('Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number. No customer message was queued.');
     }
     verifiedContactLabel = crmLabel;
   }
-  const founder = deps.founderNumber();
-  const blocked = await deps.store.blockedNumbers();
-  const base = decide({ to, purpose: input.purpose, agent: input.agent, text: input.text, hasDocument: Boolean(input.documentId) }, { founderNumber: founder, blocked });
   const customerCopy = base.audience === 'client' ? sanitizeCustomerMessage(input.text.trim()) : input.text.trim();
   if (base.audience === 'client' && customerCopy.length < 2) throw new OutboxError('The customer message contains no usable business content after internal notes were removed.');
   const text = base.audience === 'client' ? withOptOut(customerCopy, input.purpose) : customerCopy;
