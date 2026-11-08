@@ -120,11 +120,11 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
   let sentClient = 0;
 
   for (const row of await deps.store.queued(max)) {
-    const wait = async (reason: string) => { if (row.reason !== reason) await deps.store.update(row.id, { reason }); out.push({ id: row.id, status: 'waiting', reason }); };
-    if (!row.number) continue;
+    const wait = async (reason: string) => { await deps.store.update(row.id, { status: 'queued', claimed_at: null, reason }); out.push({ id: row.id, status: 'waiting', reason }); };
+    if (!row.number) { await deps.store.update(row.id, { status: 'failed', claimed_at: null, reason: 'No destination number is available.' }); out.push({ id: row.id, status: 'failed', reason: 'No destination number is available.' }); continue; }
     if (!deps.transport.configured()) { await wait('WhatsApp is not configured yet.'); continue; }
     if (row.audience === 'client') {
-      if (blocked.has(row.number)) { await deps.store.update(row.id, { status: 'blocked', reason: 'This number opted out before the message was sent.' }); out.push({ id: row.id, status: 'blocked' }); continue; }
+      if (blocked.has(row.number)) { await deps.store.update(row.id, { status: 'blocked', claimed_at: null, reason: 'This number opted out before the message was sent.' }); out.push({ id: row.id, status: 'blocked' }); continue; }
       if (!sendWindowOpen(now)) { await wait('Outside the sending window (Mon-Sat 07:30-19:30). It will go out when the window opens.'); continue; }
       if (counts.client >= CLIENT_DAILY_LIMIT()) { await wait(`Daily customer limit of ${CLIENT_DAILY_LIMIT()} reached. It will go out tomorrow.`); continue; }
     } else if (counts.founder >= FOUNDER_DAILY_LIMIT()) { await wait('Daily limit of messages to the Founder reached.'); continue; }
@@ -137,7 +137,7 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
         if (!doc) throw new EvolutionError('The attached document could not be found.', false);
         result = await deps.transport.sendDocument(row.number, doc.base64, doc.fileName, row.text);
       } else result = await deps.transport.sendText(row.number, row.text);
-      await deps.store.update(row.id, { status: 'sent', provider_message_id: result.id, sent_at: deps.now().toISOString(), attempts: row.attempts + 1, reason: null });
+      await deps.store.update(row.id, { status: 'sent', claimed_at: null, provider_message_id: result.id, sent_at: deps.now().toISOString(), attempts: row.attempts + 1, reason: null });
       if (row.audience === 'client') { counts.client += 1; sentClient += 1; } else counts.founder += 1;
       out.push({ id: row.id, status: 'sent' });
     } catch (error) {
@@ -145,7 +145,7 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
       const retryable = error instanceof EvolutionError ? error.retryable : false;
       const attempts = row.attempts + 1;
       const final = !retryable || attempts >= 3;
-      await deps.store.update(row.id, { attempts, status: final ? 'failed' : 'queued', reason: message.slice(0, 300) });
+      await deps.store.update(row.id, { attempts, status: final ? 'failed' : 'queued', claimed_at: null, reason: message.slice(0, 300) });
       out.push({ id: row.id, status: final ? 'failed' : 'waiting', reason: message });
     }
   }
