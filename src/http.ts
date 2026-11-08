@@ -450,19 +450,6 @@ const server = createHttpServer(async (req, res) => {
     return;
   }
 
-  // External cron endpoint for Render's free/sleeping instances. The dedicated scheduler token
-  // is separate from the chat-test token and never grants access to dashboard actions.
-  if (requestPath === '/api/channels/outbox/run' && req.method === 'POST') {
-    if (!schedulerTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized.' }); return; }
-    try {
-      json(res, 200, { ok: true, results: await runOutbox() });
-    } catch (error) {
-      console.error('Scheduled WhatsApp outbox run failed:', error instanceof Error ? error.message : error);
-      json(res, 500, { error: 'WhatsApp outbox could not be processed.' });
-    }
-    return;
-  }
-
   if (requestPath === '/api/duties/run' && req.method === 'POST') {
     if (!chatTokenMatches(bearerToken(req)) && !schedulerTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized.' }); return; }
     try {
