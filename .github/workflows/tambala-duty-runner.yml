@@ -1,0 +1,71 @@
+name: Tambala weekday duty runner
+
+on:
+  schedule:
+    - cron: '30 7 * * 1-5'
+      timezone: Africa/Blantyre
+    - cron: '50 7 * * 1-5'
+      timezone: Africa/Blantyre
+    - cron: '0 8 * * 1-5'
+      timezone: Africa/Blantyre
+    - cron: '30 8 * * 1-5'
+      timezone: Africa/Blantyre
+    - cron: '0 9 * * 1-5'
+      timezone: Africa/Blantyre
+    - cron: '30 9 * * 1-5'
+      timezone: Africa/Blantyre
+    - cron: '0 10 * * 1-5'
+      timezone: Africa/Blantyre
+    - cron: '30 10 * * 1-5'
+      timezone: Africa/Blantyre
+    - cron: '0 14 * * 5'
+      timezone: Africa/Blantyre
+    - cron: '0 15 * * 5'
+      timezone: Africa/Blantyre
+    - cron: '30 16 * * 1-5'
+      timezone: Africa/Blantyre
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tambala-duty-runner
+  cancel-in-progress: false
+
+jobs:
+  run-due-duties:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger due organization duties
+        env:
+          TAMBALA_SCHEDULER_TOKEN: ${{ secrets.TAMBALA_SCHEDULER_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${TAMBALA_SCHEDULER_TOKEN}" ]]; then
+            echo "TAMBALA_SCHEDULER_TOKEN is not configured in GitHub repository secrets; duty run skipped."
+            exit 0
+          fi
+
+          response_file="$(mktemp)"
+          for attempt in 1 2 3; do
+            echo "Calling Tambala duty runner (attempt ${attempt}/3)."
+            http_code="$(curl --silent --show-error --output "${response_file}" --write-out '%{http_code}' --max-time 75 \
+              --request POST \
+              --header "Authorization: Bearer ${TAMBALA_SCHEDULER_TOKEN}" \
+              --header "Content-Type: application/json" \
+              --data '{}' \
+              https://tambala-org.onrender.com/api/duties/run || true)"
+            cat "${response_file}" || true
+            if [[ "${http_code}" =~ ^2[0-9][0-9]$ ]]; then
+              echo "Duty runner accepted the scheduled request."
+              exit 0
+            fi
+            echo "Duty runner returned HTTP ${http_code:-000}."
+            sleep 15
+          done
+
+          echo "Tambala duty runner did not accept the request after three attempts."
+          exit 1
