@@ -219,7 +219,13 @@ export async function runDutiesOnce(opts: { dutyId?: string; force?: boolean; ha
 }
 
 /** The Founder assigns work directly to an employee; it lands in their inbox. */
-export async function clarifyTaskRoom(handoffId: string, clarification: string): Promise<Handoff> {\n  const store = handoffStore();\n  const resumed = await resumeFounderHandoff(store, handoffId, clarification);\n  await processHandoffs(productionHandoffDeps(store));\n  return resumed;\n}\n\nexport async function assignWork(agent: AgentName, request: string): Promise<Handoff> {
+export async function clarifyTaskRoom(handoffId: string, clarification: string): Promise<Handoff> {
+  const store = handoffStore();
+  const resumed = await resumeFounderHandoff(store, handoffId, clarification);
+  await processHandoffs(productionHandoffDeps(store));
+  return resumed;
+}
+export async function assignWork(agent: AgentName, request: string): Promise<Handoff> {
   return queueHandoff(handoffStore(), { fromRoleId: 'founder', toAgent: agent, request, sign: signWork });
 }
 
