@@ -163,6 +163,8 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
       { status: 'returned_to_ceo', stage: 'review', eventType: 'ceo_report_consolidation_completed', roleId: 'ceo' },
       { status: 'completed', stage: 'complete', eventType: 'founder_status_report_completed', roleId: 'ceo', result: { report: report.slice(0, 10000), departmentsCompleted: results.map((item) => item.department), departmentsBlocked: blocked.map((item) => item.department) }, completedAt: new Date().toISOString() },
     ]);
+  } else if (ready.length) {
+    await failTrackedTask(parent.taskId, 'All assigned departments failed to return a report.');
   } else {
     await advanceTrackedTask(parent.taskId, [{
       status: 'needs_more_work',
