@@ -239,15 +239,15 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         `ORIGINAL REQUEST: ${h.request}`,
         `EMPLOYEE DELIVERABLE: ${stamped.slice(0, 7000)}`,
         'Accept only if the requested deliverable is actually present and any required evidence is included. If it is incomplete, request a specific revision. If the subject or instructions are ambiguous, ask the Founder.',
-      ].join('\\n\\n'), contextPacket)).trim();
-      const decision = review.match(/^\\s*DECISION:\\s*(ACCEPT|REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)\\b/im)?.[1];
+      ].join('\n\n'), contextPacket)).trim();
+      const decision = review.match(/^\s*DECISION:\s*(ACCEPT|REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)\b/im)?.[1];
       if (decision !== 'ACCEPT') {
         const reason = review.slice(0, 1500) || 'CEO review did not return a recognized decision.';
         await deps.tasks.advance(taskId, [
           { status: 'needs_more_work', stage: 'ceo', eventType: decision === 'REVISION_REQUIRED' ? 'ceo_revision_requested' : 'ceo_review_waiting_for_founder', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, review: reason } },
         ]);
         const awaitingFounder = decision !== 'REVISION_REQUIRED';
-        const contextSummary = [h.context_summary, `CEO REVIEW FEEDBACK: ${reason}`].filter(Boolean).join('\\n\\n').slice(0, 3000);
+        const contextSummary = [h.context_summary, `CEO REVIEW FEEDBACK: ${reason}`].filter(Boolean).join('\n\n').slice(0, 3000);
         await deps.store.update(h.id, { status: awaitingFounder ? 'awaiting_founder' : 'queued', context_summary: contextSummary, result: stamped.slice(0, 8000), error: reason, completed_at: null });
         if (h.room_id) {
           await deps.store.updateRoom(h.room_id, { status: awaitingFounder ? 'awaiting_founder' : 'revision_requested', deliverable: stamped.slice(0, 8000), blocker: reason });
