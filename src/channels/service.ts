@@ -14,6 +14,7 @@ import { onApprovalDecided, processOutbox, queueMessage, type OutboxDeps, type Q
 import { CLIENT_DAILY_LIMIT, FOUNDER_DAILY_LIMIT } from './policy.js';
 import { maskNumber, normalizePhone } from './phone.js';
 import { localTime } from '../organization/workforce/schedule.js';
+import { isCompanyStatusRequest, runCompanyStatusReport } from './founder-execution.js';
 
 /** The Founder's own WhatsApp number, where employees reach him. Set TAMBALA_FOUNDER_WHATSAPP. */
 export function founderNumber(): string | null {
@@ -71,6 +72,15 @@ export async function contactLabel(number: string): Promise<string | null> {
 }
 
 async function handleFounderInstruction(envelope: FounderMessageEnvelope): Promise<string> {
+  if (isCompanyStatusRequest(envelope.content.text)) {
+    try { return await runCompanyStatusReport(envelope); }
+    catch (error) {
+      const detail = error instanceof Error ? error.message : 'Status-report execution failed.';
+      console.error('Founder status report could not be completed:', detail);
+      const safeDetail = detail.replace(/(?:gsk_|sk-|Bearer\\s+)[A-Za-z0-9._-]{12,}/g, '[redacted]').slice(0, 240);
+      return `I received your status-report instruction, but the coordinated report could not finish. Runtime issue: ${safeDetail}. The CEO workflow needs its task/runtime configuration checked.`;
+    }
+  }
   try {
     const matches = await routeOrganizationObjective(envelope.content.text);
     const mapped = resolveExecutionRoute(matches[0]);
