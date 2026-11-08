@@ -4,7 +4,7 @@
 create table if not exists public.organization_task_rooms (
   id uuid primary key default gen_random_uuid(),
   handoff_id uuid not null unique references public.organization_handoffs(id) on delete cascade,
-  parent_task_id text null references public.organization_tasks(id) on delete set null,
+  parent_task_id text null,
   owner_role_id text not null references public.organization_roles(id) on delete restrict,
   owner_agent text not null,
   opened_by_role_id text not null references public.organization_roles(id) on delete restrict,
