@@ -79,7 +79,7 @@ function handoffDeps(over: Partial<HandoffDeps> = {}) {
   const deps: HandoffDeps = {
     store, now: () => at('2026-11-09T07:00:00Z'), agentUnavailableReason: async () => null,
     senderLabel: async (r) => (r === 'founder' ? 'The Founder' : r), recipientLabel: async () => 'employee TT-005, Head of Marketing', actions: { run: async () => '' }, sign: async () => ({ block: '— TT-005\n  ✍ TEST-SIG' }),
-    buildContext: async () => ({}), askAgent: async (_a, prompt) => { asked.push(prompt); return 'Here is the overview.'; },
+    buildContext: async () => ({}), askAgent: async (agent, prompt) => { asked.push(prompt); return agent === 'orchestrator' ? 'DECISION: ACCEPT\\nThe deliverable meets the request.' : 'Here is the overview.'; },
     tasks: { begin: async () => ({ taskId: 't' }), advance: async () => {}, fail: async () => {} }, ...over,
   };
   return { deps, store, asked };
@@ -115,7 +115,7 @@ test('Founder clarification reopens the same room and resumes its original task'
   let answer = 'Clarification Required: which Malabi do you mean?';
   let starts = 0;
   const { deps, store } = handoffDeps({
-    askAgent: async () => answer,
+    askAgent: async (agent) => agent === 'orchestrator' ? 'DECISION: ACCEPT\\nThe deliverable meets the request.' : answer,
     tasks: { begin: async () => { starts += 1; return { taskId: 'same-task' }; }, advance: async () => {}, fail: async () => {} },
   });
   const handoff = await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'research', request: 'Research Malabi and verify the correct entity' });
