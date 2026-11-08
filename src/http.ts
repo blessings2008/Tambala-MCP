@@ -461,7 +461,12 @@ const server = createHttpServer(async (req, res) => {
   if (requestPath.startsWith('/api/dashboard/') && req.method === 'POST' && requestPath !== '/api/dashboard/approvals/decide') {
     try {
       const body = await readJsonBody(req, 60_000) as Record<string, unknown>;
-      const roomReply = requestPath.match(/^\\/api\\/dashboard\\/rooms\\/([0-9a-fA-F-]{36})\\/reply$/);\n      if (roomReply) {\n        const clarification = typeof body.clarification === 'string' ? body.clarification : '';\n        const handoff = await clarifyTaskRoom(roomReply[1], clarification);\n        json(res, 200, { ok: true, handoffId: handoff.id, roomId: handoff.room_id, status: 'resumed' });\n      } else if (requestPath === '/api/dashboard/signatures/verify') {
+      const roomReply = requestPath.match(/^\/api\/dashboard\/rooms\/([0-9a-fA-F-]{36})\/reply$/);
+      if (roomReply) {
+        const clarification = typeof body.clarification === 'string' ? body.clarification : '';
+        const handoff = await clarifyTaskRoom(roomReply[1], clarification);
+        json(res, 200, { ok: true, handoffId: handoff.id, roomId: handoff.room_id, status: 'resumed' });
+      } else if (requestPath === '/api/dashboard/signatures/verify') {
         json(res, 200, await verifySignature({ fingerprint: typeof body.fingerprint === 'string' ? body.fingerprint : undefined, id: typeof body.id === 'string' ? body.id : undefined }));
       } else if (requestPath === '/api/dashboard/handoffs/assign') {
         const agent = String(body.agent ?? '');
