@@ -98,7 +98,7 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
     summary.stored += 1;
     if (!number) { summary.unresolved += 1; continue; }
 
-    if (OPT_OUT_PATTERN.test(text)) {
+    if (number !== founder && OPT_OUT_PATTERN.test(text)) {
       await deps.store.addBlock(number, 'Customer replied STOP');
       await deps.reply(number, 'You have been unsubscribed and will not receive more messages from Tambala Technologies. Sorry to see you go.').catch(() => undefined);
       await deps.tellFounder(`${label ?? maskNumber(number)} replied STOP and has been added to the do-not-contact list.`).catch(() => undefined);
