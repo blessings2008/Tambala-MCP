@@ -6,6 +6,32 @@ import { formatResearchContext, webResearch } from './web-research.js';
 
 const clients = new Map<AgentName, OpenAI>();
 
+// Conservative character budgets keep prompts below common provider TPM limits.
+const MAX_SYSTEM_PROMPT_CHARS = 6_500;
+const MAX_USER_INPUT_CHARS = 7_000;
+const MAX_CONTEXT_CHARS = 1_800;
+const MAX_COMPLETION_TOKENS = 900;
+
+function boundText(value: string, maxChars: number): string {
+  const normalized = value.replace(/[ \t]+/g, ' ').replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (normalized.length <= maxChars) return normalized;
+  const marker = '\n[Content shortened to keep the provider request within its size budget.]\n';
+  const available = Math.max(0, maxChars - marker.length);
+  const head = Math.ceil(available * 0.78);
+  const tail = available - head;
+  return normalized.slice(0, head) + marker + (tail ? normalized.slice(-tail) : '');
+}
+
+function serializeBoundedContext(context: unknown): string {
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(context) ?? String(context);
+  } catch {
+    serialized = '[Context could not be serialized]';
+  }
+  return boundText(serialized, MAX_CONTEXT_CHARS);
+}
+
 function getClient(agent: AgentName): OpenAI {
   const existing = clients.get(agent);
   if (existing) return existing;
@@ -34,17 +60,33 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
   const config = getAgentRuntimeConfig(agent);
   const releaseSlot = acquireAgentRequestSlot(agent);
   try {
-    const contextText = context === undefined ? '' : `\n\nTambala business context:\n${JSON.stringify(context)}`;
+    const systemPrompt = boundText(AGENT_PROMPT_RULES[agent], MAX_SYSTEM_PROMPT_CHARS);
+    const userInput = boundText(input, MAX_USER_INPUT_CHARS);
+    const contextText = context === undefined ? '' : '\n\nTambala business context:\n' + serializeBoundedContext(context);
+    const userMessage = boundText(userInput + contextText, MAX_USER_INPUT_CHARS + MAX_CONTEXT_CHARS + 40);
+    const requestPayload = {
+      model: config.model,
+      messages: [
+        { role: 'system' as const, content: systemPrompt },
+        { role: 'user' as const, content: userMessage },
+      ],
+      max_completion_tokens: MAX_COMPLETION_TOKENS,
+      temperature: 0.2,
+    };
+    const requestBodyBytes = new TextEncoder().encode(JSON.stringify(requestPayload)).byteLength;
+    console.info('AI request size', JSON.stringify({
+      agent,
+      provider: config.provider,
+      model: config.model,
+      requestBodyBytes,
+      systemPromptChars: systemPrompt.length,
+      userMessageChars: userMessage.length,
+      contextChars: contextText.length,
+      maxCompletionTokens: MAX_COMPLETION_TOKENS,
+    }));
     let response: { choices: Array<{ message: { content: string | null } }> };
     try {
-      response = await getClient(agent).chat.completions.create({
-        model: config.model,
-        messages: [
-          { role: 'system', content: AGENT_PROMPT_RULES[agent] },
-          { role: 'user', content: `${input}${contextText}` },
-        ],
-        temperature: 0.2,
-      });
+      response = await getClient(agent).chat.completions.create(requestPayload);
     } catch (error) {
       const providerError = error as { status?: number; code?: string; request_id?: string; message?: string };
       const status = typeof providerError.status === 'number' ? providerError.status : undefined;
