@@ -63,7 +63,11 @@ export function canFinalizeStatusReport(completedDepartments: string[], outstand
 
 export function isCompanyStatusRequest(value: string): boolean {
   const text = value.toLowerCase();
-  return /\b(status report|current status|company status|business status|operational status|overall status)\b/.test(text)
+  // Include adjective forms such as "organizational status report" and
+  // "organisational status update"; these must never fall through to the
+  // generic single-specialist CEO workflow.
+  return /\b(organizational|organisational)\s+(status|overview|report|update)\b/.test(text)
+    || /\b(status report|current status|company status|business status|operational status|overall status)\b/.test(text)
     || (/\b(report|overview|update)\b/.test(text)
       && /\b(company|business|organisation|organization|tambala technologies)\b/.test(text));
 }
