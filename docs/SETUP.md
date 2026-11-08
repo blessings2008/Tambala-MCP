@@ -70,7 +70,7 @@ your own approval decisions (signed as TT-000). Each signed item ends with a lin
 
 1. Set `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_INSTANCE` (the instance connected to the business number) and
    `TAMBALA_FOUNDER_WHATSAPP` (your own number, where employees reach you).
-2. Set `TAMBALA_WHATSAPP_OUTBOX_SCHEDULER=true` on the always-on Render service (optional interval: `TAMBALA_WHATSAPP_OUTBOX_INTERVAL_MINUTES=1`). This drains approved/queued messages automatically. Without it, use the dashboard's **Process queue** action. Apply `20261108_whatsapp_outbox_claims.sql` before enabling the worker.
+2. If it has not already been applied, run `20261108_whatsapp_outbox_claims.sql` before enabling the WhatsApp worker. On an always-on host, set `TAMBALA_WHATSAPP_OUTBOX_SCHEDULER=true` (optional interval: `TAMBALA_WHATSAPP_OUTBOX_INTERVAL_MINUTES=1`). On a sleeping/free host, use the external cron endpoint described below.
 3. In Evolution, set the instance webhook to `https://<your-host>/webhooks/evolution?token=<EVOLUTION_WEBHOOK_TOKEN>`
    with the `MESSAGES_UPSERT` event on and "webhook base64" off. Without the token the endpoint refuses everything.
 4. Open **Messages** in the dashboard and press *Send me a test*.
