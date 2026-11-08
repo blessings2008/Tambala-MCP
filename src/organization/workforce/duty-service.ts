@@ -290,7 +290,7 @@ export async function buildWorkforce(now: Date = new Date()) {
     return {
       ...p, status, activation: role?.activation ?? 'unknown', modelReady: info.ready, duties: myDuties,
       identity: identityMark(p.employeeNumber), signingReady: signing,
-      inbox: { queued: inbox.filter((h) => h.status === 'queued' || h.status === 'running').length, completed: inbox.filter((h) => h.status === 'completed').length },
+      inbox: { queued: inbox.filter((h) => h.status === 'queued' || h.status === 'running' || h.status === 'awaiting_founder').length, completed: inbox.filter((h) => h.status === 'completed').length },
       week: { completed: mineRuns.filter((r) => r.status === 'completed' || r.status === 'awaiting_approval').length, failed: mineRuns.filter((r) => r.status === 'failed').length, skipped: mineRuns.filter((r) => r.status === 'skipped').length, tasks: tasks.filter((t) => t.assigned_role_id === p.roleId).length },
     };
   });
@@ -303,7 +303,7 @@ export async function buildWorkforce(now: Date = new Date()) {
     signing,
     today: { scheduled: all.length, done: all.filter((d) => d.state === 'done' || d.state === 'awaiting_approval').length, overdue: all.filter((d) => d.state === 'overdue').length, failed: all.filter((d) => d.state === 'failed').length, skipped: all.filter((d) => d.state === 'skipped').length },
     employees,
-    handoffs: handoffRows.slice(0, 30).map((h) => ({ id: h.id, from: labelFor(h.from_role_id), to: labelFor(h.to_role_id), toAgent: h.to_agent, request: h.request, status: h.status, error: h.error, result: h.result, createdAt: h.created_at, completedAt: h.completed_at })),
+    handoffs: handoffRows.slice(0, 30).map((h) => ({ id: h.id, roomId: h.room_id, from: labelFor(h.from_role_id), to: labelFor(h.to_role_id), toAgent: h.to_agent, request: h.request, status: h.status, error: h.error, result: h.result, createdAt: h.created_at, completedAt: h.completed_at })),
     briefing: await getLatestBriefing().catch(() => null),
   };
 }
