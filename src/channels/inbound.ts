@@ -123,7 +123,7 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
           sender: { name: pushName ?? 'Founder / Bless', phone: number },
           recipient: { role_id: 'ceo', title: 'Chief Executive Officer' },
           message_type: 'founder_instruction',
-          priority: /\\b(urgent|urgently|asap|immediately|critical)\\b/i.test(text) ? 'high' : 'normal',
+          priority: /\b(urgent|urgently|asap|immediately|critical)\b/i.test(text) ? 'high' : 'normal',
           content: { text, attachments: text.startsWith('[Incoming ') ? [text] : [] },
           routing: { assigned_by: 'inbound_gateway', department: null, capability_id: null },
           status: 'received',
