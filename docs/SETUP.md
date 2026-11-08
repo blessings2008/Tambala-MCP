@@ -118,6 +118,7 @@ system (never by a model), stored in the database and downloadable from **Docume
 
 ## Security hardening
 
+- **OAuth revocation ledger:** the runtime syncs revoked token IDs through `public.oauth_revoked_tokens`. If Render logs report `PGRST205` for that table, verify Render's `SUPABASE_URL` points to the intended Tambala MCP project, then run `supabase/manual/repair_oauth_revoked_tokens.sql` in that project's SQL editor. This is separate from `bind_founder.sql`; it does not create or change Founder role bindings.
 - Connector sign-in: client ids are signed and carry their registered redirect URIs, so an authorization request with any
   other redirect is refused. Redirects must be https (or localhost). Registration is rate limited, the approval code locks out
   after five wrong tries for 15 minutes, authorization codes work once, refresh tokens rotate, and `/oauth/revoke` really revokes.
