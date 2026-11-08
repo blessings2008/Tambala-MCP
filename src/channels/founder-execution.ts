@@ -55,10 +55,10 @@ export function isUsableDepartmentReport(department: string, value: string): boo
   if (!opening.includes(shortKey)) return false;
   if (!/[.!?]["')\]]?\s*$/.test(report)) return false;
 
-  if (normalized.includes(\`no \${departmentKey} report was supplied\`)
-    || normalized.includes(\`no \${departmentKey} report supplied\`)
-    || normalized.includes(\`no \${shortKey} report was supplied\`)
-    || normalized.includes(\`no \${shortKey} report supplied\`)) return false;
+  if (normalized.includes('no ' + departmentKey + ' report was supplied')
+    || normalized.includes('no ' + departmentKey + ' report supplied')
+    || normalized.includes('no ' + shortKey + ' report was supplied')
+    || normalized.includes('no ' + shortKey + ' report supplied')) return false;
 
   const otherDepartments = [
     'Sales & Business Development',
@@ -70,7 +70,7 @@ export function isUsableDepartmentReport(department: string, value: string): boo
     const shortOther = other.startsWith('Sales ') ? 'Sales'
       : other.startsWith('Operations ') ? 'Operations'
         : other.startsWith('Technology ') ? 'Technology' : 'Finance';
-    const heading = new RegExp(\`^\\\\s{0,3}#{1,6}\\\\s*\${shortOther}\\\\b\`, 'im');
+    const heading = new RegExp('^\\\\s{0,3}#{1,6}\\\\s*' + shortOther + '\\\\b', 'im');
     if (heading.test(report)) return false;
   }
   return true;
