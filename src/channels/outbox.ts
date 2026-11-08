@@ -58,7 +58,8 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
   const blocked = await deps.store.blockedNumbers();
   const base = decide({ to, purpose: input.purpose, agent: input.agent, text: input.text, hasDocument: Boolean(input.documentId) }, { founderNumber: founder, blocked });
   const customerCopy = base.audience === 'client' ? sanitizeCustomerMessage(input.text.trim()) : input.text.trim();
-  if (base.audience === 'client' && customerCopy.length < 2) throw new OutboxError('The customer message contains no usable business content after internal notes were removed.');\n  const text = base.audience === 'client' ? withOptOut(customerCopy, input.purpose) : customerCopy;
+  if (base.audience === 'client' && customerCopy.length < 2) throw new OutboxError('The customer message contains no usable business content after internal notes were removed.');
+  const text = base.audience === 'client' ? withOptOut(customerCopy, input.purpose) : customerCopy;
 
   const row = await deps.store.add({
     direction: 'out', number: to, audience: base.audience, purpose: input.purpose, from_role_id: input.roleId, text,
@@ -84,8 +85,11 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
     return { id: row.id, status: 'queued' };
   }
 
-  // Founder-authorized autonomous first contact: only Outreach may send, and only for a named CRM prospect.\n  // Other customer-facing purposes remain behind the normal approval gate.
-  if (base.audience === 'client' && input.purpose === 'outreach' && input.agent === 'outreach' && input.contactLabel?.trim()) {\n    await deps.store.update(row.id, { ...patch, status: 'queued', reason: null });\n    return { id: row.id, status: 'queued' };
+  // Founder-authorized autonomous first contact: only Outreach may send, and only for a named CRM prospect.
+  // Other customer-facing purposes remain behind the normal approval gate.
+  if (base.audience === 'client' && input.purpose === 'outreach' && input.agent === 'outreach' && input.contactLabel?.trim()) {
+    await deps.store.update(row.id, { ...patch, status: 'queued', reason: null });
+    return { id: row.id, status: 'queued' };
   }
 
   if (input.founderApproved && input.roleId === 'founder') {
