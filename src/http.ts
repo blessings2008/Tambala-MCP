@@ -32,6 +32,27 @@ import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo, typ
 const nodeHandler = toNodeHandler(mcpHandler);
 const chatAgents = Object.keys(AGENT_DIRECTORY) as AgentName[];
 type ChatAgent = AgentName;
+const organizationRoleByAgent: Record<AgentName, string> = {
+  orchestrator: 'ceo',
+  outreach: 'director-sales-business-development',
+  followup: 'director-customer-relations',
+  research: 'director-research-intelligence',
+  marketing: 'director-marketing-brand',
+  content: 'director-media-content',
+  finance: 'director-finance-accounting',
+  payments: 'leader-fintech-ventures',
+  engineering: 'director-technology-engineering',
+  strategy: 'director-strategy-planning',
+  product: 'director-product-innovation',
+  security: 'director-cybersecurity-it',
+  operations: 'director-operations-administration',
+  people: 'director-people-agent-management',
+  legal: 'director-legal-risk-compliance',
+  procurement: 'director-procurement-resources',
+  executive: 'director-executive-management',
+  rnd: 'director-research-development',
+  governance: 'director-board-governance',
+};
 
 type ExecutionStage = 'ceo_delegate' | 'specialist_execute' | 'ceo_complete';
 
@@ -175,10 +196,9 @@ const server = createHttpServer(async (req, res) => {
     try {
       const snapshot = await getOrganizationSnapshot();
       const agents = runtimeAgents.map((agent) => {
-        const role = agent.agent === 'orchestrator'
-          ? snapshot.organization.roles.find((candidate) => candidate.id === 'ceo')
-          : snapshot.organization.roles.find((candidate) => candidate.unitId === agent.unitId && candidate.kind === 'ai_agent');
-        return { ...agent, roleId: role?.id ?? null, roleStatus: role?.activation ?? 'unassigned' };
+        const roleId = organizationRoleByAgent[agent.agent];
+        const role = snapshot.organization.roles.find((candidate) => candidate.id === roleId);
+        return { ...agent, roleId: role?.id ?? roleId, roleStatus: role?.activation ?? 'unassigned' };
       });
       json(res, 200, {
         agents,
