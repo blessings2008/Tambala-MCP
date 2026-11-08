@@ -169,6 +169,7 @@ export async function channelStatus() {
     webhookEvent: 'MESSAGES_UPSERT',
     outboxWorker: {
       mode: process.env.TAMBALA_WHATSAPP_OUTBOX_SCHEDULER === 'true' ? 'in_process' : 'external_cron',
+      schedulerTokenSet: Boolean(process.env.TAMBALA_SCHEDULER_TOKEN && process.env.TAMBALA_SCHEDULER_TOKEN.length >= 24),
       intervalMinutes: Math.max(1, Number(process.env.TAMBALA_WHATSAPP_OUTBOX_INTERVAL_MINUTES) || 1),
       endpoint: '/api/channels/outbox/run',
     },
