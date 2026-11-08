@@ -356,7 +356,7 @@ test('Board governance migration preserves advisory-only and Founder decision sa
 
 test('Board dashboard inline JavaScript parses successfully', () => {
   const html = readFileSync(new URL('../public/organization-dashboard.html', import.meta.url), 'utf8');
-  const scripts = [...html.matchAll(/<script>([\\s\\S]*?)<\\/script>/g)];
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
   assert.ok(scripts.length > 0, 'Dashboard should contain an inline script.');
   for (const script of scripts) assert.doesNotThrow(() => new Script(script[1]));
 });
