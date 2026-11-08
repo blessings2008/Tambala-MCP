@@ -420,6 +420,57 @@ const server = createHttpServer(async (req, res) => {
         const now = new Date().toISOString();
         const meeting = await supabaseUpdate('organization_board_meetings', { status, opened_at: status === 'in_session' ? now : undefined, closed_at: ['completed', 'cancelled'].includes(status) ? now : null }, `id=eq.${encodeURIComponent(meetingId)}`);
         json(res, 200, { ok: true, meeting });
+      } else if (requestPath === '/api/dashboard/board/agenda/create') {
+        const meetingId = String(body.meetingId ?? '');
+        const title = typeof body.title === 'string' ? body.title.trim() : '';
+        if (!/^[0-9a-f-]{36}$/i.test(meetingId) || title.length < 3 || title.length > 200) { json(res, 400, { error: 'Choose a meeting and provide an agenda title (3–200 characters).' }); return; }
+        const meetingRows = await supabaseSelect<{ id: string; status: string }>('organization_board_meetings', `select=id,status&id=eq.${encodeURIComponent(meetingId)}&limit=1`);
+        if (!meetingRows.length || meetingRows[0].status !== 'scheduled') { json(res, 409, { error: 'Agenda items can only be added before the meeting starts.' }); return; }
+        const existing = await supabaseSelect<{ item_number: number }>('organization_board_agenda_items', `select=item_number&meeting_id=eq.${encodeURIComponent(meetingId)}&order=item_number.desc&limit=1`);
+        const item = await supabaseInsert('organization_board_agenda_items', { meeting_id: meetingId, item_number: (existing[0]?.item_number ?? 0) + 1, title, background: typeof body.background === 'string' ? body.background.trim().slice(0, 4000) : '', presenter_role_id: typeof body.presenterRoleId === 'string' && body.presenterRoleId ? body.presenterRoleId : null });
+        json(res, 201, { ok: true, item });
+      } else if (requestPath === '/api/dashboard/board/attendance/update') {
+        const id = String(body.id ?? '');
+        const attendanceStatus = String(body.attendanceStatus ?? '');
+        if (!/^[0-9a-f-]{36}$/i.test(id) || !['present', 'absent', 'apology', 'observer', 'invited'].includes(attendanceStatus)) { json(res, 400, { error: 'Choose a valid attendance record and status.' }); return; }
+        const updated = await supabaseUpdate('organization_board_attendance', { attendance_status: attendanceStatus, recorded_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(id)}`);
+        json(res, 200, { ok: true, attendance: updated });
+      } else if (requestPath === '/api/dashboard/board/minutes/save') {
+        const meetingId = String(body.meetingId ?? '');
+        const summary = typeof body.summary === 'string' ? body.summary.trim() : '';
+        if (!/^[0-9a-f-]{36}$/i.test(meetingId) || summary.length < 10 || summary.length > 6000) { json(res, 400, { error: 'Choose a meeting and provide a minutes summary (10–6,000 characters).' }); return; }
+        const discussionNotes = Array.isArray(body.discussionNotes) ? body.discussionNotes.filter((x): x is string => typeof x === 'string').slice(0, 50).map(x => x.slice(0, 2000)) : [];
+        const evidenceRefs = Array.isArray(body.evidenceRefs) ? body.evidenceRefs.filter((x): x is string => typeof x === 'string').slice(0, 30).map(x => x.slice(0, 500)) : [];
+        const existing = await supabaseSelect<{ id: string }>('organization_board_minutes', `select=id&meeting_id=eq.${encodeURIComponent(meetingId)}&limit=1`);
+        const confirm = body.founderConfirm === true;
+        const values = { summary, discussion_notes: discussionNotes, evidence_refs: evidenceRefs, prepared_by_role_id: 'director-board-governance', founder_confirmed_at: confirm ? new Date().toISOString() : null, founder_confirmed_by_role_id: confirm ? 'founder' : null, updated_at: new Date().toISOString() };
+        const minutes = existing.length
+          ? await supabaseUpdate('organization_board_minutes', values, `id=eq.${encodeURIComponent(existing[0].id)}`)
+          : await supabaseInsert('organization_board_minutes', { meeting_id: meetingId, ...values });
+        json(res, 200, { ok: true, minutes, founderConfirmed: confirm });
+      } else if (requestPath === '/api/dashboard/board/recommendations/decision') {
+        const id = String(body.id ?? '');
+        const status = String(body.status ?? '');
+        if (!/^[0-9a-f-]{36}$/i.test(id) || !['founder_accepted', 'founder_rejected', 'deferred', 'implemented'].includes(status)) { json(res, 400, { error: 'Choose a valid recommendation and Founder decision.' }); return; }
+        const updated = await supabaseUpdate('organization_board_recommendations', { status, founder_decision_note: typeof body.note === 'string' ? body.note.trim().slice(0, 3000) : null, founder_decided_at: new Date().toISOString(), founder_decided_by_role_id: 'founder', updated_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(id)}`);
+        json(res, 200, { ok: true, recommendation: updated });
+      } else if (requestPath === '/api/dashboard/board/actions/create') {
+        const meetingId = String(body.meetingId ?? '');
+        const title = typeof body.title === 'string' ? body.title.trim() : '';
+        const assignedRoleId = typeof body.assignedRoleId === 'string' ? body.assignedRoleId.trim() : '';
+        if (!/^[0-9a-f-]{36}$/i.test(meetingId) || title.length < 3 || title.length > 200 || !assignedRoleId) { json(res, 400, { error: 'Choose a meeting, action title and responsible role.' }); return; }
+        const roleRows = await supabaseSelect<{ id: string }>('organization_roles', `select=id&id=eq.${encodeURIComponent(assignedRoleId)}&limit=1`);
+        if (!roleRows.length) { json(res, 400, { error: 'The selected responsible role does not exist.' }); return; }
+        const dueAt = typeof body.dueAt === 'string' && body.dueAt.trim() ? body.dueAt.trim() : null;
+        if (dueAt && Number.isNaN(Date.parse(dueAt))) { json(res, 400, { error: 'Enter a valid action deadline.' }); return; }
+        const action = await supabaseInsert('organization_board_actions', { meeting_id: meetingId, title, description: typeof body.description === 'string' ? body.description.trim().slice(0, 3000) : '', assigned_role_id: assignedRoleId, due_at: dueAt });
+        json(res, 201, { ok: true, action });
+      } else if (requestPath === '/api/dashboard/board/actions/update') {
+        const id = String(body.id ?? '');
+        const status = String(body.status ?? '');
+        if (!/^[0-9a-f-]{36}$/i.test(id) || !['open', 'in_progress', 'blocked', 'completed', 'cancelled'].includes(status)) { json(res, 400, { error: 'Choose a valid action and status.' }); return; }
+        const updated = await supabaseUpdate('organization_board_actions', { status, completion_evidence: typeof body.evidence === 'string' ? body.evidence.trim().slice(0, 4000) || null : null, updated_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(id)}`);
+        json(res, 200, { ok: true, action: updated });
       } else if (requestPath === '/api/dashboard/signatures/verify') {
         json(res, 200, await verifySignature({ fingerprint: typeof body.fingerprint === 'string' ? body.fingerprint : undefined, id: typeof body.id === 'string' ? body.id : undefined }));
       } else if (requestPath === '/api/dashboard/handoffs/assign') {
