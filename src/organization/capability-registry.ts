@@ -45,7 +45,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
     unitTags: ['research', 'intelligence'],
     roleTags: ['research', 'intelligence'],
     description: 'Conduct independent web research and return verified evidence.',
-    objectiveKeywords: ['research', 'investigate', 'find information', 'verify', 'market', 'competitor', 'source', 'evidence'],
+    objectiveKeywords: ['research', 'investigate', 'find information', 'verify', 'market', 'competitor', 'source', 'evidence', 'web search', 'search the web', 'search online', 'online search', 'internet search', 'web lookup', 'look up', 'look online', 'find public information', 'public information', 'find official information', 'check online', 'find sources', 'search for information'],
     researchKeywords: ['research topic', 'official sources', 'recent information', 'verified evidence'],
     deliverableHints: ['research brief', 'source list', 'evidence summary'],
   },
@@ -274,7 +274,25 @@ export function routeObjective(definition: OrganizationDefinition, objective: st
  * Build a compact research query from the matched capability only.
  * Never pass the Founder/CEO prompt through as the search query.
  */
-export function buildResearchQuery(_objective: string, match: CapabilityMatch): string {
+export function buildResearchQuery(objective: string, match: CapabilityMatch): string {
+  if (match.capability.id === 'web_research') {
+    // Keep the subject being researched; do not replace it with generic keywords.
+    const subject = objective
+      .replace(/^(please\s+)?(do\s+)?(a\s+)?(quick\s+)?(web|internet|online)\s+search\s+(for|on|about|into)\s+/i, '')
+      .replace(/^(please\s+)?search\s+(the\s+)?(web|internet|online)\s+(for|on|about)\s+/i, '')
+      .replace(/^(please\s+)?(look\s*up|look\s+online|find\s+public\s+information|find\s+official\s+information|check\s+online)\s+(for|on|about)?\s*/i, '')
+      .replace(/^(please\s+)?(research|investigate)\s+(on|about|into)?\s*/i, '')
+      .replace(/[.?!,:;]+$/g, '')
+      .trim();
+    if (subject) {
+      const qualifiers = match.capability.researchKeywords
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .slice(1, 4);
+      return [subject, ...qualifiers].join(', ').slice(0, 500);
+    }
+  }
+
   const terms = match.capability.researchKeywords
     .map((value) => value.trim())
     .filter(Boolean)

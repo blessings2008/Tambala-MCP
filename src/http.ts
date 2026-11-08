@@ -114,7 +114,7 @@ function errorStatus(message: string): number {
 }
 
 function taskNeedsWebResearch(text: string): boolean {
-  return /\b(research|investigate|look\s*up|find|identify|current|latest|market|competitor|prospect|hotel|lodge|tourism|association|statistics|report)\b/i.test(text);
+  return /\b(research|investigate|look\s*up|find|identify|web\s+search|search\s+the\s+web|online\s+search|internet\s+search|public\s+information|official\s+information|check\s+online|current|latest|market|competitor|prospect|hotel|lodge|tourism|association|statistics|report)\b/i.test(text);
 }
 
 async function researchQueryFromObjective(objective: string): Promise<string> {

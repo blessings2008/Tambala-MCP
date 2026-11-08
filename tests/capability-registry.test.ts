@@ -41,6 +41,15 @@ test('research query stays keyword-oriented for web research', () => {
   assert.ok(query.length <= 500);
 });
 
+test('generic web-search requests route to Research and retain the requested subject', () => {
+  const objective = 'Do a web search on Malabi';
+  const matches = routeObjective(definition, objective);
+  assert.equal(matches[0]?.capability.id, 'web_research');
+  const query = buildResearchQuery(objective, matches[0]!);
+  assert.match(query, /^Malabi,/i);
+  assert.match(query, /official sources|recent information|verified evidence/i);
+});
+
 test('every declared capability resolves to a real unit and an accountable role in the full organization', async () => {
   const { initialOrganization } = await import('../src/organization/seed.js');
   const { DEPARTMENT_CAPABILITIES } = await import('../src/organization/capability-registry.js');
