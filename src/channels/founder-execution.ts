@@ -4,6 +4,7 @@ import { askTambalaAI, getAgentOperationalInfo, type AgentName } from '../servic
 import { getOrganizationSnapshot } from '../organization/service.js';
 import { advanceTrackedTask, beginTrackedTask, failTrackedTask } from '../organization/task-tracking.js';
 import { roleIdFor } from '../organization/workforce/profiles.js';
+import { AGENT_DIRECTORY } from '../services/ai/models.js';
 import type { FounderMessageEnvelope } from './inbound.js';
 
 type Row = Record<string, unknown>;
@@ -107,7 +108,7 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
     try {
       await advanceTrackedTask(child.taskId, [
         { status: 'ceo_analyzing', stage: 'ceo', eventType: 'ceo_department_assignment_created', roleId: 'ceo' },
-        { status: 'delegated', stage: 'ceo', eventType: 'department_assignment_issued', departmentId: item.agent, roleId: item.roleId, payload: { parentTaskId: parent.taskId, department: item.department } },
+        { status: 'delegated', stage: 'ceo', eventType: 'department_assignment_issued', departmentId: AGENT_DIRECTORY[item.agent].unitId, roleId: item.roleId, payload: { parentTaskId: parent.taskId, department: item.department } },
         { status: 'executing', stage: 'department', eventType: 'department_report_work_started', departmentId: item.agent, roleId: item.roleId },
       ]);
       const result = await askTambalaAI(
@@ -149,7 +150,7 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
     { communicationType: 'CEO consolidated status report', sender: 'CEO workflow', recipient: 'Founder / Bless', messageId: envelope.message_id, parentTaskId: parent.taskId },
   );
 
-  if (ready.length) {
+  if (results.length) {
     await advanceTrackedTask(parent.taskId, [
       { status: 'department_review', stage: 'review', eventType: 'ceo_department_reports_reviewed', roleId: 'ceo', result: { departmentsCompleted: results.map((item) => item.department), departmentsBlocked: blocked.map((item) => item.department) } },
       { status: 'returned_to_ceo', stage: 'review', eventType: 'ceo_report_consolidation_completed', roleId: 'ceo' },
