@@ -35,7 +35,7 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
   const releaseSlot = acquireAgentRequestSlot(agent);
   try {
     const contextText = context === undefined ? '' : `\n\nTambala business context:\n${JSON.stringify(context)}`;
-    let response: Awaited<ReturnType<ReturnType<typeof getClient>['chat']['completions']['create']>>;
+    let response: { choices: Array<{ message: { content: string | null } }> };
     try {
       response = await getClient(agent).chat.completions.create({
         model: config.model,
@@ -46,7 +46,7 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
         temperature: 0.2,
       });
     } catch (error) {
-      const providerError = error as { status?: number; code?: string; type?: string; request_id?: string; message?: string };
+      const providerError = error as { status?: number; code?: string; request_id?: string; message?: string };
       const status = typeof providerError.status === 'number' ? providerError.status : undefined;
       const code = typeof providerError.code === 'string' ? providerError.code : undefined;
       const requestId = typeof providerError.request_id === 'string' ? providerError.request_id : undefined;
