@@ -469,6 +469,24 @@ const server = createHttpServer(async (req, res) => {
 });
 
 startDutyScheduler();
+
+// Keep the WhatsApp outbox moving on an always-on host. Atomic database claims make
+// overlapping ticks / multiple Render instances safe; stale uncertain sends are not replayed.
+if (process.env.TAMBALA_WHATSAPP_OUTBOX_SCHEDULER === 'true') {
+  const intervalMinutes = Math.max(1, Number(process.env.TAMBALA_WHATSAPP_OUTBOX_INTERVAL_MINUTES) || 1);
+  const tickOutbox = async () => {
+    try {
+      const results = await runOutbox();
+      if (results.length) console.log('WhatsApp outbox cycle:', JSON.stringify(results));
+    } catch (error) {
+      console.error('WhatsApp outbox cycle failed:', error instanceof Error ? error.message : error);
+    }
+  };
+  console.log(`WhatsApp outbox scheduler on: checking every ${intervalMinutes} min.`);
+  setTimeout(() => void tickOutbox(), 15_000).unref();
+  setInterval(() => void tickOutbox(), intervalMinutes * 60_000).unref();
+}
+
 startRevocationSync();
 server.listen(runtimeConfig.port, runtimeConfig.host, () => {
   console.log(`Tambala MCP HTTP server listening on ${runtimeConfig.host}:${runtimeConfig.port}`);
