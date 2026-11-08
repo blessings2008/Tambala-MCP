@@ -38,6 +38,24 @@ const STATUS_WORKSTREAMS: {
 
 export const STATUS_REPORT_DEPARTMENTS = STATUS_WORKSTREAMS.map((item) => item.department);
 
+/** Reject placeholder or visibly truncated output before a department can be counted as complete. */
+export function isUsableDepartmentReport(department: string, value: string): boolean {
+  const report = value.trim();
+  if (report.length < 35) return false;
+  if (/(?:report\\s+truncated|further details not provided|\\[truncated\\]|context truncated|\\.\\.\\.|…)/i.test(report)) return false;
+
+  const normalized = report.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim();
+  const departmentKey = department.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim();
+  const shortKey = departmentKey.startsWith('sales ') ? 'sales'
+    : departmentKey.startsWith('operations ') ? 'operations'
+      : departmentKey.startsWith('technology ') ? 'technology'
+        : departmentKey.startsWith('finance ') ? 'finance' : departmentKey;
+  return !normalized.includes(`no ${departmentKey} report was supplied')
+    && !normalized.includes(`no ${departmentKey} report supplied')
+    && !normalized.includes(`no ${shortKey} report was supplied')
+    && !normalized.includes(`no ${shortKey} report supplied');
+}
+
 export function canFinalizeStatusReport(completedDepartments: string[], outstandingDepartments: string[]): boolean {
   return outstandingDepartments.length === 0
     && STATUS_REPORT_DEPARTMENTS.every((department) => completedDepartments.includes(department));
@@ -169,7 +187,7 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
         ].join('\n\n'),
         { communicationType: 'CEO department assignment', sender: 'Chief Executive Officer', recipient: item.roleTitle, parentTaskId: parent.taskId, department: item.department },
       );
-      await advanceTrackedTask(child.taskId, [
+      if (!isUsableDepartmentReport(item.department, result)) {\n        throw new Error(`The ${item.department} agent returned an empty, placeholder, or truncated report. Its assignment remains outstanding.`);\n      }\n      await advanceTrackedTask(child.taskId, [
         { status: 'department_review', stage: 'review', eventType: 'department_report_returned_for_review', departmentId: AGENT_DIRECTORY[item.agent].unitId, roleId: item.roleId, result: { parentTaskId: parent.taskId, response: result.slice(0, 1800) } },
         { status: 'returned_to_ceo', stage: 'review', eventType: 'department_report_accepted_by_ceo', departmentId: AGENT_DIRECTORY[item.agent].unitId, roleId: item.roleId },
         { status: 'completed', stage: 'complete', eventType: 'department_report_assignment_completed', departmentId: AGENT_DIRECTORY[item.agent].unitId, roleId: item.roleId, completedAt: new Date().toISOString() },
