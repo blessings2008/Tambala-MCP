@@ -7,9 +7,9 @@ import { formatResearchContext, webResearch } from './web-research.js';
 const clients = new Map<AgentName, OpenAI>();
 
 // Conservative character budgets keep prompts below common provider TPM limits.
-const MAX_SYSTEM_PROMPT_CHARS = 6_500;
-const MAX_USER_INPUT_CHARS = 7_000;
-const MAX_CONTEXT_CHARS = 1_800;
+const MAX_SYSTEM_PROMPT_CHARS = 4_500;
+const MAX_USER_INPUT_CHARS = 4_500;
+const MAX_CONTEXT_CHARS = 900;
 const MAX_COMPLETION_TOKENS = 900;
 
 function boundText(value: string, maxChars: number): string {
@@ -70,7 +70,7 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
         { role: 'system' as const, content: systemPrompt },
         { role: 'user' as const, content: userMessage },
       ],
-      max_completion_tokens: MAX_COMPLETION_TOKENS,
+      max_completion_tokens: agent === 'operations' ? 1_800 : MAX_COMPLETION_TOKENS,
       temperature: 0.2,
     };
     const requestBodyBytes = new TextEncoder().encode(JSON.stringify(requestPayload)).byteLength;
@@ -124,7 +124,7 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
         refusalPresent: Boolean(firstChoice?.message?.refusal),
         reasoningPresent: Boolean(firstChoice?.message?.reasoning),
       }));
-      const retryPayload = { ...requestPayload, max_completion_tokens: 1_600 };
+      const retryPayload = { ...requestPayload, max_completion_tokens: 2_800 };
       response = await getClient(agent).chat.completions.create(retryPayload);
       content = response.choices[0]?.message?.content;
     }
