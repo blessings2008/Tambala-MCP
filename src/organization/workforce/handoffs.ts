@@ -150,7 +150,8 @@ export async function resumeFounderHandoff(store: HandoffStore, handoffId: strin
   await store.updateRoom(handoff.room_id, { status: 'active', blocker: null });
   await store.roomEvent(handoff.room_id, 'founder_clarification_received', actorRoleId, { clarification: answer });
   return { ...handoff, status: 'queued', context_summary: context, error: null, completed_at: null };
-}\nexport interface HandoffDeps {
+}
+export interface HandoffDeps {
   store: HandoffStore; now: () => Date;
   agentUnavailableReason(agent: AgentName): Promise<string | null>;
   senderLabel(roleId: string): Promise<string>;
