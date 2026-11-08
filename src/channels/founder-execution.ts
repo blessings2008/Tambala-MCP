@@ -126,7 +126,7 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
     roleId: 'ceo',
   }]);
 
-  const { context, sales } = await loadStatusData();
+  const { context, sales, customers } = await loadStatusData();
   const snapshot = await getOrganizationSnapshot().catch(() => null);
   const assignments = STATUS_WORKSTREAMS.map((workstream) => {
     const roleId = roleIdFor(workstream.agent);
@@ -165,7 +165,7 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
           `Your exclusive scope: ${item.focus}`,
           'Use only the supplied records for your department. Do not treat the Founder objective as permission to report for other departments. Do not invent names, counts, revenue, outcomes, dates, incidents, or activity. Separate verified facts from gaps. If the records do not contain a metric, state that it is not recorded or unavailable. Do not use web research to fill gaps in internal company records. Return only your own department section, at most 150 words.',
           `Parent Founder objective (context only; not an expansion of your authority): ${objective}`,
-          `Department source records (source of truth): ${JSON.stringify(item.agent === 'outreach' ? sales : item.agent === 'operations' ? { organization: context.organization ?? null, record_counts: context.record_counts ?? null, source_availability: 'No dedicated operations register, process-change log, or incident register was supplied.' } : item.agent === 'engineering' ? { organization: context.organization ?? null, source_availability: 'No deployment inventory, monitoring feed, incident log, or infrastructure report was supplied.' } : { source_availability: 'No accounting ledger, revenue report, expense report, budget target, or cash-position statement was supplied.' })}`,
+          `Department source records (source of truth): ${JSON.stringify(item.agent === 'outreach' ? sales : item.agent === 'operations' ? { organization: context.organization ?? null, record_counts: context.record_counts ?? null, projects: customers.projects, tasks: customers.tasks, totals: customers.totals, source_availability: 'CRM project and task records are available; no formal process-change log or risk register was supplied.' } : item.agent === 'engineering' ? { organization: context.organization ?? null, source_availability: 'No deployment inventory, monitoring feed, incident log, or infrastructure report was supplied.' } : { source_availability: 'No accounting ledger, revenue report, expense report, budget target, or cash-position statement was supplied.' })}`,
         ].join('\n\n'),
         { communicationType: 'CEO department assignment', sender: 'Chief Executive Officer', recipient: item.roleTitle, parentTaskId: parent.taskId, department: item.department },
       );
