@@ -40,6 +40,23 @@ export async function supabaseSelect<T>(table: string, query = 'select=*'): Prom
   return (await response.json()) as T[];
 }
 
+/** Invoke a service-only Postgres function through Supabase RPC. */
+export async function supabaseRpc<T>(functionName: string, args: Record<string, unknown>): Promise<T[]> {
+  if (!/^[a-z][a-z0-9_]*$/.test(functionName)) throw new Error('Invalid Supabase function name.');
+  const key = getServiceRoleKey();
+  const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/rpc/${functionName}`, {
+    method: 'POST',
+    headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Supabase RPC ${functionName} failed (${response.status}): ${body}`);
+  }
+  const data = await response.json();
+  return Array.isArray(data) ? data as T[] : data == null ? [] : [data as T];
+}
+
 /** Insert server-side records using the service-role key. Never expose this helper to tool arguments. */
 export async function supabaseInsert<T>(table: string, value: Record<string, unknown>): Promise<T> {
   const key = getServiceRoleKey();
