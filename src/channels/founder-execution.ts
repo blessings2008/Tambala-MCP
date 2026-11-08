@@ -186,7 +186,7 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
   // and its child task has been marked complete. Partial results are not a final report.
   const allDepartmentsCompleted = canFinalizeStatusReport(results.map((item) => item.department), blocked.map((item) => item.department));
   if (!allDepartmentsCompleted) {
-    if (ready.length && results.length) {
+    if (ready.length) {
       await advanceTrackedTask(parent.taskId, [
         { status: 'department_review', stage: 'review', eventType: 'ceo_partial_department_reports_reviewed', roleId: 'ceo', result: { departmentsCompleted: results.map((item) => item.department), departmentsOutstanding: blocked.map((item) => item.department) } },
         { status: 'needs_more_work', stage: 'ceo', eventType: 'founder_status_report_waiting_for_departments', roleId: 'ceo', result: { departmentsCompleted: results.map((item) => item.department), departmentsOutstanding: blocked.map((item) => item.department) } },
