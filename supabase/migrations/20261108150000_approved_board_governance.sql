@@ -114,6 +114,25 @@ alter table public.organization_board_minutes enable row level security;
 alter table public.organization_board_recommendations enable row level security;
 alter table public.organization_board_actions enable row level security;
 
+-- These tables are private server-side governance records. Do not expose them
+-- to browser roles; the MCP service accesses them with its service-role key.
+revoke all on public.organization_board_members from public, anon, authenticated;
+revoke all on public.organization_board_meetings from public, anon, authenticated;
+revoke all on public.organization_board_attendance from public, anon, authenticated;
+revoke all on public.organization_board_agenda_items from public, anon, authenticated;
+revoke all on public.organization_board_minutes from public, anon, authenticated;
+revoke all on public.organization_board_recommendations from public, anon, authenticated;
+revoke all on public.organization_board_actions from public, anon, authenticated;
+
+grant all privileges on public.organization_board_members to service_role;
+grant all privileges on public.organization_board_meetings to service_role;
+grant all privileges on public.organization_board_attendance to service_role;
+grant all privileges on public.organization_board_agenda_items to service_role;
+grant all privileges on public.organization_board_minutes to service_role;
+grant all privileges on public.organization_board_recommendations to service_role;
+grant all privileges on public.organization_board_actions to service_role;
+grant usage, select on sequence public.organization_board_meetings_meeting_number_seq to service_role;
+
 -- Explicitly advisory membership. The Founder chairs; selected directors advise;
 -- Board & Corporate Governance maintains records but has no approval power.
 insert into public.organization_board_members (role_id, seat_title, member_type, active, voting_rights) values
