@@ -291,7 +291,7 @@ export function getAgentRuntimeInfo(agent: AgentName) {
   const configuredBaseURL = process.env[`TAMBALA_${upper}_BASE_URL`]?.trim();
   const baseURL = useOpenRouter
     ? 'https://openrouter.ai/api/v1'
-    : provider === 'groq'
+    : requestedProvider === 'groq'
       ? GROQ_BASE_URL
       : configuredBaseURL || GROQ_BASE_URL;
   const model = process.env[`TAMBALA_${upper}_MODEL`]?.trim() || AGENT_DEFAULT_MODELS[agent];
