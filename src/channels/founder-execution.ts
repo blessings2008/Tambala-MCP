@@ -136,7 +136,9 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
     }
   }
 
-  const report = await askTambalaAI(
+  let report: string;
+  try {
+    report = await askTambalaAI(
     'orchestrator',
     [
       'You are the CEO of Tambala Technologies. Deliver the Founder’s requested current company status report now; do not ask for scope confirmation.',
@@ -148,7 +150,12 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
       'Produce a clear executive summary, verified operating figures, sales pipeline, customer/project position, operational risks and immediate priorities. Use only supplied evidence. Explicitly mark missing metrics as unavailable/not recorded; never convert missing data into zero. Distinguish completed department work from unavailable work. Do not promise deadlines or claim actions were taken unless the task records confirm them.',
     ].join('\n\n'),
     { communicationType: 'CEO consolidated status report', sender: 'CEO workflow', recipient: 'Founder / Bless', messageId: envelope.message_id, parentTaskId: parent.taskId },
-  );
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'CEO report synthesis failed.';
+    await failTrackedTask(parent.taskId, message);
+    throw error;
+  }
 
   if (results.length) {
     await advanceTrackedTask(parent.taskId, [
