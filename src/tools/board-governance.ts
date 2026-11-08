@@ -231,4 +231,48 @@ export function registerBoardGovernanceTools(server: McpServer): void {
     await audit(actor, 'board_action_status_updated', actionId, `Action status changed to ${status}.`);
     return result({ action: updated });
   });
+
+  server.registerTool('record_board_attendance', {
+    description: 'Founder or Board Secretary: record attendance for an appointed Board member or invited executive observer.',
+    inputSchema: {
+      meetingId: z.string().uuid(), roleId: z.string().min(2).max(100),
+      attendanceStatus: z.enum(['present', 'absent', 'apology', 'observer']),
+    },
+  }, async ({ meetingId, roleId, attendanceStatus }) => {
+    const actor = await requireRole(['founder', 'director-board-governance']);
+    const meetings = await supabaseSelect<Meeting>('organization_board_meetings', `select=id,status&id=eq.${encodeURIComponent(meetingId)}&limit=1`);
+    if (!meetings.length) throw new Error('Meeting not found.');
+    const seats = await supabaseSelect<Member>('organization_board_members', `select=role_id,seat_title,member_type,active&role_id=eq.${encodeURIComponent(roleId)}&active=eq.true&limit=1`);
+    const roles = seats.length ? seats : await supabaseSelect<Member>('organization_board_members', `select=role_id,seat_title,member_type,active&role_id=eq.${encodeURIComponent(roleId)}&active=eq.true&limit=1`);
+    if (!roles.length) throw new Error('Attendance can only be recorded for an active appointed Board seat. Add executive observers through the membership register first.');
+    const existing = await supabaseSelect<{ id: string }>('organization_board_attendance', `select=id&meeting_id=eq.${encodeURIComponent(meetingId)}&role_id=eq.${encodeURIComponent(roleId)}&limit=1`);
+    const value = { attendance_status: attendanceStatus, recorded_at: new Date().toISOString() };
+    const row = existing.length
+      ? await supabaseUpdate('organization_board_attendance', value, `meeting_id=eq.${encodeURIComponent(meetingId)}&role_id=eq.${encodeURIComponent(roleId)}`)
+      : await supabaseInsert('organization_board_attendance', { meeting_id: meetingId, role_id: roleId, seat_title: roles[0].seat_title, ...value });
+    await audit(actor, 'board_attendance_recorded', meetingId, `Attendance recorded for ${roleId}: ${attendanceStatus}.`);
+    return result({ attendance: row });
+  });
+
+  server.registerTool('update_board_meeting_status', {
+    description: 'Founder-only: open or close a Board meeting. Closing a meeting records its close time; minutes remain a separate record requiring Founder confirmation.',
+    inputSchema: { meetingId: z.string().uuid(), status: z.enum(['in_session', 'completed', 'cancelled']) },
+  }, async ({ meetingId, status }) => {
+    const actor = await requireRole(['founder']);
+    const rows = await supabaseSelect<Meeting>('organization_board_meetings', `select=id,status&id=eq.${encodeURIComponent(meetingId)}&limit=1`);
+    if (!rows.length) throw new Error('Meeting not found.');
+    const transitions: Record<string, string[]> = {
+      scheduled: ['in_session', 'cancelled'],
+      in_session: ['completed', 'cancelled'],
+    };
+    if (!transitions[rows[0].status]?.includes(status)) throw new Error(`Cannot change a meeting from ${rows[0].status} to ${status}.`);
+    const now = new Date().toISOString();
+    const updated = await supabaseUpdate('organization_board_meetings', {
+      status, opened_at: status === 'in_session' ? now : undefined,
+      closed_at: ['completed', 'cancelled'].includes(status) ? now : null,
+    }, `id=eq.${encodeURIComponent(meetingId)}`);
+    await audit(actor, 'board_meeting_status_updated', meetingId, `Founder changed meeting status to ${status}.`);
+    return result({ meeting: updated });
+  });
+
 }
