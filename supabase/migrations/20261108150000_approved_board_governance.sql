@@ -152,4 +152,4 @@ set title = 'AI Advisory Board',
     updated_at = now()
 where id = 'board';
 
-commit();
+commit;
