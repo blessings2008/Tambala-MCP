@@ -4,7 +4,7 @@ import { itemInputSchema, partySchema, DOC_KINDS } from '../../documents/model.j
 
 /**
  * Real-world actions an employee can request at the end of their work. They are validated strictly and checked against
- * the employee's permissions. Anything customer-facing is held for the Founder's approval by the messaging layer.
+ * the employee's permissions. Customer-facing WhatsApp is held for Founder approval except a first-contact outreach message from the Sales & Business Development director, which may be sent autonomously only when the shared outbox verifies the destination as a CRM lead and enforces the Founder-approved daily cap, cooldown and opt-out rules.
  */
 const phone = z.string().trim().min(8).max(30);
 const msg = z.string().trim().min(2).max(1500);
@@ -70,7 +70,7 @@ export function parseActions(body: string): ParsedActions {
 export function actionHelp(agent: string): string {
   const allowed = allowedActionTypes(agent);
   const lines = [
-    'You can request real actions by ending your answer with a heading line ACTIONS: followed by one JSON object per line (no code fences). Customer-facing items are held for the Founder to approve; nothing reaches a customer without that.',
+    'You can request real actions by ending your answer with a heading line ACTIONS: followed by one JSON object per line (no code fences). First-contact outreach may be sent autonomously only for the Sales & Business Development director and only after the shared outbox verifies the destination as a CRM lead. All follow-ups, replies, invoice reminders and other customer-facing messages remain subject to Founder approval.',
     'Use only phone numbers, names, prices and links that appear in the supplied data. Never invent them. If something you need is missing, say so in your answer instead of guessing.',
   ];
   if (allowed.includes('notify_founder')) lines.push('- Message the Founder: {"type":"notify_founder","text":"..."}  (only when he genuinely needs to know or decide something).');
