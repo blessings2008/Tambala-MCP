@@ -236,7 +236,7 @@ export function getAgentRuntimeConfig(agent: AgentName): AgentRuntimeConfig {
     const trimmed = value?.trim();
     if (!trimmed) return undefined;
     // Accept either a raw provider key or a pasted Bearer value; the SDK adds the header scheme.
-    return trimmed.replace(/^Bearer\\s+/i, '').trim() || undefined;
+    return trimmed.replace(/^Bearer\s+/i, '').trim() || undefined;
   };
   const dedicatedKey = normalizeCredential(process.env[dedicatedKeyName]);
   const sharedGroqEnabled = process.env.TAMBALA_ALLOW_SHARED_GROQ_KEY === 'true';
