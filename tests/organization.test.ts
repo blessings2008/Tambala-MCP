@@ -348,4 +348,6 @@ test('Board governance migration preserves advisory-only and Founder decision sa
   assert.match(migration, /'ceo', 'Chief Executive Officer \(non-voting observer\)', 'executive_observer'/);
   assert.match(migration, /alter table public\.organization_board_meetings enable row level security/);
   assert.match(migration, /revoke all on public\.organization_board_meetings from public, anon, authenticated/);
+  assert.match(migration, /commit;\\s*$/i);
+  assert.doesNotMatch(migration, /commit\\(\\)/i);
 });
