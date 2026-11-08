@@ -38,7 +38,7 @@ export async function executeActions(deps: ActionExecDeps, ctx: ActionContext, a
 
       } else if (action.type === 'whatsapp') {
         const r = await queueMessage(deps.outbox, { ...base, to: action.to, text: action.text, purpose: action.purpose, contactLabel: action.contact ?? null });
-        results.push(r.status === 'blocked' ? fail('whatsapp', `Not sent to ${maskNumber(action.to)}: ${r.reason}`) : { type: 'whatsapp', ok: true, detail: `Message to ${action.contact ?? maskNumber(action.to)} is waiting for the Founder's approval.` });
+        results.push(r.status === 'blocked' ? fail('whatsapp', `Not sent to ${maskNumber(action.to)}: ${r.reason}`) : r.status === 'pending_approval' ? { type: 'whatsapp', ok: true, detail: `Message to ${action.contact ?? maskNumber(action.to)} is awaiting Founder approval.` } : { type: 'whatsapp', ok: true, detail: `Message to ${action.contact ?? maskNumber(action.to)} was queued for sending; delivery is not confirmed yet.` });
 
       } else if (action.type === 'document') {
         const doc = await deps.createDocument({ kind: action.kind, client: action.client, items: action.items, subject: action.subject, body: action.body, notes: action.notes, terms: action.terms, validityDays: action.validityDays }, ctx.roleId);
