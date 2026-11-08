@@ -323,5 +323,5 @@ test('inbound: media without captions is retained as a readable inbound message'
   assert.equal(messageText({ imageMessage: {} }), '[Incoming image attachment]');
   assert.equal(messageText({ videoMessage: { fileName: 'brief.mp4' } }), '[Incoming video attachment: brief.mp4]');
   assert.equal(messageText({ audioMessage: { ptt: true } }), '[Incoming audio message]');
-  assert.equal(messageText({ ephemeralMessage: { message: { documentMessage: { fileName: 'quote.pdf' } } }), '[Incoming document attachment: quote.pdf]');
+  assert.equal(messageText({ ephemeralMessage: { message: { documentMessage: { fileName: 'quote.pdf' } } } }), '[Incoming document attachment: quote.pdf]');
 });
