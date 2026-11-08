@@ -1,5 +1,5 @@
 import { supabaseSelect } from '../lib/supabase.js';
-import { getBusinessSummary, getVerifiedCompanyContext, isExcluded } from '../services/ai/context.js';
+import { isExcluded } from '../services/ai/context.js';
 import { askTambalaAI, getAgentOperationalInfo, type AgentName } from '../services/ai.js';
 import { getOrganizationSnapshot } from '../organization/service.js';
 import { advanceTrackedTask, beginTrackedTask, failTrackedTask } from '../organization/task-tracking.js';
@@ -33,28 +33,58 @@ export function isCompanyStatusRequest(value: string): boolean {
       && /\b(company|business|organisation|organization|tambala technologies)\b/.test(text));
 }
 
-async function loadStatusData(): Promise<{ context: Record<string, unknown>; warnings: string[] }> {
+function compactRows(rows: Row[], fields: string[], limit: number): Row[] {
+  return rows.filter((row) => !isExcluded(row)).slice(0, limit).map((row) => {
+    const compact: Row = {};
+    for (const field of fields) {
+      const value = row[field];
+      if (value !== undefined && value !== null && value !== '') compact[field] = value;
+    }
+    return compact;
+  });
+}
+
+function countByStatus(rows: Row[]): Record<string, number> {
+  return rows.reduce<Record<string, number>>((counts, row) => {
+    const status = String(row.status ?? 'unspecified');
+    counts[status] = (counts[status] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+async function loadStatusData(): Promise<{ context: Record<string, unknown>; sales: Record<string, unknown>; customers: Record<string, unknown>; warnings: string[] }> {
   const warnings: string[] = [];
   const context: Record<string, unknown> = { generated_at: new Date().toISOString() };
+  const sales: Record<string, unknown> = {};
+  const customers: Record<string, unknown> = {};
   try {
-    const [summary, company] = await Promise.all([getBusinessSummary(), getVerifiedCompanyContext()]);
-    context.crm_summary = summary;
-    context.company = company;
     const [leads, clients, projects, tasks] = await Promise.all([
       supabaseSelect<Row>('leads', 'select=id,name,business_name,status,next_follow_up_at,created_at&order=created_at.desc&limit=100'),
       supabaseSelect<Row>('clients', 'select=id,name,business_name,status,created_at&order=created_at.desc&limit=100'),
       supabaseSelect<Row>('projects', 'select=id,name,status,client_id,due_date,created_at&order=created_at.desc&limit=100'),
       supabaseSelect<Row>('tasks', 'select=id,title,status,due_at,client_id,project_id,created_at&order=created_at.desc&limit=150'),
     ]);
-    context.records = {
-      leads: leads.filter((row) => !isExcluded(row)),
-      clients: clients.filter((row) => !isExcluded(row)),
-      projects,
-      tasks,
+    const validLeads = leads.filter((row) => !isExcluded(row));
+    const validClients = clients.filter((row) => !isExcluded(row));
+    const validProjects = projects.filter((row) => !isExcluded(row));
+    const validTasks = tasks.filter((row) => !isExcluded(row));
+    context.record_counts = {
+      leads: validLeads.length, leads_by_status: countByStatus(validLeads),
+      clients: validClients.length, clients_by_status: countByStatus(validClients),
+      projects: validProjects.length, projects_by_status: countByStatus(validProjects),
+      tasks: validTasks.length, tasks_by_status: countByStatus(validTasks),
     };
+    sales.leads = compactRows(validLeads, ['id', 'name', 'business_name', 'status', 'next_follow_up_at', 'created_at'], 20);
+    sales.total_leads = validLeads.length;
+    sales.leads_by_status = countByStatus(validLeads);
+    customers.clients = compactRows(validClients, ['id', 'name', 'business_name', 'status', 'created_at'], 15);
+    customers.projects = compactRows(validProjects, ['id', 'name', 'status', 'client_id', 'due_date', 'created_at'], 15);
+    customers.tasks = compactRows(validTasks, ['id', 'title', 'status', 'due_at', 'client_id', 'project_id', 'created_at'], 20);
+    customers.totals = { clients: validClients.length, projects: validProjects.length, tasks: validTasks.length };
+    customers.statuses = { clients: countByStatus(validClients), projects: countByStatus(validProjects), tasks: countByStatus(validTasks) };
   } catch (error) {
-    warnings.push(`Live CRM/company data could not be fully loaded: ${error instanceof Error ? error.message : 'database unavailable'}`);
-    context.data_availability = 'Live company and CRM data is unavailable for this run. Do not infer counts or pipeline values.';
+    warnings.push(`Live CRM records could not be fully loaded: ${error instanceof Error ? error.message : 'database unavailable'}`);
+    context.data_availability = 'Live CRM data unavailable. Do not infer counts or pipeline values.';
   }
   try {
     const snapshot = await getOrganizationSnapshot();
@@ -62,12 +92,11 @@ async function loadStatusData(): Promise<{ context: Record<string, unknown>; war
       source: snapshot.source,
       units: snapshot.organization.units.map((unit) => ({ name: unit.name, kind: unit.kind, status: unit.status })),
       roles: snapshot.organization.roles.map((role) => ({ title: role.title, activation: role.activation })),
-      validation: snapshot.validation,
     };
   } catch (error) {
     warnings.push(`Organization chart could not be loaded: ${error instanceof Error ? error.message : 'unavailable'}`);
   }
-  return { context, warnings };
+  return { context, sales, customers, warnings };
 }
 
 export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): Promise<string> {
@@ -80,7 +109,7 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
     roleId: 'ceo',
   }]);
 
-  const { context, warnings } = await loadStatusData();
+  const { context, sales, customers, warnings } = await loadStatusData();
   const snapshot = await getOrganizationSnapshot().catch(() => null);
   const assignments = STATUS_WORKSTREAMS.map((workstream) => {
     const roleId = roleIdFor(workstream.agent);
@@ -109,7 +138,7 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
       await advanceTrackedTask(child.taskId, [
         { status: 'ceo_analyzing', stage: 'ceo', eventType: 'ceo_department_assignment_created', roleId: 'ceo' },
         { status: 'delegated', stage: 'ceo', eventType: 'department_assignment_issued', departmentId: AGENT_DIRECTORY[item.agent].unitId, roleId: item.roleId, payload: { parentTaskId: parent.taskId, department: item.department } },
-        { status: 'executing', stage: 'department', eventType: 'department_report_work_started', departmentId: item.agent, roleId: item.roleId },
+        { status: 'executing', stage: 'department', eventType: 'department_report_work_started', departmentId: AGENT_DIRECTORY[item.agent].unitId, roleId: item.roleId },
       ]);
       const result = await askTambalaAI(
         item.agent,
@@ -119,7 +148,7 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
           `Your scope: ${item.focus}`,
           'Prepare your section now from the supplied company records. Do not ask the Founder to approve the report or propose future hand-offs. Do not invent names, counts, revenue, outcomes, dates, support tickets, or activity. Separate verified facts from gaps. If the records do not contain a metric, state that it is not recorded or unavailable. Keep the response concise but substantive.',
           `Original Founder objective: ${objective}`,
-          `Company records (source of truth): ${JSON.stringify(context)}`,
+          `Relevant source records (source of truth): ${JSON.stringify(item.agent === 'outreach' ? sales : customers)}`,
         ].join('\n\n'),
         { communicationType: 'CEO department assignment', sender: 'Chief Executive Officer', recipient: item.roleTitle, parentTaskId: parent.taskId, department: item.department },
       );
@@ -143,11 +172,11 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
     [
       'You are the CEO of Tambala Technologies. Deliver the Founder’s requested current company status report now; do not ask for scope confirmation.',
       `Founder objective: ${objective}`,
-      `Verified company, CRM and organization snapshot: ${JSON.stringify(context)}`,
-      `Department reports returned: ${JSON.stringify(results.map(({ department, agent, result }) => ({ department, agent, result }))) || 'None'}`,
+      `Compact verified snapshot: ${JSON.stringify(context)}`,
+      `Department findings: ${JSON.stringify(results.map(({ department, agent, result }) => ({ department, agent, result: result.slice(0, 1200) }))) || 'None'}`,
       `Departments not able to contribute: ${JSON.stringify(blocked.map(({ department, blocker }) => ({ department, blocker })))}`,
       `Data loading warnings: ${JSON.stringify(warnings)}`,
-      'Produce a clear executive summary, verified operating figures, sales pipeline, customer/project position, operational risks and immediate priorities. Use only supplied evidence. Explicitly mark missing metrics as unavailable/not recorded; never convert missing data into zero. Distinguish completed department work from unavailable work. Do not promise deadlines or claim actions were taken unless the task records confirm them.',
+      'Write a concise executive report (maximum 350 words): executive summary, verified figures, sales, clients/projects, risks, and immediate priorities. Use only evidence supplied. Mark missing metrics unavailable, never zero. Do not claim work was done unless records confirm it.',
     ].join('\n\n'),
     { communicationType: 'CEO consolidated status report', sender: 'CEO workflow', recipient: 'Founder / Bless', messageId: envelope.message_id, parentTaskId: parent.taskId },
     );
