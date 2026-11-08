@@ -1,3 +1,5 @@
+import { Script } from 'node:vm';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initialOrganization } from '../src/organization/seed.js';
@@ -317,3 +319,56 @@ test('every department has an accountable lead connected to its reporting struct
   }
 });
 
+
+
+test('the advisory Board cannot resolve or approve organizational approval requests', () => {
+  const boardResult = authorizeOrganizationalAction({
+    actorRole: role('board'),
+    action: 'resolve_board_approval',
+  });
+  const founderResult = authorizeOrganizationalAction({
+    actorRole: role('founder'),
+    action: 'resolve_board_approval',
+  });
+  assert.equal(boardResult.allowed, false);
+  assert.equal(boardResult.requiresApproval, false);
+  assert.match(boardResult.reason, /advisory/);
+  assert.equal(founderResult.allowed, false);
+  assert.match(founderResult.reason, /advisory/);
+  assert.equal(role('board').capabilities.includes('approvals.resolve_board'), false);
+  assert.match(role('board').title, /AI Advisory Board/);
+});
+
+
+test('Board governance migration preserves advisory-only and Founder decision safeguards', () => {
+  const migration = readFileSync(new URL('../supabase/migrations/20261108150000_approved_board_governance.sql', import.meta.url), 'utf8');
+  assert.match(migration, /voting_rights boolean not null default false check \(voting_rights = false\)/);
+  assert.match(migration, /check \(chair_role_id = 'founder'\)/);
+  assert.match(migration, /check \(created_by_role_id = 'founder'\)/);
+  assert.match(migration, /check \(status = 'submitted' or founder_decided_by_role_id = 'founder'\)/);
+  assert.match(migration, /'ceo', 'Chief Executive Officer \(non-voting observer\)', 'executive_observer'/);
+  assert.match(migration, /alter table public\.organization_board_meetings enable row level security/);
+  assert.match(migration, /revoke all on public\.organization_board_meetings from public, anon, authenticated/);
+  assert.match(migration, /commit;\s*$/i);
+  assert.doesNotMatch(migration, /commit\(\)/i);
+});
+
+
+test('Board dashboard inline JavaScript parses successfully', () => {
+  const html = readFileSync(new URL('../public/organization-dashboard.html', import.meta.url), 'utf8');
+  const http = readFileSync(new URL('../src/http.ts', import.meta.url), 'utf8');
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+  assert.ok(scripts.length > 0, 'Dashboard should contain an inline script.');
+  for (const script of scripts) assert.doesNotThrow(() => new Script(script[1]));
+  for (const controlId of ['boardEditMeeting', 'boardAgendaForm', 'boardMinutesForm', 'boardActionForm', 'boardAttendanceEditor']) {
+    assert.match(html, new RegExp('id="' + controlId + '"'), `Dashboard should expose ${controlId}.`);
+  }
+  for (const route of [
+    '/api/dashboard/board/agenda/create',
+    '/api/dashboard/board/attendance/update',
+    '/api/dashboard/board/minutes/save',
+    '/api/dashboard/board/recommendations/decision',
+    '/api/dashboard/board/actions/create',
+    '/api/dashboard/board/actions/update',
+  ]) assert.ok(http.includes(route), `Founder Board endpoint missing: ${route}`);
+});

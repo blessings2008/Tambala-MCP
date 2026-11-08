@@ -11,6 +11,7 @@ import { registerEmailReportTools } from './email-report.js';
 import { registerAutomationTools } from './automation.js';
 import { registerTambalaPayTools } from './tambala-pay.js';
 import { registerOrganizationTools } from './organization.js';
+import { registerBoardGovernanceTools } from './board-governance.js';
 import { registerAutomationActionTools } from './automation-actions.js';
 import { registerWorkforceTools } from './workforce.js';
 import { registerChannelTools } from './channels.js';
@@ -20,6 +21,7 @@ import { withWriteGuard } from '../organization/write-guard.js';
 export function registerAllTools(server: McpServer): void {
   const registrars = [
     registerOrganizationTools,
+    registerBoardGovernanceTools,
     registerCompanyTools,
     registerPortfolioTools,
     registerLeadIntelligenceTools,

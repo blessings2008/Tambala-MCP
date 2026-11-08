@@ -47,6 +47,7 @@ details.emp{border:1px solid var(--line);background:#121e31;border-radius:10px;p
  <button class="nav" data-view="automation"><span class="ico">⟳</span>Automation</button>
  <button class="nav" data-view="integrations"><span class="ico">⌘</span>Integrations</button>
  <div class="nav-label">Governance & system</div>
+ <button class="nav" data-view="board"><span class="ico">▣</span>Advisory Board</button>
  <button class="nav" data-view="security"><span class="ico">◇</span>Security & audit</button>
  <button class="nav" data-view="analytics"><span class="ico">▥</span>Performance</button>
  <button class="nav" data-view="settings"><span class="ico">⚙</span>Configuration</button>
@@ -63,6 +64,41 @@ details.emp{border:1px solid var(--line);background:#121e31;border-radius:10px;p
 <section class="view" id="view-departments"><div class="page-head"><div><div class="eyebrow">ORGANIZATION DESIGN</div><h1>Departments & business units</h1><div class="sub">Status comes from the stored role and agent state, not from the chart alone.</div></div></div><div class="grid dept-grid" id="departmentGrid"></div></section>
 <section class="view" id="view-tasks"><div class="page-head"><div><div class="eyebrow">WORK ORCHESTRATION</div><h1>Task centre</h1><div class="sub">Founder objectives, CEO delegation, department work and outcomes.</div></div></div><div class="grid stats"><article class="card"><div class="stat-top">Open <span class="stat-icon">▤</span></div><div class="stat-value" id="tOpen">—</div><div class="stat-foot" id="tOpenFoot"></div></article><article class="card"><div class="stat-top">Completed <span class="stat-icon">✓</span></div><div class="stat-value" id="tDone">—</div><div class="stat-foot" id="tDoneFoot"></div></article><article class="card"><div class="stat-top">Failed <span class="stat-icon">!</span></div><div class="stat-value" id="tFailed">—</div><div class="stat-foot" id="tFailedFoot"></div></article><article class="card"><div class="stat-top">Total shown <span class="stat-icon">Σ</span></div><div class="stat-value" id="tTotal">—</div><div class="stat-foot" id="tTotalFoot"></div></article></div><div class="grid two"><article class="card"><div class="section-head"><h2>Work queue</h2><span>Latest 100 tasks</span></div><div class="list" id="taskList"></div></article><article class="card"><div class="section-head"><h2>Event feed</h2><span>Latest 40 events</span></div><div class="list" id="eventList"></div></article></div></section>
 <section class="view" id="view-approvals"><div class="page-head"><div><div class="eyebrow">GOVERNANCE</div><h1>Approvals inbox</h1><div class="sub">Pending requests and recent decisions. Resolution happens through governed tools, not this page.</div></div></div><div class="grid two"><article class="card"><div class="section-head"><h2>Pending approvals</h2><span>Awaiting an authorized role</span></div><div class="list" id="approvalList"></div></article><article class="card"><div class="section-head"><h2>Recent decisions</h2><span>Latest 15</span></div><div class="list" id="decisionList"></div></article></div></section>
+<section class="view" id="view-board">
+ <div class="page-head"><div><div class="eyebrow">FOUNDER GOVERNANCE</div><h1>AI Advisory Board</h1><div class="sub">Non-voting advisers provide scrutiny and recommendations. The Founder retains final decision authority.</div></div><div class="actions"><button class="outline-btn" id="boardRefresh">Refresh register</button></div></div>
+ <div class="notice"><b>Authority boundary:</b> Board recommendations are advisory only. The Founder chairs meetings and makes all binding decisions. The CEO attends as a non-voting executive observer.</div>
+ <div class="grid two">
+  <article class="card"><div class="section-head"><h2>Convene a meeting</h2><span>Founder only</span></div>
+   <form id="boardMeetingForm" class="grid form-grid">
+    <div class="field full"><label for="boardMeetingTitle">Meeting title</label><input id="boardMeetingTitle" required minlength="3" maxlength="200" placeholder="e.g. Inaugural Board Meeting"></div>
+    <div class="field"><label for="boardMeetingType">Meeting type</label><select id="boardMeetingType"><option value="inaugural">Inaugural</option><option value="ordinary">Ordinary</option><option value="strategic_review">Strategic review</option><option value="special">Special</option></select></div>
+    <div class="field"><label for="boardMeetingDate">Date and time</label><input id="boardMeetingDate" type="datetime-local"></div>
+    <div class="field full"><label for="boardMeetingPurpose">Purpose / key focus</label><textarea id="boardMeetingPurpose" maxlength="2000" placeholder="What should the Board review?"></textarea></div>
+    <div class="field full"><button class="primary" type="submit" id="boardCreateMeeting">Create meeting and invite appointed seats</button></div>
+   </form>
+  </article>
+  <article class="card"><div class="section-head"><h2>Appointed seats</h2><span id="boardMemberCount">—</span></div><div class="list" id="boardMembers"></div></article>
+ </div>
+ <div class="grid two" style="margin-top:14px">
+  <article class="card"><div class="section-head"><h2>Meetings</h2><span>Latest 30</span></div><div class="list" id="boardMeetings"></div></article>
+  <article class="card"><div class="section-head"><h2>Recommendations</h2><span>Founder decisions are separate</span></div><div class="list" id="boardRecommendations"></div></article>
+ </div>
+ <div class="grid two" style="margin-top:14px">
+  <article class="card"><div class="section-head"><h2>Agenda &amp; attendance</h2><span>Meeting records</span></div><div class="list" id="boardAgenda"></div><div class="list" id="boardAttendance"></div></article>
+  <article class="card"><div class="section-head"><h2>Minutes &amp; follow-up actions</h2><span>Evidence-based tracking</span></div><div class="list" id="boardMinutes"></div><div class="list" id="boardActions"></div></article>
+ </div>
+ <div class="grid two" style="margin-top:14px">
+  <article class="card"><div class="section-head"><h2>Meeting working papers</h2><span>Founder / Secretary</span></div>
+   <label for="boardEditMeeting">Selected meeting</label><select id="boardEditMeeting"></select>
+   <form id="boardAgendaForm" class="form"><h3>Add agenda item</h3><input id="boardAgendaTitle" required minlength="3" maxlength="200" placeholder="Agenda item title"><textarea id="boardAgendaBackground" maxlength="4000" placeholder="Background and documents to review"></textarea><button class="primary" type="submit">Add to agenda</button></form>
+   <form id="boardMinutesForm" class="form"><h3>Minutes record</h3><textarea id="boardMinutesSummary" required minlength="10" maxlength="6000" placeholder="Summary of discussions, recommendations and decisions"></textarea><textarea id="boardMinutesNotes" placeholder="Discussion notes — one item per line"></textarea><textarea id="boardMinutesEvidence" placeholder="Evidence references — one per line"></textarea><label><input id="boardMinutesConfirm" type="checkbox"> Confirm these minutes as Founder</label><button class="primary" type="submit">Save minutes</button></form>
+  </article>
+  <article class="card"><div class="section-head"><h2>Follow-up action</h2><span>Accountability</span></div>
+   <form id="boardActionForm" class="form"><input id="boardActionTitle" required minlength="3" maxlength="200" placeholder="Action title"><textarea id="boardActionDescription" maxlength="3000" placeholder="Expected outcome / evidence"></textarea><input id="boardActionRole" required placeholder="Responsible role ID (e.g. director-finance-accounting)"><input id="boardActionDue" type="datetime-local"><button class="primary" type="submit">Create action</button></form>
+   <div class="section-head"><h3>Attendance register</h3></div><div class="list" id="boardAttendanceEditor"></div>
+  </article>
+ </div>
+</section>
 <section class="view" id="view-people"><div class="page-head"><div><div class="eyebrow">WORKFORCE</div><h1>Staff directory</h1><div class="sub">Every role is a staff member with a job description, working hours, standing duties and a weekly record. <span class="sync" id="staffNote"></span></div></div></div>
 <div class="grid stats"><article class="card"><div class="stat-top">On duty now <span class="stat-icon">♙</span></div><div class="stat-value" id="wfOn">—</div><div class="stat-foot" id="wfOnFoot"></div></article><article class="card"><div class="stat-top">Duties done today <span class="stat-icon">✓</span></div><div class="stat-value" id="wfDone">—</div><div class="stat-foot" id="wfDoneFoot"></div></article><article class="card"><div class="stat-top">Overdue or failed <span class="stat-icon">!</span></div><div class="stat-value" id="wfBad">—</div><div class="stat-foot" id="wfBadFoot"></div></article><article class="card"><div class="stat-top">Skipped <span class="stat-icon">⏸</span></div><div class="stat-value" id="wfSkip">—</div><div class="stat-foot" id="wfSkipFoot">Employee inactive or unequipped</div></article></div>
 <article class="card"><div class="section-head"><h2>Staff</h2><span>Tap a person to open their job</span></div><div id="staffGrid"></div></article>
@@ -88,10 +124,10 @@ details.emp{border:1px solid var(--line);background:#121e31;border-radius:10px;p
 </main>
 </div>
 
-<div class="gate" id="gate"><form id="gateForm"><h2>Control Centre</h2><p>Enter the dashboard token (the same value as TAMBALA_CHAT_TEST_TOKEN).</p><input id="gateToken" type="password" autocomplete="off" placeholder="Token" required><button type="submit">Open</button><div class="err" id="gateErr"></div></form></div>
+<div class="gate" id="gate"><form id="gateForm"><h2>Control Centre</h2><p>Enter the dashboard token. Founder approval actions require a separate approval token.</p><input id="gateToken" type="password" autocomplete="off" placeholder="Token" required><button type="submit">Open</button><div class="err" id="gateErr"></div></form></div>
 <div class="toast" id="toast"></div>
 <script>
-const KEY='tambala_chat_test_token';let data=null,timer=null;
+const KEY='tambala_chat_test_token',FOUNDER_KEY='tambala_founder_approval_token';let data=null,timer=null;
 const $=id=>document.getElementById(id);
 function h(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined&&text!==null)e.textContent=text;return e}
 function badge(text,kind){return h('span','badge '+(kind||''),text)}
@@ -180,8 +216,95 @@ function render(){
 }
 
 
-function authHeaders(){return {Authorization:'Bearer '+sessionStorage.getItem(KEY),'content-type':'application/json'}}
-async function post(path,body){const r=await fetch(path,{method:'POST',headers:authHeaders(),body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.error||('Server returned '+r.status));return j}
+function authHeaders(token){return {Authorization:'Bearer '+token,'content-type':'application/json'}}
+async function post(path,body){
+ let token=sessionStorage.getItem(KEY);
+ if(path==='/api/dashboard/approvals/decide'){
+  token=sessionStorage.getItem(FOUNDER_KEY);
+  if(!token){
+   token=window.prompt('Enter your separate Founder approval token (TAMBALA_FOUNDER_APPROVAL_TOKEN).');
+   if(!token||!token.trim())throw Error('Founder approval cancelled.');
+   token=token.trim();sessionStorage.setItem(FOUNDER_KEY,token);
+  }
+ }
+ const r=await fetch(path,{method:'POST',headers:authHeaders(token),body:JSON.stringify(body)});
+ const j=await r.json().catch(()=>({}));
+ if(!r.ok){if(path==='/api/dashboard/approvals/decide'&&r.status===401)sessionStorage.removeItem(FOUNDER_KEY);throw Error(j.error||('Server returned '+r.status))}
+ return j
+}
+function founderToken(){
+ let token=sessionStorage.getItem(FOUNDER_KEY);
+ if(!token){token=window.prompt('Enter your separate Founder governance token (TAMBALA_FOUNDER_APPROVAL_TOKEN).');if(!token||!token.trim())throw Error('Founder authentication cancelled.');token=token.trim();sessionStorage.setItem(FOUNDER_KEY,token)}
+ return token;
+}
+async function boardPost(path,body){
+ const token=founderToken();
+ const r=await fetch(path,{method:'POST',headers:authHeaders(token),body:JSON.stringify(body)});
+ const j=await r.json().catch(()=>({}));
+ if(!r.ok){if(r.status===401)sessionStorage.removeItem(FOUNDER_KEY);throw Error(j.error||('Server returned '+r.status))}
+ return j;
+}
+function renderBoard(d){
+ const meetings=d.meetings||[], selected=$('boardEditMeeting');
+ $('boardMemberCount').textContent=d.members.length+' appointed seats';
+ fill('boardMembers',d.members.map(m=>row(m.seat_title,m.role_id+' · '+m.member_type.replaceAll('_',' '),badge(m.active?'Active':'Inactive',m.active?'good':'pending'))),'No appointed seats','Apply the approved governance migration to seed the Board register.');
+ selected.replaceChildren(...meetings.map(m=>{const o=h('option','', '#'+m.meeting_number+' · '+m.title);o.value=m.id;return o}));
+ if(!meetings.some(m=>m.id===selected.value)&&meetings.length)selected.value=meetings[0].id;
+ fill('boardMeetings',meetings.map(m=>{
+  const r=row('#'+m.meeting_number+' · '+m.title,(m.meeting_type||'').replaceAll('_',' ')+' · '+(m.scheduled_at?new Date(m.scheduled_at).toLocaleString():'Time not set')+' · '+(m.purpose||'No purpose entered'),badge(m.status,statusKind(m.status)));
+  const actions=h('div','actions');
+  if(m.status==='scheduled'){const b=h('button','outline-btn','Open');b.addEventListener('click',async()=>{try{await boardPost('/api/dashboard/board/meetings/status',{meetingId:m.id,status:'in_session'});notify('Meeting opened.');await loadBoard()}catch(e){notify(e.message)}});actions.append(b)}
+  if(m.status==='in_session'){const b=h('button','outline-btn','Complete');b.addEventListener('click',async()=>{try{await boardPost('/api/dashboard/board/meetings/status',{meetingId:m.id,status:'completed'});notify('Meeting completed.');await loadBoard()}catch(e){notify(e.message)}});actions.append(b)}
+  if(['scheduled','in_session'].includes(m.status)){const b=h('button','outline-btn','Cancel');b.addEventListener('click',async()=>{if(!confirm('Cancel this Board meeting?'))return;try{await boardPost('/api/dashboard/board/meetings/status',{meetingId:m.id,status:'cancelled'});notify('Meeting cancelled.');await loadBoard()}catch(e){notify(e.message)}});actions.append(b)}
+  r.append(actions);return r;
+ }),'No meetings yet','Create the first meeting using the form above.');
+ fill('boardRecommendations',(d.recommendations||[]).map(x=>{
+  const r=row(x.title,x.recommendation+' · proposed by '+x.proposed_by_role_id,badge(x.status.replaceAll('_',' '),statusKind(x.status)));
+  if(x.status==='submitted'){const a=h('div','actions');[['Accept','founder_accepted'],['Reject','founder_rejected'],['Defer','deferred']].forEach(([label,status])=>{const b=h('button','outline-btn',label);b.addEventListener('click',async()=>{const note=window.prompt('Record the Founder decision note (optional):')||'';try{await boardPost('/api/dashboard/board/recommendations/decision',{id:x.id,status,note});notify('Founder decision recorded.');await loadBoard()}catch(e){notify(e.message)}});a.append(b)});r.append(a)}
+  return r;
+ }),'No recommendations','Appointed advisers can submit non-binding recommendations through the MCP Board tools.');
+ fill('boardAgenda',(d.agenda||[]).map(x=>row('#'+x.item_number+' · '+x.title,x.background||'No background provided',badge(x.status,statusKind(x.status)))),'No agenda items','Add agenda items using the meeting working papers panel.');
+ fill('boardAttendance',(d.attendance||[]).map(x=>row(x.seat_title,x.role_id,badge(x.attendance_status,statusKind(x.attendance_status)))),'No attendance recorded','Attendance is recorded for each meeting.');
+ fill('boardAttendanceEditor',(d.attendance||[]).filter(x=>x.meeting_id===selected.value).map(x=>{
+  const r=h('div','sigrow'),s=h('select','');['invited','present','absent','apology','observer'].forEach(v=>{const o=h('option','',v);o.value=v;o.selected=v===x.attendance_status;s.append(o)});
+  const b=h('button','sm ok','Save');b.addEventListener('click',async()=>{try{await boardPost('/api/dashboard/board/attendance/update',{id:x.id,attendanceStatus:s.value});notify('Attendance updated.');await loadBoard()}catch(e){notify(e.message)}});
+  r.append(h('div','sc',x.seat_title+' · '+x.role_id),s,b);return r;
+ }),'No invited seats for this meeting','Create a meeting to initialise its attendance register.');
+ const minutes=(d.minutes||[]).find(x=>x.meeting_id===selected.value);
+ $('boardMinutesSummary').value=minutes?.summary||'';
+ $('boardMinutesNotes').value=Array.isArray(minutes?.discussion_notes)?minutes.discussion_notes.join('\n'):'';
+ $('boardMinutesEvidence').value=Array.isArray(minutes?.evidence_refs)?minutes.evidence_refs.join('\n'):'';
+ $('boardMinutesConfirm').checked=Boolean(minutes?.founder_confirmed_at);
+ fill('boardMinutes',(d.minutes||[]).map(x=>row(x.summary||'Minutes draft',x.founder_confirmed_at?'Founder-confirmed':'Awaiting Founder confirmation',badge(x.founder_confirmed_at?'Confirmed':'Draft',x.founder_confirmed_at?'good':'pending'))),'No minutes yet','The Board Secretary records minutes after the meeting.');
+ fill('boardActions',(d.actions||[]).map(x=>{
+  const r=row(x.title,(x.assigned_role_id||'Unassigned')+' · '+(x.due_at?new Date(x.due_at).toLocaleDateString():'No deadline'),badge(x.status,statusKind(x.status)));
+  const a=h('div','actions'),s=h('select','');['open','in_progress','blocked','completed','cancelled'].forEach(v=>{const o=h('option','',v.replaceAll('_',' '));o.value=v;o.selected=v===x.status;s.append(o)});
+  const evidence=el2('input',{type:'text',placeholder:'Completion evidence (optional)',maxlength:'4000'}),b=h('button','sm ok','Update');b.addEventListener('click',async()=>{try{await boardPost('/api/dashboard/board/actions/update',{id:x.id,status:s.value,evidence:evidence.value});notify('Action updated.');await loadBoard()}catch(e){notify(e.message)}});
+  a.append(s,evidence,b);r.append(a);return r;
+ }),'No follow-up actions','Create actions from the follow-up panel.');
+}
+$('boardEditMeeting').addEventListener('change',loadBoard);
+$('boardAgendaForm').addEventListener('submit',async e=>{e.preventDefault();try{await boardPost('/api/dashboard/board/agenda/create',{meetingId:$('boardEditMeeting').value,title:$('boardAgendaTitle').value,background:$('boardAgendaBackground').value});$('boardAgendaForm').reset();notify('Agenda item added.');await loadBoard()}catch(err){notify(err.message)}});
+$('boardMinutesForm').addEventListener('submit',async e=>{e.preventDefault();try{await boardPost('/api/dashboard/board/minutes/save',{meetingId:$('boardEditMeeting').value,summary:$('boardMinutesSummary').value,discussionNotes:$('boardMinutesNotes').value.split('\n').map(x=>x.trim()).filter(Boolean),evidenceRefs:$('boardMinutesEvidence').value.split('\n').map(x=>x.trim()).filter(Boolean),founderConfirm:$('boardMinutesConfirm').checked});notify($('boardMinutesConfirm').checked?'Minutes saved and Founder-confirmed.':'Minutes draft saved.');await loadBoard()}catch(err){notify(err.message)}});
+$('boardActionForm').addEventListener('submit',async e=>{e.preventDefault();try{const due=$('boardActionDue').value;await boardPost('/api/dashboard/board/actions/create',{meetingId:$('boardEditMeeting').value,title:$('boardActionTitle').value,description:$('boardActionDescription').value,assignedRoleId:$('boardActionRole').value,dueAt:due?new Date(due).toISOString():null});$('boardActionForm').reset();notify('Follow-up action created.');await loadBoard()}catch(err){notify(err.message)}});
+async function loadBoard(){
+ try{
+  const r=await fetch('/api/dashboard/board',{headers:authHeaders(founderToken())});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){if(r.status===401)sessionStorage.removeItem(FOUNDER_KEY);throw Error(j.error||('Server returned '+r.status))}
+  renderBoard(j);notify('Board register refreshed.');
+ }catch(e){notify(e.message)}
+}
+$('boardRefresh').addEventListener('click',loadBoard);
+$('boardMeetingForm').addEventListener('submit',async e=>{
+ e.preventDefault();const b=$('boardCreateMeeting');b.disabled=true;
+ try{
+  const scheduledAt=$('boardMeetingDate').value?new Date($('boardMeetingDate').value).toISOString():null;
+  await boardPost('/api/dashboard/board/meetings/create',{title:$('boardMeetingTitle').value,meetingType:$('boardMeetingType').value,scheduledAt,purpose:$('boardMeetingPurpose').value});
+  $('boardMeetingForm').reset();notify('Board meeting created and appointed seats invited.');await loadBoard();
+ }catch(err){notify(err.message)}finally{b.disabled=false}
+});
+
 function notify(msg){const t=$('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',4200)}
 
 function sigil(mark,keyed){
@@ -453,7 +576,7 @@ async function load(){
 }
 $('gateForm').addEventListener('submit',e=>{e.preventDefault();sessionStorage.setItem(KEY,$('gateToken').value.trim());$('gateErr').textContent='';load()});
 function showView(name){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+name));document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.view===name));const a=document.querySelector('.nav[data-view="'+name+'"]');$('crumb').textContent=a?a.textContent.replace(/[—\d]+$/,'').trim():name;$('sidebar').classList.remove('open')}
-document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.view)));
+document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>{showView(b.dataset.view);if(b.dataset.view==='board')loadBoard()}));
 $('menu').addEventListener('click',()=>$('sidebar').classList.toggle('open'));
 $('refresh').addEventListener('click',load);
 $('openTaskConsole').addEventListener('click',()=>{window.location.href='/chat-live'});
