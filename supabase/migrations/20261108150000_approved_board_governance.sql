@@ -141,7 +141,8 @@ insert into public.organization_board_members (role_id, seat_title, member_type,
   ('director-strategy-planning', 'Strategy & Corporate Planning Adviser', 'advisory_member', true, false),
   ('director-technology-engineering', 'Technology & Innovation Adviser', 'advisory_member', true, false),
   ('director-legal-risk-compliance', 'Governance, Legal & Compliance Adviser', 'advisory_member', true, false),
-  ('director-board-governance', 'Board Secretary', 'board_secretary', true, false)
+  ('director-board-governance', 'Board Secretary', 'board_secretary', true, false),
+  ('ceo', 'Chief Executive Officer (non-voting observer)', 'executive_observer', true, false)
 on conflict (role_id) do update set seat_title = excluded.seat_title, member_type = excluded.member_type, active = excluded.active, voting_rights = false, updated_at = now();
 
 update public.organization_roles
