@@ -66,7 +66,7 @@ export function isUsableDepartmentReport(department: string, value: string): boo
     'Technology & Engineering',
     'Finance & Accounting',
   ].filter((name) => name !== department);
-  const markdownHeadings = report.split(/\\r?\\n/).map((line) => line.replace(/^\\s{0,3}#{1,6}\\s*/, '').trim().toLowerCase());
+  const markdownHeadings = report.split(String.fromCharCode(10)).map((line) => line.trim().replace(/^#+\s*/, '').toLowerCase());
   for (const other of otherDepartments) {
     const shortOther = other.startsWith('Sales ') ? 'sales'
       : other.startsWith('Operations ') ? 'operations'
