@@ -38,7 +38,7 @@ const STATUS_WORKSTREAMS: {
 
 export const STATUS_REPORT_DEPARTMENTS = STATUS_WORKSTREAMS.map((item) => item.department);
 
-/** Reject placeholder or visibly truncated output before a department can be counted as complete. */
+/** Validate ownership and completeness, not the amount of data available to a department. */
 export function isUsableDepartmentReport(department: string, value: string): boolean {
   const report = value.trim();
   if (report.length < 35) return false;
@@ -50,10 +50,30 @@ export function isUsableDepartmentReport(department: string, value: string): boo
     : departmentKey.startsWith('operations ') ? 'operations'
       : departmentKey.startsWith('technology ') ? 'technology'
         : departmentKey.startsWith('finance ') ? 'finance' : departmentKey;
-  return !normalized.includes(`no ${departmentKey} report was supplied`)
-    && !normalized.includes(`no ${departmentKey} report supplied`)
-    && !normalized.includes(`no ${shortKey} report was supplied`)
-    && !normalized.includes(`no ${shortKey} report supplied`);
+
+  const opening = report.slice(0, 180).toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ');
+  if (!opening.includes(shortKey)) return false;
+  if (!/[.!?]["')\]]?\s*$/.test(report)) return false;
+
+  if (normalized.includes('no ' + departmentKey + ' report was supplied')
+    || normalized.includes('no ' + departmentKey + ' report supplied')
+    || normalized.includes('no ' + shortKey + ' report was supplied')
+    || normalized.includes('no ' + shortKey + ' report supplied')) return false;
+
+  const otherDepartments = [
+    'Sales & Business Development',
+    'Operations & Administration',
+    'Technology & Engineering',
+    'Finance & Accounting',
+  ].filter((name) => name !== department);
+  const markdownHeadings = report.split(String.fromCharCode(10)).map((line) => line.trim().replace(/^#+\s*/, '').toLowerCase());
+  for (const other of otherDepartments) {
+    const shortOther = other.startsWith('Sales ') ? 'sales'
+      : other.startsWith('Operations ') ? 'operations'
+        : other.startsWith('Technology ') ? 'technology' : 'finance';
+    if (markdownHeadings.some((heading) => heading === shortOther || heading.startsWith(shortOther + ' '))) return false;
+  }
+  return true;
 }
 
 export function canFinalizeStatusReport(completedDepartments: string[], outstandingDepartments: string[]): boolean {
@@ -185,7 +205,7 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
           `You are the department head for ${item.department}, reporting to the CEO of Tambala Technologies.`,
           `STRICT OWNERSHIP: Produce ONLY the ${item.department} section. Do not write, summarize, estimate, or make claims about Sales, Operations, Technology, Finance, or any other department outside your own assigned scope.`,
           `Your exclusive scope: ${item.focus}`,
-          'Use only the supplied records for your department. Do not treat the Founder objective as permission to report for other departments. Do not invent names, counts, revenue, outcomes, dates, incidents, or activity. Separate verified facts from gaps. If the records do not contain a metric, state that it is not recorded or unavailable. Do not use web research to fill gaps in internal company records. Return only your own department section, at most 150 words.',
+          'Begin with the exact department name as your heading. Use only the supplied records for your department. Do not report for other departments. Do not invent names, counts, revenue, outcomes, dates, incidents, or activity. Separate verified facts from gaps. ZERO DATA IS A VALID REPORT: if no records exist, explicitly say that no records are currently available and identify which measures cannot be verified; do not imply that no activity occurred. Acknowledge partial data honestly. Do not use web research to fill gaps in internal company records. End with a complete sentence. Return only your own department section, at most 150 words.',
           `Parent Founder objective (context only; not an expansion of your authority): ${objective}`,
           `Department source records (source of truth): ${JSON.stringify(item.agent === 'outreach' ? sales : item.agent === 'operations' ? { organization: context.organization ?? null, record_counts: context.record_counts ?? null, projects: customers.projects, tasks: customers.tasks, totals: customers.totals, source_availability: 'CRM project and task records are available; no formal process-change log or risk register was supplied.' } : item.agent === 'engineering' ? { organization: context.organization ?? null, source_availability: 'No deployment inventory, monitoring feed, incident log, or infrastructure report was supplied.' } : { source_availability: 'No accounting ledger, revenue report, expense report, budget target, or cash-position statement was supplied.' })}`,
         ].join('\n\n'),

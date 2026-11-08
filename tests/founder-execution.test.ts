@@ -48,13 +48,27 @@ test('department report validation rejects missing, placeholder, and truncated r
   assert.equal(isUsableDepartmentReport('Finance & Accounting', '   '), false);
 });
 
-test('department report validation accepts a substantive report that transparently identifies missing records', () => {
+test('department report validation accepts substantive reports even when a department has zero records', () => {
   assert.equal(isUsableDepartmentReport(
     'Operations & Administration',
-    'Operations reviewed the available task and project records. Three active projects are recorded; no formal process-change log or risk register is available, so those measures remain unverified.',
+    'Operations & Administration — Operations reviewed the available task and project records. Three active projects are recorded; no formal process-change log or risk register is available, so those measures remain unverified.',
   ), true);
   assert.equal(isUsableDepartmentReport(
     'Finance & Accounting',
-    'No accounting ledger, expense register, or cash-position statement is recorded. Revenue, expenses, cash position, and upcoming obligations therefore remain unavailable for verification.',
+    'Finance & Accounting — No accounting ledger, expense register, or cash-position statement is currently recorded. Revenue, expenses, cash position, and upcoming obligations therefore remain unavailable for verification.'
+  ), true);
+});
+
+
+test('department report validation rejects unfinished output and reports without their own department heading', () => {
+  assert.equal(isUsableDepartmentReport('Technology & Engineering', 'No Technology & Engineering report'), false);
+  assert.equal(isUsableDepartmentReport('Technology & Engineering', 'No monitoring feed or incident log is available.'), false);
+  assert.equal(isUsableDepartmentReport('Operations & Administration', 'Finance & Accounting — No accounting records are available. Revenue and expenses cannot be verified.'), false);
+});
+
+test('zero-data report is valid when it clearly identifies the department and data gaps', () => {
+  assert.equal(isUsableDepartmentReport(
+    'Technology & Engineering',
+    'Technology & Engineering — No deployment inventory, monitoring feed, or incident log is currently recorded. Service health and infrastructure capacity therefore remain unverified.',
   ), true);
 });
