@@ -71,9 +71,10 @@ your own approval decisions (signed as TT-000). Each signed item ends with a lin
 
 1. Set `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_INSTANCE` (the instance connected to the business number) and
    `TAMBALA_FOUNDER_WHATSAPP` (your own number, where employees reach you).
-2. In Evolution, set the instance webhook to `https://<your-host>/webhooks/evolution?token=<EVOLUTION_WEBHOOK_TOKEN>`
+2. Set `TAMBALA_WHATSAPP_OUTBOX_SCHEDULER=true` on the always-on Render service (optional interval: `TAMBALA_WHATSAPP_OUTBOX_INTERVAL_MINUTES=1`). This drains approved/queued messages automatically. Without it, use the dashboard's **Process queue** action. Apply `20261108_whatsapp_outbox_claims.sql` before enabling the worker.
+3. In Evolution, set the instance webhook to `https://<your-host>/webhooks/evolution?token=<EVOLUTION_WEBHOOK_TOKEN>`
    with the `MESSAGES_UPSERT` event on and "webhook base64" off. Without the token the endpoint refuses everything.
-3. Open **Messages** in the dashboard and press *Send me a test*.
+4. Open **Messages** in the dashboard and press *Send me a test*.
 
 How it behaves:
 
@@ -83,7 +84,7 @@ How it behaves:
   a few seconds apart, within the daily cap, never twice within 24 hours, and never to a number that opted out.
   Outreach ends with "Reply STOP to opt out"; a bare STOP blocks the number permanently and tells you.
 - **Who may write to customers:** Outreach, Customer Relations, Finance and Payments. Everyone else may only message you.
-- **Replies** are stored and forwarded to you. They are never fed to the employees as instructions.
+- **Replies** are stored and forwarded to you. They are never fed to the employees as instructions. Incoming media attachments are not yet downloaded or made available in the dashboard; caption-only text is handled as text.
 - **Caveat:** Evolution uses an unofficial WhatsApp connection. Bulk or cold messaging can get a number banned. Keep volume low.
 - WhatsApp sometimes hides a sender's number (`@lid`). Such messages are stored but cannot be matched, opted out or treated as you.
 
