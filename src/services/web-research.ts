@@ -12,18 +12,20 @@ export interface WebResearchResult {
 
 export interface WebResearchOptions {
   maxResults?: number;
-  searchDepth?: 'basic' | 'advanced';
-  topic?: 'general' | 'news';
+  searchDepth?: 'ultra-fast' | 'fast' | 'basic' | 'advanced';
+  topic?: 'general' | 'news' | 'finance';
   timeRange?: 'day' | 'week' | 'month' | 'year';
   days?: number;
   includeDomains?: string[];
   excludeDomains?: string[];
+  chunksPerSource?: number;
+  country?: string;
   timeoutMs?: number;
 }
 
 const TAVILY_URL = 'https://api.tavily.com/search';
 const DEFAULT_TIMEOUT_MS = 20_000;
-const MAX_RESULTS = 10;
+const MAX_RESULTS = 20;
 const MAX_SNIPPET_LENGTH = 4_000;
 const TRACKING_PARAMS = new Set([
   'fbclid', 'gclid', 'mc_cid', 'mc_eid', 'ref', 'ref_src',
@@ -57,8 +59,14 @@ function boundedInteger(value: number | undefined, fallback: number, min: number
 function normalizeDomains(domains: string[] | undefined): string[] | undefined {
   if (!domains?.length) return undefined;
   const normalized = [...new Set(domains
-    .map((domain) => domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, ''))
-    .filter((domain) => domain.length <= 253 && /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(domain)))];
+    .map((entry) => entry.trim().toLowerCase().replace(/^https?:\\/\\//, '').replace(/\\/$/, ''))
+    .filter((entry) => {
+      if (!entry || entry.length > 300 || /[?#@]/.test(entry)) return false;
+      const [host, ...pathParts] = entry.split('/');
+      const validHost = /^(?:\\*\\.)?(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)*[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(host);
+      const validPath = pathParts.every((part) => /^[a-z0-9._~-]+$/.test(part));
+      return validHost && validPath;
+    }))];
   return normalized.length ? normalized.slice(0, 20) : undefined;
 }
 
@@ -101,6 +109,9 @@ export async function webResearch(
   const timeoutMs = boundedInteger(options.timeoutMs, DEFAULT_TIMEOUT_MS, 1_000, 60_000);
   const searchDepth = options.searchDepth ?? 'advanced';
   const topic = options.topic ?? 'general';
+  if (options.days !== undefined && topic !== 'news') {
+    throw new Error('The days freshness filter is only supported for news searches.');
+  }
 
   const payload: Record<string, unknown> = {
     api_key: apiKey,
@@ -113,7 +124,11 @@ export async function webResearch(
     include_images: false,
   };
   if (options.timeRange) payload.time_range = options.timeRange;
-  if (options.days !== undefined) payload.days = boundedInteger(options.days, 7, 1, 365);
+  if (options.days !== undefined) payload.days = boundedInteger(options.days, 7, 0, 365);
+  if (options.chunksPerSource !== undefined && (searchDepth === 'advanced' || searchDepth === 'fast')) {
+    payload.chunks_per_source = boundedInteger(options.chunksPerSource, 3, 1, 5);
+  }
+  if (options.country?.trim()) payload.country = options.country.trim().slice(0, 80);
   const includeDomains = normalizeDomains(options.includeDomains);
   const excludeDomains = normalizeDomains(options.excludeDomains);
   if (includeDomains) payload.include_domains = includeDomains;
