@@ -6,10 +6,10 @@ import { formatResearchContext, webResearch } from './web-research.js';
 
 const clients = new Map<AgentName, OpenAI>();
 
-// Conservative character budgets keep prompts below common provider TPM limits.
-const MAX_SYSTEM_PROMPT_CHARS = 6_500;
-const MAX_USER_INPUT_CHARS = 7_000;
-const MAX_CONTEXT_CHARS = 1_800;
+// Preserve the full organization and grounding rules while keeping total requests below provider TPM limits.
+const MAX_SYSTEM_PROMPT_CHARS = 9_000;
+const MAX_USER_INPUT_CHARS = 3_000;
+const MAX_CONTEXT_CHARS = 700;
 const MAX_COMPLETION_TOKENS = 900;
 
 function boundText(value: string, maxChars: number): string {
@@ -64,13 +64,14 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
     const userInput = boundText(input, MAX_USER_INPUT_CHARS);
     const contextText = context === undefined ? '' : '\n\nTambala business context:\n' + serializeBoundedContext(context);
     const userMessage = boundText(userInput + contextText, MAX_USER_INPUT_CHARS + MAX_CONTEXT_CHARS + 40);
+    const completionBudget = agent === 'operations' ? 1_600 : MAX_COMPLETION_TOKENS;
     const requestPayload = {
       model: config.model,
       messages: [
         { role: 'system' as const, content: systemPrompt },
         { role: 'user' as const, content: userMessage },
       ],
-      max_completion_tokens: MAX_COMPLETION_TOKENS,
+      max_completion_tokens: completionBudget,
       temperature: 0.2,
     };
     const requestBodyBytes = new TextEncoder().encode(JSON.stringify(requestPayload)).byteLength;
@@ -82,7 +83,7 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
       systemPromptChars: systemPrompt.length,
       userMessageChars: userMessage.length,
       contextChars: contextText.length,
-      maxCompletionTokens: MAX_COMPLETION_TOKENS,
+      maxCompletionTokens: completionBudget,
     }));
     let response: {
       choices: Array<{
@@ -124,7 +125,7 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
         refusalPresent: Boolean(firstChoice?.message?.refusal),
         reasoningPresent: Boolean(firstChoice?.message?.reasoning),
       }));
-      const retryPayload = { ...requestPayload, max_completion_tokens: 1_600 };
+      const retryPayload = { ...requestPayload, max_completion_tokens: 2_400 };
       response = await getClient(agent).chat.completions.create(retryPayload);
       content = response.choices[0]?.message?.content;
     }
