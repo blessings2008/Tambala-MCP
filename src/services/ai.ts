@@ -13,7 +13,7 @@ const MAX_CONTEXT_CHARS = 1_800;
 const MAX_COMPLETION_TOKENS = 900;
 
 function boundText(value: string, maxChars: number): string {
-  const normalized = value.replace(/\s+/g, ' ').trim();
+  const normalized = value.replace(/[ \t]+/g, ' ').replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   if (normalized.length <= maxChars) return normalized;
   const marker = '\n[Content shortened to keep the provider request within its size budget.]\n';
   const available = Math.max(0, maxChars - marker.length);
