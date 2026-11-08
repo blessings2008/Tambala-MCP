@@ -37,7 +37,7 @@ test('handoff parsing keeps valid requests, drops bad ones, strips the block', (
 test('duty prompts introduce the employee and allow handoffs, but not for the CEO briefing', () => {
   const lt = localTime(at('2026-11-09T07:00:00Z'));
   const sales = buildDutyPrompt(duty('sales-pipeline-review'), lt, { employeeNumber: 'TT-002', title: 'Head of Sales' });
-  assert.match(sales, /You are employee TT-002, Head of Sales/); assert.match(sales, /Do not sign/); assert.match(sales, /HANDOFFS:/); assert.match(sales, /never claim a message was sent/);
+  assert.match(sales, /You are employee TT-002, Head of Sales/); assert.match(sales, /Do not sign/); assert.match(sales, /HANDOFFS:/); assert.match(sales, /never claim a message was sent/i);
   assert.doesNotMatch(buildDutyPrompt(duty('ceo-daily-briefing'), localTime(at('2026-11-09T14:45:00Z'))), /HANDOFFS:/);
 });
 
