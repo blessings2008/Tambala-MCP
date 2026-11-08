@@ -333,4 +333,6 @@ test('the advisory Board cannot resolve or approve organizational approval reque
   assert.match(boardResult.reason, /advisory/);
   assert.equal(founderResult.allowed, false);
   assert.match(founderResult.reason, /advisory/);
+  assert.equal(role('board').capabilities.includes('approvals.resolve_board'), false);
+  assert.match(role('board').title, /AI Advisory Board/);
 });
