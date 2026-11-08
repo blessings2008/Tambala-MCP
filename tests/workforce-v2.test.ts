@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { STANDING_DUTIES } from '../src/organization/workforce/duties.ts';
 import { resolveDuties, validateCustomDuty, validateOverride, DutyConfigError, saveCustomDuty, InMemoryDutyConfigStore } from '../src/organization/workforce/duty-config.ts';
-import { extractHandoffs, queueHandoff, processHandoffs, InMemoryHandoffStore, HandoffError, colleagueList, type HandoffDeps } from '../src/organization/workforce/handoffs.ts';
+import { extractHandoffs, queueHandoff, processHandoffs, InMemoryHandoffStore, HandoffError, colleagueList, isFounderClarificationRequest, type HandoffDeps } from '../src/organization/workforce/handoffs.ts';
 import { buildDutyPrompt, runDuty, type DutyDeps } from '../src/organization/workforce/duty-runner.ts';
 import { InMemoryDutyStore } from '../src/organization/workforce/duty-store.ts';
 import { EMPLOYEE_NUMBERS, getEmployeeProfiles } from '../src/organization/workforce/profiles.ts';
@@ -97,6 +97,20 @@ test('the Founder assigns work and the employee completes it', async () => {
   assert.equal((await processHandoffs(deps)).length, 0); // nothing left in the inbox
 });
 
+test('task rooms pause on clarification and retain their history instead of completing', async () => {
+  assert.equal(isFounderClarificationRequest('Clarification Required — do you mean Malabi Exclusive Lodges or the dessert?'), true);
+  assert.equal(isFounderClarificationRequest('The lodge is in Lilongwe. Would you like a summary?'), false);
+  const { deps, store } = handoffDeps({ askAgent: async () => '## Clarification Required\\nDo you mean Malabi Exclusive Lodges in Lilongwe or the dessert?' });
+  const h = await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'research', request: 'Research Malabi and verify the correct entity' });
+  assert.ok(h.room_id);
+  const out = await processHandoffs(deps);
+  assert.equal(out[0].status, 'waiting');
+  assert.equal(store.rows[0].status, 'awaiting_founder');
+  assert.equal(store.rooms[0].status, 'awaiting_founder');
+  assert.equal(store.rooms[0].closed_at, null);
+  assert.ok(store.roomEvents.some((event) => event.event_type === 'clarification_requested'));
+  assert.equal((await processHandoffs(deps)).length, 0);
+});
 test('an unavailable colleague leaves the work waiting without rewriting it every tick', async () => {
   const { deps, store } = handoffDeps({ agentUnavailableReason: async () => 'Role is not active.' });
   await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'marketing', request: 'Draft a one-page overview of our web services' });
