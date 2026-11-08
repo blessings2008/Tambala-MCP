@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initialOrganization } from '../src/organization/seed.js';
@@ -335,4 +336,16 @@ test('the advisory Board cannot resolve or approve organizational approval reque
   assert.match(founderResult.reason, /advisory/);
   assert.equal(role('board').capabilities.includes('approvals.resolve_board'), false);
   assert.match(role('board').title, /AI Advisory Board/);
+});
+
+
+test('Board governance migration preserves advisory-only and Founder decision safeguards', () => {
+  const migration = readFileSync(new URL('../supabase/migrations/20261108150000_approved_board_governance.sql', import.meta.url), 'utf8');
+  assert.match(migration, /voting_rights boolean not null default false check \(voting_rights = false\)/);
+  assert.match(migration, /check \(chair_role_id = 'founder'\)/);
+  assert.match(migration, /check \(created_by_role_id = 'founder'\)/);
+  assert.match(migration, /check \(status = 'submitted' or founder_decided_by_role_id = 'founder'\)/);
+  assert.match(migration, /'ceo', 'Chief Executive Officer \(non-voting observer\)', 'executive_observer'/);
+  assert.match(migration, /alter table public\.organization_board_meetings enable row level security/);
+  assert.match(migration, /revoke all on public\.organization_board_meetings from public, anon, authenticated/);
 });
