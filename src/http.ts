@@ -28,6 +28,7 @@ import { handleHealth, handleNotFound } from './http/health.js';
 import { isAuthorized, unauthorized } from './http/auth.js';
 import { advanceTrackedTask, beginTrackedTask, failTrackedTask } from './organization/task-tracking.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo, type AgentName } from './services/ai.js';
+import { hasResearchSourceUrls } from './services/web-research.js';
 import { isCompanyStatusRequest, runCompanyStatusReport } from './channels/founder-execution.js';
 
 const nodeHandler = toNodeHandler(mcpHandler);
@@ -145,13 +146,6 @@ function compactResearchEvidence(value: unknown): string {
   if (!value) return 'No web research evidence was returned.';
   const raw = JSON.stringify(value);
   return truncateForModel(raw, 4500);
-}
-
-/** A generated report cannot be marked complete when the requested web research has no source URLs. */
-export function hasResearchSourceUrls(value: unknown): boolean {
-  if (value === undefined || value === null) return false;
-  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
-  return /https?:\\/\\/[^\\s"'<>]+/i.test(serialized);
 }
 
 function validStage(value: unknown): value is ExecutionStage {
