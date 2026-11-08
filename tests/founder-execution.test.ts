@@ -44,6 +44,7 @@ test('status report cannot be finalized while any department is incomplete or bl
 test('department report validation rejects missing, placeholder, and truncated reports', () => {
   assert.equal(isUsableDepartmentReport('Operations & Administration', 'No Operations & Administration report was supplied.'), false);
   assert.equal(isUsableDepartmentReport('Operations & Administration', 'No Operations report supplied; the report is unavailable.'), false);
+  assert.equal(isUsableDepartmentReport('Operations & Administration', 'Operations & Administration — No operational report was supplied. Consequently, operational metrics are unavailable.'), false);
   assert.equal(isUsableDepartmentReport('Sales & Business Development', 'The report is truncated — further details not provided.'), false);
   assert.equal(isUsableDepartmentReport('Finance & Accounting', '   '), false);
 });
@@ -52,6 +53,10 @@ test('department report validation accepts substantive reports even when a depar
   assert.equal(isUsableDepartmentReport(
     'Operations & Administration',
     'Operations & Administration — Operations reviewed the available task and project records. Three active projects are recorded; no formal process-change log or risk register is available, so those measures remain unverified.',
+  ), true);
+  assert.equal(isUsableDepartmentReport(
+    'Operations & Administration',
+    'Operations & Administration — No operational records are currently available in the system. Project progress, resource allocation and process performance therefore cannot be verified; this does not establish that no operational activity occurred.'
   ), true);
   assert.equal(isUsableDepartmentReport(
     'Finance & Accounting',
