@@ -153,7 +153,7 @@ test('outbox: customer follow-ups wait for approval, tell the Founder, and go ou
 
 test('outbox: autonomous first contact removes internal analysis and routing notes', async () => {
   const h = outboxHarness();
-  const result = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello, we build business websites.\\nInternal analysis: prioritise this prospect.\\nRouting note: assign to CEO.', purpose: 'outreach', contactLabel: 'Verified Test Lodge (lead)' });
+  const result = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello, we build business websites.\nInternal analysis: prioritise this prospect.\nRouting note: assign to CEO.', purpose: 'outreach', contactLabel: 'Verified Test Lodge (lead)' });
   assert.equal(result.status, 'queued');
   assert.match(h.store.rows[0].text, /Hello, we build business websites/);
   assert.doesNotMatch(h.store.rows[0].text, /Internal analysis|Routing note|prioritise this prospect|assign to CEO/i);
