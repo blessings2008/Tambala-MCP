@@ -359,4 +359,15 @@ test('Board dashboard inline JavaScript parses successfully', () => {
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
   assert.ok(scripts.length > 0, 'Dashboard should contain an inline script.');
   for (const script of scripts) assert.doesNotThrow(() => new Script(script[1]));
+  for (const controlId of ['boardEditMeeting', 'boardAgendaForm', 'boardMinutesForm', 'boardActionForm', 'boardAttendanceEditor']) {
+    assert.match(html, new RegExp('id="' + controlId + '"'), `Dashboard should expose ${controlId}.`);
+  }
+  for (const route of [
+    '/api/dashboard/board/agenda/create',
+    '/api/dashboard/board/attendance/update',
+    '/api/dashboard/board/minutes/save',
+    '/api/dashboard/board/recommendations/decision',
+    '/api/dashboard/board/actions/create',
+    '/api/dashboard/board/actions/update',
+  ]) assert.ok(http.includes(route), `Founder Board endpoint missing: ${route}`);
 });
