@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { STANDING_DUTIES } from '../src/organization/workforce/duties.ts';
 import { resolveDuties, validateCustomDuty, validateOverride, DutyConfigError, saveCustomDuty, InMemoryDutyConfigStore } from '../src/organization/workforce/duty-config.ts';
-import { extractHandoffs, queueHandoff, processHandoffs, InMemoryHandoffStore, HandoffError, colleagueList, isFounderClarificationRequest, type HandoffDeps } from '../src/organization/workforce/handoffs.ts';
+import { extractHandoffs, queueHandoff, processHandoffs, InMemoryHandoffStore, HandoffError, colleagueList, isFounderClarificationRequest, resumeFounderHandoff, type HandoffDeps } from '../src/organization/workforce/handoffs.ts';
 import { buildDutyPrompt, runDuty, type DutyDeps } from '../src/organization/workforce/duty-runner.ts';
 import { InMemoryDutyStore } from '../src/organization/workforce/duty-store.ts';
 import { EMPLOYEE_NUMBERS, getEmployeeProfiles } from '../src/organization/workforce/profiles.ts';
@@ -110,6 +110,26 @@ test('task rooms pause on clarification and retain their history instead of comp
   assert.equal(store.rooms[0].closed_at, null);
   assert.ok(store.roomEvents.some((event) => event.event_type === 'clarification_requested'));
   assert.equal((await processHandoffs(deps)).length, 0);
+});
+test('Founder clarification reopens the same room and resumes its original task', async () => {
+  let answer = 'Clarification Required: which Malabi do you mean?';
+  let starts = 0;
+  const { deps, store } = handoffDeps({
+    askAgent: async () => answer,
+    tasks: { begin: async () => { starts += 1; return { taskId: 'same-task' }; }, advance: async () => {}, fail: async () => {} },
+  });
+  const handoff = await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'research', request: 'Research Malabi and verify the correct entity' });
+  await processHandoffs(deps);
+  const roomId = store.rows[0].room_id;
+  await resumeFounderHandoff(store, handoff.id, 'I mean Malabi Exclusive Lodges in Lilongwe.');
+  answer = 'Verified findings and source links are ready.';
+  await processHandoffs(deps);
+  assert.equal(starts, 1);
+  assert.equal(store.rows[0].status, 'completed');
+  assert.equal(store.rows[0].room_id, roomId);
+  assert.equal(store.rows[0].task_id, 'same-task');
+  assert.equal(store.rooms[0].status, 'archived');
+  assert.ok(store.roomEvents.some((event) => event.event_type === 'founder_clarification_received'));
 });
 test('an unavailable colleague leaves the work waiting without rewriting it every tick', async () => {
   const { deps, store } = handoffDeps({ agentUnavailableReason: async () => 'Role is not active.' });
