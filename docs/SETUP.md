@@ -30,7 +30,7 @@ follow-ups at 09:00, Finance reviews billing readiness on Mondays, and the CEO c
 3. Open **Workforce** in the dashboard. A role must be *active* and have a working model to do its job; otherwise its
    duties show as skipped with the reason. Use **Run now** on a duty to test it immediately.
 4. Anything addressed to a customer is parked in **Approvals**. Approve or reject there (rejecting needs a reason).
-   Approving records your decision only; no channel in this server sends messages, so you still send the message yourself.
+   Approval releases the message to the WhatsApp outbox; it is sent only inside the allowed sending window and subject to opt-out and daily-limit checks. Check **Messages** for delivery status.
 5. From Claude chat: `get_workforce_status`, `run_due_organization_duties`, `get_daily_briefing`,
    `decide_organization_approval` (Founder-only when role enforcement is on).
 
@@ -83,9 +83,15 @@ How it behaves:
   a few seconds apart, within the daily cap, never twice within 24 hours, and never to a number that opted out.
   Outreach ends with "Reply STOP to opt out"; a bare STOP blocks the number permanently and tells you.
 - **Who may write to customers:** Outreach, Customer Relations, Finance and Payments. Everyone else may only message you.
-- **Replies** are stored and forwarded to you. They are never fed to the employees as instructions. Incoming media attachments are not yet downloaded or made available in the dashboard; caption-only text is handled as text.
+- **Customer replies** are stored and forwarded to you; they are not treated as employee instructions.
+- **Your own messages** from `TAMBALA_FOUNDER_WHATSAPP` are packaged as a structured Founder instruction and delivered to the CEO. The CEO uses deterministic capability routing and may hand the task to its mapped specialist only when that role is active and its dedicated runtime is configured. The response returns to your WhatsApp. Approval and role-binding controls still apply to consequential writes and customer-facing actions.
+- Captionless images, videos, documents, audio, locations and contact cards are recorded as typed attachment notices. This build records their presence and metadata; it does not yet download or store the original media file. Incoming media attachments are not yet downloaded or made available in the dashboard; caption-only text is handled as text.
 - **Caveat:** Evolution uses an unofficial WhatsApp connection. Bulk or cold messaging can get a number banned. Keep volume low.
 - WhatsApp sometimes hides a sender's number (`@lid`). Such messages are stored but cannot be matched, opted out or treated as you.
+
+
+
+For hosts that sleep (including Render's free web-service plan), do not rely on an in-process timer. Configure an external cron to call `POST https://<your-host>/api/channels/outbox/run` every minute with `Authorization: Bearer $TAMBALA_SCHEDULER_TOKEN`. The token must be at least 24 characters. On an always-on host, you may instead set `TAMBALA_WHATSAPP_OUTBOX_SCHEDULER=true` and `TAMBALA_WHATSAPP_OUTBOX_INTERVAL_MINUTES=1`. The outbox uses atomic claims to prevent two workers from sending the same queued row concurrently.
 
 ## PDF documents
 
