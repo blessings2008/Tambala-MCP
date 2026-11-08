@@ -146,7 +146,7 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
           `You are reporting to the CEO of Tambala Technologies. This is a real internal department assignment for a Founder-requested company status report.`,
           `Department: ${item.department}`,
           `Your scope: ${item.focus}`,
-          'Prepare your section now from the supplied company records. Do not ask the Founder to approve the report or propose future hand-offs. Do not invent names, counts, revenue, outcomes, dates, support tickets, or activity. Separate verified facts from gaps. If the records do not contain a metric, state that it is not recorded or unavailable. Keep the response concise but substantive.',
+          'Prepare your section now from the supplied company records. Do not ask the Founder to approve the report or propose future hand-offs. Do not invent names, counts, revenue, outcomes, dates, support tickets, or activity. Separate verified facts from gaps. If the records do not contain a metric, state that it is not recorded or unavailable. Return at most 180 words.',
           `Original Founder objective: ${objective}`,
           `Relevant source records (source of truth): ${JSON.stringify(item.agent === 'outreach' ? sales : customers)}`,
         ].join('\n\n'),
