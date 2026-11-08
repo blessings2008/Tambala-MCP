@@ -109,7 +109,7 @@ test('finished duty work carries its signature everywhere it is stored', () => w
     tasks: { begin: async () => ({ taskId: 't', tracking: 'unavailable' }), advance: async () => {}, fail: async () => {} },
     approvals: { create: async (a) => { approvals.push(a); } }, reports: { save: async (r) => { reports.push(r); } },
   };
-  const duty = resolveDuties([], []).find((d) => d.id === 'sales-pipeline-review')!;
+  const duty = resolveDuties([], []).find((d) => d.id === 'customer-followups')!;
   const out = await runDuty(deps, duty);
   assert.equal(out.status, 'awaiting_approval');
   assert.equal(ledger.rows.length, 1);
