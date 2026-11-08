@@ -284,7 +284,13 @@ export function buildResearchQuery(objective: string, match: CapabilityMatch): s
       .replace(/^(please\s+)?(research|investigate)\s+(on|about|into)?\s*/i, '')
       .replace(/[.?!,:;]+$/g, '')
       .trim();
-    if (subject) return subject.slice(0, 500);
+    if (subject) {
+      const qualifiers = match.capability.researchKeywords
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .slice(1, 4);
+      return [subject, ...qualifiers].join(', ').slice(0, 500);
+    }
   }
 
   const terms = match.capability.researchKeywords
