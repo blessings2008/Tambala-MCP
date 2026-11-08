@@ -36,12 +36,12 @@ export interface QueueResult { id: string; status: MessageRow['status']; reason?
 
 /** Remove internal employee identities and workflow annotations from customer-facing copy. */
 export function sanitizeCustomerMessage(value: string): string {
-  const internalLine = /^\\s*(?:by\\s+(?:the\\s+)?(?:ceo|chief executive officer|head of|director of)\\b.*|(?:prepared|generated|drafted|sent)\\s+by\\b.*|(?:agent|role|employee|department)\\s*:\\s*.*|(?:ceo|chief executive officer|head of [^|—–-]+|director of [^|—–-]+)\\s*[|—–-]\\s*TT[-\\s]?\\d{3}.*|(?:—|–|-{1,2})?\\s*TT[-\\s]?\\d{3}\\b.*)$/i;
-  return value.split(/\\r?\\n/)
+  const internalLine = /^\s*(?:by\s+(?:the\s+)?(?:ceo|chief executive officer|head of|director of)\b.*|(?:prepared|generated|drafted|sent)\s+by\b.*|(?:agent|role|employee|department)\s*:\s*.*|(?:ceo|chief executive officer|head of [^|—–-]+|director of [^|—–-]+)\s*[|—–-]\s*TT[-\s]?\d{3}.*|(?:—|–|-{1,2})?\s*TT[-\s]?\d{3}\b.*)$/i;
+  return value.split(/\r?\n/)
     .filter((line) => !internalLine.test(line))
-    .map((line) => line.replace(/\\bTT[-\\s]?\\d{3}\\b/gi, '').trimEnd())
-    .join('\\n')
-    .replace(/\\n{3,}/g, '\\n\\n')
+    .map((line) => line.replace(/\bTT[-\s]?\d{3}\b/gi, '').trimEnd())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
