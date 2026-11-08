@@ -84,7 +84,13 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
       contextChars: contextText.length,
       maxCompletionTokens: MAX_COMPLETION_TOKENS,
     }));
-    let response: { choices: Array<{ message: { content: string | null } }> };
+    let response: {
+      choices: Array<{
+        finish_reason?: string | null;
+        message: { content: string | null; refusal?: string | null; reasoning?: string | null };
+      }>;
+      usage?: { completion_tokens?: number; prompt_tokens?: number; total_tokens?: number };
+    };
     try {
       response = await getClient(agent).chat.completions.create(requestPayload);
     } catch (error) {
@@ -107,8 +113,34 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
       }));
       throw new Error(`${agent} agent ${config.provider} request failed${status ? ` (HTTP ${status})` : ''}: ${detail}`);
     }
-    const content = response.choices[0]?.message?.content;
-    if (typeof content !== 'string' || !content.trim()) throw new Error(`The ${agent} AI provider returned an empty response.`);
+    let content = response.choices[0]?.message?.content;
+    if ((typeof content !== 'string' || !content.trim()) && agent === 'operations') {
+      const firstChoice = response.choices[0];
+      console.warn('Operations provider returned no message content; retrying once with a larger completion budget', JSON.stringify({
+        provider: config.provider,
+        model: config.model,
+        finishReason: firstChoice?.finish_reason ?? null,
+        completionTokens: response.usage?.completion_tokens ?? null,
+        refusalPresent: Boolean(firstChoice?.message?.refusal),
+        reasoningPresent: Boolean(firstChoice?.message?.reasoning),
+      }));
+      const retryPayload = { ...requestPayload, max_completion_tokens: 1_600 };
+      response = await getClient(agent).chat.completions.create(retryPayload);
+      content = response.choices[0]?.message?.content;
+    }
+    if (typeof content !== 'string' || !content.trim()) {
+      const choice = response.choices[0];
+      console.error('AI provider returned no usable message content', JSON.stringify({
+        agent,
+        provider: config.provider,
+        model: config.model,
+        finishReason: choice?.finish_reason ?? null,
+        completionTokens: response.usage?.completion_tokens ?? null,
+        refusalPresent: Boolean(choice?.message?.refusal),
+        reasoningPresent: Boolean(choice?.message?.reasoning),
+      }));
+      throw new Error(`The ${agent} AI provider returned an empty response.`);
+    }
     return content;
   } finally {
     releaseSlot();
