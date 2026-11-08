@@ -153,9 +153,9 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
         { communicationType: 'CEO department assignment', sender: 'Chief Executive Officer', recipient: item.roleTitle, parentTaskId: parent.taskId, department: item.department },
       );
       await advanceTrackedTask(child.taskId, [
-        { status: 'department_review', stage: 'review', eventType: 'department_report_returned_for_review', departmentId: item.agent, roleId: item.roleId, result: { parentTaskId: parent.taskId, response: result.slice(0, 7000) } },
-        { status: 'returned_to_ceo', stage: 'review', eventType: 'department_report_accepted_by_ceo', departmentId: item.agent, roleId: item.roleId },
-        { status: 'completed', stage: 'complete', eventType: 'department_report_assignment_completed', departmentId: item.agent, roleId: item.roleId, completedAt: new Date().toISOString() },
+        { status: 'department_review', stage: 'review', eventType: 'department_report_returned_for_review', departmentId: AGENT_DIRECTORY[item.agent].unitId, roleId: item.roleId, result: { parentTaskId: parent.taskId, response: result.slice(0, 1800) } },
+        { status: 'returned_to_ceo', stage: 'review', eventType: 'department_report_accepted_by_ceo', departmentId: AGENT_DIRECTORY[item.agent].unitId, roleId: item.roleId },
+        { status: 'completed', stage: 'complete', eventType: 'department_report_assignment_completed', departmentId: AGENT_DIRECTORY[item.agent].unitId, roleId: item.roleId, completedAt: new Date().toISOString() },
       ]);
       results.push({ department: item.department, agent: item.agent, taskId: child.taskId, result });
     } catch (error) {
