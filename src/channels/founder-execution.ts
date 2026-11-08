@@ -17,14 +17,31 @@ const STATUS_WORKSTREAMS: {
   {
     agent: 'outreach',
     department: 'Sales & Business Development',
-    focus: 'Lead and prospect pipeline, outreach activity, recent wins/losses only where recorded, follow-up dates, and blockers.',
+    focus: 'Qualified prospect pipeline, prospect categories, outreach activity, meetings, proposals, follow-up dates, sales blockers and opportunities.',
   },
   {
-    agent: 'followup',
-    department: 'Customer Relations & Support',
-    focus: 'Active client records, client projects, outstanding tasks, due dates, relationship follow-ups, and support blockers.',
+    agent: 'operations',
+    department: 'Operations & Administration',
+    focus: 'Internal workflow efficiency, completed process changes, outstanding operational tasks, administrative controls and recorded operational risks.',
+  },
+  {
+    agent: 'engineering',
+    department: 'Technology & Engineering',
+    focus: 'System and service health, deployments, completed technical changes, incidents, infrastructure capacity and recorded technology risks.',
+  },
+  {
+    agent: 'finance',
+    department: 'Finance & Accounting',
+    focus: 'Recorded revenue and targets, expense categories and variances, cash position, upcoming obligations and accounting issues.',
   },
 ];
+
+export const STATUS_REPORT_DEPARTMENTS = STATUS_WORKSTREAMS.map((item) => item.department);
+
+export function canFinalizeStatusReport(completedDepartments: string[], outstandingDepartments: string[]): boolean {
+  return outstandingDepartments.length === 0
+    && STATUS_REPORT_DEPARTMENTS.every((department) => completedDepartments.includes(department));
+}
 
 export function isCompanyStatusRequest(value: string): boolean {
   const text = value.toLowerCase();
@@ -109,7 +126,7 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
     roleId: 'ceo',
   }]);
 
-  const { context, sales, customers, warnings } = await loadStatusData();
+  const { context, sales, customers } = await loadStatusData();
   const snapshot = await getOrganizationSnapshot().catch(() => null);
   const assignments = STATUS_WORKSTREAMS.map((workstream) => {
     const roleId = roleIdFor(workstream.agent);
@@ -143,12 +160,12 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
       const result = await askTambalaAI(
         item.agent,
         [
-          `You are reporting to the CEO of Tambala Technologies. This is a real internal department assignment for a Founder-requested company status report.`,
-          `Department: ${item.department}`,
-          `Your scope: ${item.focus}`,
-          'Prepare your section now from the supplied company records. Do not ask the Founder to approve the report or propose future hand-offs. Do not invent names, counts, revenue, outcomes, dates, support tickets, or activity. Separate verified facts from gaps. If the records do not contain a metric, state that it is not recorded or unavailable. Return at most 180 words.',
-          `Original Founder objective: ${objective}`,
-          `Relevant source records (source of truth): ${JSON.stringify(item.agent === 'outreach' ? sales : customers)}`,
+          `You are the department head for ${item.department}, reporting to the CEO of Tambala Technologies.`,
+          `STRICT OWNERSHIP: Produce ONLY the ${item.department} section. Do not write, summarize, estimate, or make claims about Sales, Operations, Technology, Finance, or any other department outside your own assigned scope.`,
+          `Your exclusive scope: ${item.focus}`,
+          'Use only the supplied records for your department. Do not treat the Founder objective as permission to report for other departments. Do not invent names, counts, revenue, outcomes, dates, incidents, or activity. Separate verified facts from gaps. If the records do not contain a metric, state that it is not recorded or unavailable. Do not use web research to fill gaps in internal company records. Return only your own department section, at most 150 words.',
+          `Parent Founder objective (context only; not an expansion of your authority): ${objective}`,
+          `Department source records (source of truth): ${JSON.stringify(item.agent === 'outreach' ? sales : item.agent === 'operations' ? { organization: context.organization ?? null, record_counts: context.record_counts ?? null, projects: customers.projects, tasks: customers.tasks, totals: customers.totals, source_availability: 'CRM project and task records are available; no formal process-change log or risk register was supplied.' } : item.agent === 'engineering' ? { organization: context.organization ?? null, source_availability: 'No deployment inventory, monitoring feed, incident log, or infrastructure report was supplied.' } : { source_availability: 'No accounting ledger, revenue report, expense report, budget target, or cash-position statement was supplied.' })}`,
         ].join('\n\n'),
         { communicationType: 'CEO department assignment', sender: 'Chief Executive Officer', recipient: item.roleTitle, parentTaskId: parent.taskId, department: item.department },
       );
@@ -165,18 +182,49 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
     }
   }
 
+  // The CEO may synthesize only after every required department has returned
+  // and its child task has been marked complete. Partial results are not a final report.
+  const allDepartmentsCompleted = canFinalizeStatusReport(results.map((item) => item.department), blocked.map((item) => item.department));
+  if (!allDepartmentsCompleted) {
+    if (ready.length) {
+      await advanceTrackedTask(parent.taskId, [
+        { status: 'department_review', stage: 'review', eventType: 'ceo_partial_department_reports_reviewed', roleId: 'ceo', result: { departmentsCompleted: results.map((item) => item.department), departmentsOutstanding: blocked.map((item) => item.department) } },
+        { status: 'needs_more_work', stage: 'ceo', eventType: 'founder_status_report_waiting_for_departments', roleId: 'ceo', result: { departmentsCompleted: results.map((item) => item.department), departmentsOutstanding: blocked.map((item) => item.department) } },
+      ]);
+    } else {
+      await advanceTrackedTask(parent.taskId, [{
+        status: 'needs_more_work',
+        stage: 'ceo',
+        eventType: 'founder_status_report_waiting_for_departments',
+        roleId: 'ceo',
+        result: { departmentsCompleted: results.map((item) => item.department), departmentsOutstanding: blocked.map((item) => item.department) },
+      }]);
+    }
+
+    const completedSections = results.map((item) => `## ${item.department} — completed\n${item.result}`).join('\n\n');
+    const pendingSections = blocked.map((item) => `- ${item.department}: ${item.blocker}`).join('\n');
+    const date = new Intl.DateTimeFormat('en-GB', { dateStyle: 'long', timeZone: 'Africa/Blantyre' }).format(new Date());
+    return [
+      `**Organizational status report — ${date}**`,
+      'The CEO has not issued a final consolidated report because not all required department reports have completed.',
+      completedSections,
+      pendingSections ? `**Departments still outstanding**\n${pendingSections}` : '',
+      'The report will be consolidated only after all four department heads return their own completed sections.',
+      parent.tracking === 'recorded' ? `Parent task: ${parent.taskId} (waiting for department work).` : 'Task tracking is unavailable; this progress update has no durable task record.',
+    ].filter(Boolean).join('\n\n');
+  }
+
   let report: string;
   try {
     report = await askTambalaAI(
     'orchestrator',
     [
-      'You are the CEO of Tambala Technologies. Deliver the Founder’s requested current company status report now; do not ask for scope confirmation.',
+      'You are the CEO of Tambala Technologies. All four required department heads have returned completed reports. Synthesize those four reports now.',
+      'Use exactly the four department sections supplied. Do not create additional departmental findings or fill evidence gaps.',
       `Founder objective: ${objective}`,
-      `Compact verified snapshot: ${JSON.stringify(context)}`,
-      `Department findings: ${JSON.stringify(results.map(({ department, agent, result }) => ({ department, agent, result: result.slice(0, 1200) }))) || 'None'}`,
-      `Departments not able to contribute: ${JSON.stringify(blocked.map(({ department, blocker }) => ({ department, blocker })))}`,
-      `Data loading warnings: ${JSON.stringify(warnings)}`,
-      'Write a concise executive report (maximum 350 words): executive summary, verified figures, sales, clients/projects, risks, and immediate priorities. Use only evidence supplied. Mark missing metrics unavailable, never zero. Do not claim work was done unless records confirm it.',
+      `Verified organization snapshot: ${JSON.stringify(context)}`,
+      `Department findings: ${JSON.stringify(results.map(({ department, result }) => ({ department, result: result.slice(0, 1200) }))) }`,
+      'Write a concise executive report (maximum 350 words) with a short executive summary followed by Sales, Operations, Technology and Finance. Preserve each department head’s evidence limits. Mark missing metrics unavailable, never zero. Do not claim work was done unless a department report confirms it. Do not include a date; the server will add the authoritative date.',
     ].join('\n\n'),
     { communicationType: 'CEO consolidated status report', sender: 'CEO workflow', recipient: 'Founder / Bless', messageId: envelope.message_id, parentTaskId: parent.taskId },
     );
@@ -185,28 +233,17 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
     await failTrackedTask(parent.taskId, message);
     throw error;
   }
+  const reportDate = new Intl.DateTimeFormat('en-GB', { dateStyle: 'long', timeZone: 'Africa/Blantyre' }).format(new Date());
+  report = `**Prepared for Founder / Bless — ${reportDate}**\n\n${report}`;
 
-  if (results.length) {
-    await advanceTrackedTask(parent.taskId, [
-      { status: 'department_review', stage: 'review', eventType: 'ceo_department_reports_reviewed', roleId: 'ceo', result: { departmentsCompleted: results.map((item) => item.department), departmentsBlocked: blocked.map((item) => item.department) } },
-      { status: 'returned_to_ceo', stage: 'review', eventType: 'ceo_report_consolidation_completed', roleId: 'ceo' },
-      { status: 'completed', stage: 'complete', eventType: 'founder_status_report_completed', roleId: 'ceo', result: { report: report.slice(0, 10000), departmentsCompleted: results.map((item) => item.department), departmentsBlocked: blocked.map((item) => item.department) }, completedAt: new Date().toISOString() },
-    ]);
-  } else if (ready.length) {
-    await failTrackedTask(parent.taskId, 'All assigned departments failed to return a report.');
-  } else {
-    await advanceTrackedTask(parent.taskId, [{
-      status: 'needs_more_work',
-      stage: 'ceo',
-      eventType: 'founder_status_report_partially_completed',
-      roleId: 'ceo',
-      result: { report: report.slice(0, 10000), departmentsBlocked: blocked.map((item) => item.department) },
-    }]);
-  }
+  await advanceTrackedTask(parent.taskId, [
+    { status: 'department_review', stage: 'review', eventType: 'ceo_department_reports_reviewed', roleId: 'ceo', result: { departmentsCompleted: results.map((item) => item.department) } },
+    { status: 'returned_to_ceo', stage: 'review', eventType: 'ceo_report_consolidation_completed', roleId: 'ceo' },
+    { status: 'completed', stage: 'complete', eventType: 'founder_status_report_completed', roleId: 'ceo', result: { report: report.slice(0, 10000), departmentsCompleted: results.map((item) => item.department) }, completedAt: new Date().toISOString() },
+  ]);
 
   const assignmentSummary = [
-    `Department assignments completed: ${results.length ? results.map((item) => item.department).join(', ') : 'None'}.`,
-    blocked.length ? `Unavailable departments: ${blocked.map((item) => `${item.department} — ${item.blocker}`).join('; ')}.` : '',
+    `Department reports completed: ${results.map((item) => item.department).join(', ')}.`,
     parent.tracking === 'recorded' ? `Parent task recorded: ${parent.taskId}.` : 'Task tracking is unavailable; report was generated without a durable task record.',
   ].filter(Boolean).join('\n');
   return `${report}\n\n---\n${assignmentSummary}`;
