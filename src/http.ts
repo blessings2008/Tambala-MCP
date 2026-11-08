@@ -178,7 +178,15 @@ async function resolveInternalEntityContext(objective: string): Promise<{ contex
       status: typeof row.status === 'string' ? row.status : null,
       client_id: typeof row.client_id === 'string' ? row.client_id : null,
     }));
-    const distinctNames = [...new Set(entities.map((item) => item.business_name || item.name).filter((v): v is string => Boolean(v)))];
+    const clientNames = entities
+      .filter((item) => item.record_type === 'client')
+      .map((item) => item.business_name || item.name)
+      .filter((value): value is string => Boolean(value));
+    const projectNames = entities
+      .filter((item) => item.record_type === 'project')
+      .map((item) => item.name)
+      .filter((value): value is string => Boolean(value));
+    const distinctNames = [...new Set(clientNames.length ? clientNames : projectNames)];
     return {
       context: JSON.stringify({ source: 'Tambala internal CRM/project records', entities }),
       researchSubject: distinctNames.length === 1 ? distinctNames[0] : null,
