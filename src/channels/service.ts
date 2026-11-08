@@ -33,7 +33,17 @@ export function productionOutboxDeps(store: MessageStore = messageStore(), now: 
   };
 }
 
-export const queueWhatsApp = (input: QueueInput): Promise<QueueResult> => queueMessage(productionOutboxDeps(), input);
+export async function queueWhatsApp(input: QueueInput): Promise<QueueResult> {
+  if (input.purpose === 'outreach' && input.agent === 'outreach' && input.roleId === 'director-sales-business-development') {
+    const number = normalizePhone(input.to);
+    const verifiedLead = number ? await contactLabel(number) : null;
+    if (!verifiedLead || !/\\(lead\\)$/i.test(verifiedLead)) {
+      throw new OutboxError('Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number. No customer message was queued.');
+    }
+    return queueMessage(productionOutboxDeps(), { ...input, contactLabel: verifiedLead });
+  }
+  return queueMessage(productionOutboxDeps(), input);
+}
 
 let sending = false;
 /** Send whatever is due. One pass at a time per process. */
