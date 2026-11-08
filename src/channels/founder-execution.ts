@@ -82,6 +82,15 @@ export function isUsableDepartmentReport(department: string, value: string): boo
   return true;
 }
 
+/** Ensure the CEO's generated text actually contains every required section. */
+export function hasCompleteConsolidatedReport(report: string): boolean {
+  const headings = report.split(String.fromCharCode(10))
+    .map((line) => line.trim().replace(/^#{1,6}\\s*/, '').replace(/\\*\\*/g, '').toLowerCase().replace(/&amp;/g, 'and').replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim());
+  const required = STATUS_REPORT_DEPARTMENTS.map((department) => department.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim());
+  return !/(?:^|\\n)#{1,6}\\s*(?:\\n|$)/m.test(report)
+    && required.every((department) => headings.some((heading) => heading === department || heading.startsWith(department + ' ')));
+}
+
 export function canFinalizeStatusReport(completedDepartments: string[], outstandingDepartments: string[]): boolean {
   return outstandingDepartments.length === 0
     && STATUS_REPORT_DEPARTMENTS.every((department) => completedDepartments.includes(department));
@@ -296,6 +305,20 @@ export async function runCompanyStatusReport(envelope: FounderMessageEnvelope): 
     await failTrackedTask(parent.taskId, message);
     throw error;
   }
+  // Never mark a consolidated report complete if the synthesis model omitted a department.
+  // Preserve the four accepted source reports verbatim in a deterministic fallback.
+  if (!hasCompleteConsolidatedReport(report)) {
+    const sections = results.map(({ department, result }) => {
+      const body = result.trim().replace(/^#{1,6}\\s*[^\\n]+\\n?/, '').trim();
+      return `### ${department}\\n${body}`;
+    });
+    report = [
+      '**Executive Summary**',
+      'All four department heads submitted reports. The sections below preserve their verified findings and stated data limitations.',
+      ...sections,
+    ].join('\\n\\n');
+  }
+
   const reportDate = new Intl.DateTimeFormat('en-GB', { dateStyle: 'long', timeZone: 'Africa/Blantyre' }).format(new Date());
   report = `**Prepared for Founder / Bless — ${reportDate}**\n\n${report}`;
 
