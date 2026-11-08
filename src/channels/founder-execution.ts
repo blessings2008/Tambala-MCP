@@ -42,7 +42,7 @@ export const STATUS_REPORT_DEPARTMENTS = STATUS_WORKSTREAMS.map((item) => item.d
 export function isUsableDepartmentReport(department: string, value: string): boolean {
   const report = value.trim();
   if (report.length < 35) return false;
-  if (/(?:report\\s+truncated|further details not provided|\\[truncated\\]|context truncated|\\.\\.\\.|…)/i.test(report)) return false;
+  if (/(?:report\s+truncated|further details not provided|\[truncated\]|context truncated|\.\.\.|…)/i.test(report)) return false;
 
   const normalized = report.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim();
   const departmentKey = department.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -50,10 +50,10 @@ export function isUsableDepartmentReport(department: string, value: string): boo
     : departmentKey.startsWith('operations ') ? 'operations'
       : departmentKey.startsWith('technology ') ? 'technology'
         : departmentKey.startsWith('finance ') ? 'finance' : departmentKey;
-  return !normalized.includes(`no ${departmentKey} report was supplied')
-    && !normalized.includes(`no ${departmentKey} report supplied')
-    && !normalized.includes(`no ${shortKey} report was supplied')
-    && !normalized.includes(`no ${shortKey} report supplied');
+  return !normalized.includes(`no ${departmentKey} report was supplied`)
+    && !normalized.includes(`no ${departmentKey} report supplied`)
+    && !normalized.includes(`no ${shortKey} report was supplied`)
+    && !normalized.includes(`no ${shortKey} report supplied`);
 }
 
 export function canFinalizeStatusReport(completedDepartments: string[], outstandingDepartments: string[]): boolean {
