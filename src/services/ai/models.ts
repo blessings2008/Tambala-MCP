@@ -4,7 +4,7 @@ export const AGENT_DEFAULT_MODELS = {
   orchestrator: 'openai/gpt-oss-120b',
   outreach: 'openai/gpt-oss-20b',
   followup: 'openai/gpt-oss-20b',
-  research: 'nvidia/nemotron-3-ultra:free',
+  research: 'nvidia/nemotron-3-ultra-550b-a55b:free',
   marketing: 'openai/gpt-oss-20b',
   content: 'openai/gpt-oss-20b',
   finance: 'openai/gpt-oss-20b',
