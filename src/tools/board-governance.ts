@@ -6,7 +6,7 @@ import { recordAudit } from '../organization/audit.js';
 
 type Identity = Awaited<ReturnType<typeof resolveOrganizationIdentity>>;
 type AuthenticatedIdentity = Extract<Identity, { authenticated: true; principalType: 'oauth' }>;
-type Member = { role_id: string; seat_title: string; member_type: string; active: boolean };
+type Member = { role_id: string; seat_title: string; member_type: string; active: boolean; voting_rights?: boolean };
 type Meeting = { id: string; meeting_number: number; title: string; meeting_type: string; status: string; scheduled_at: string | null; purpose: string };
 
 function result(value: unknown) {
@@ -29,7 +29,7 @@ async function requireRole(allowed: string[]): Promise<AuthenticatedIdentity> {
 }
 async function activeBoardMember(roleId: string): Promise<Member> {
   const rows = await supabaseSelect<Member>('organization_board_members', `select=role_id,seat_title,member_type,active&role_id=eq.${encodeURIComponent(roleId)}&active=eq.true&limit=1`);
-  if (!rows.length) throw new Error('Only an active appointed Board member or the Founder may submit a Board recommendation.');
+  if (!rows.length || !['founder_chair', 'advisory_member', 'board_secretary'].includes(rows[0].member_type)) throw new Error('Only the Founder, an appointed adviser or the Board Secretary may submit a Board recommendation. Executive observers may present reports but do not submit Board recommendations.');
   return rows[0];
 }
 async function audit(actor: AuthenticatedIdentity, action: string, targetId: string, reason: string): Promise<void> {
@@ -86,7 +86,7 @@ export function registerBoardGovernanceTools(server: McpServer): void {
     },
   }, async ({ meetingId, title, background, presenterRoleId }) => {
     const actor = await requireRole(['founder', 'director-board-governance']);
-    const meetings = await supabaseSelect<Meeting>('organization_board_meetings', `select=id,status& id=eq.${encodeURIComponent(meetingId)}&limit=1`.replace('& id', '&id'));
+    const meetings = await supabaseSelect<Meeting>('organization_board_meetings', `select=id,status&id=eq.${encodeURIComponent(meetingId)}&limit=1`);
     if (!meetings.length || !['scheduled', 'in_session'].includes(meetings[0].status)) throw new Error('Meeting not found or no longer accepting agenda items.');
     const current = await supabaseSelect<{ item_number: number }>('organization_board_agenda_items', `select=item_number&meeting_id=eq.${encodeURIComponent(meetingId)}&order=item_number.desc&limit=1`);
     const row = await supabaseInsert('organization_board_agenda_items', {
@@ -162,6 +162,7 @@ export function registerBoardGovernanceTools(server: McpServer): void {
       meeting_id: meetingId, summary: summary.trim(),
       discussion_notes: discussionNotes ?? [], evidence_refs: evidenceRefs ?? [],
       prepared_by_role_id: actor.role.id,
+      founder_confirmed_at: null, founder_confirmed_by_role_id: null,
     };
     const row = existing.length
       ? await supabaseUpdate('organization_board_minutes', value, `meeting_id=eq.${encodeURIComponent(meetingId)}`)
@@ -224,6 +225,8 @@ export function registerBoardGovernanceTools(server: McpServer): void {
     const oversight = ['founder', 'director-board-governance'].includes(actor.role.id);
     if (!oversight && rows[0].assigned_role_id !== actor.role.id) throw new Error('Only the assigned role, Founder or Board Secretary may update this action.');
     if (status === 'cancelled' && !oversight) throw new Error('Only Founder or Board Secretary may cancel an action.');
+    const transitions: Record<string, string[]> = { open: ['in_progress', 'blocked', 'cancelled'], in_progress: ['blocked', 'completed', 'cancelled'], blocked: ['in_progress', 'cancelled'], completed: [], cancelled: [] };
+    if (!transitions[rows[0].status]?.includes(status)) throw new Error(`Cannot change an action from ${rows[0].status} to ${status}.`);
     if (status === 'completed' && !completionEvidence?.trim()) throw new Error('Completion evidence is required before marking an action completed.');
     const updated = await supabaseUpdate('organization_board_actions', {
       status, completion_evidence: status === 'completed' ? completionEvidence!.trim() : completionEvidence?.trim() || null,
@@ -233,7 +236,7 @@ export function registerBoardGovernanceTools(server: McpServer): void {
   });
 
   server.registerTool('record_board_attendance', {
-    description: 'Founder or Board Secretary: record attendance for an appointed Board member or invited executive observer.',
+    description: 'Founder or Board Secretary: record attendance for an appointed Board member or an executive observer included in the Board membership register.',
     inputSchema: {
       meetingId: z.string().uuid(), roleId: z.string().min(2).max(100),
       attendanceStatus: z.enum(['present', 'absent', 'apology', 'observer']),
@@ -243,7 +246,7 @@ export function registerBoardGovernanceTools(server: McpServer): void {
     const meetings = await supabaseSelect<Meeting>('organization_board_meetings', `select=id,status&id=eq.${encodeURIComponent(meetingId)}&limit=1`);
     if (!meetings.length) throw new Error('Meeting not found.');
     const seats = await supabaseSelect<Member>('organization_board_members', `select=role_id,seat_title,member_type,active&role_id=eq.${encodeURIComponent(roleId)}&active=eq.true&limit=1`);
-    const roles = seats.length ? seats : await supabaseSelect<Member>('organization_board_members', `select=role_id,seat_title,member_type,active&role_id=eq.${encodeURIComponent(roleId)}&active=eq.true&limit=1`);
+    const roles = seats;
     if (!roles.length) throw new Error('Attendance can only be recorded for an active appointed Board seat. Add executive observers through the membership register first.');
     const existing = await supabaseSelect<{ id: string }>('organization_board_attendance', `select=id&meeting_id=eq.${encodeURIComponent(meetingId)}&role_id=eq.${encodeURIComponent(roleId)}&limit=1`);
     const value = { attendance_status: attendanceStatus, recorded_at: new Date().toISOString() };
