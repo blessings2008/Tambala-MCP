@@ -23,8 +23,8 @@ export async function askTambalaAI(agent: AgentName, input: string, context?: un
 }
 
 /** Run a web search first, then give the returned evidence to the agent as explicit external research context. */
-export async function askTambalaAIWithWebResearch(agent: AgentName, input: string, context?: unknown, query?: string): Promise<{ response: string; research: ReturnType<typeof formatResearchContext> }> {
-  const research = await webResearch(query ?? input);
+export async function askTambalaAIWithWebResearch(agent: AgentName, input: string, context?: unknown, query?: string, searchOptions?: import('./web-research.js').WebResearchOptions): Promise<{ response: string; research: ReturnType<typeof formatResearchContext> }> {
+  const research = await webResearch(query ?? input, searchOptions ?? 5);
   const researchContext = formatResearchContext(research);
   const response = await askTambalaAIInternal(agent, `${input}\n\n${researchContext}\n\nCITATION RULES: Cite the supplied source URLs next to factual claims that depend on them. If the supplied sources do not establish a claim, label it unknown rather than filling the gap.`, context);
   return { response, research: researchContext };
