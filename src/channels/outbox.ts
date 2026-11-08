@@ -21,6 +21,10 @@ export interface OutboxDeps {
   senderLabel: (roleId: string) => string;
   /** Pause between customer sends, to look like a person rather than a script. Zero in tests. */
   pauseMs?: number;
+  /** Minimum gap between customer sends, including across separate worker runs. */
+  cooldownMs?: number;
+  /** Resolves a normalized WhatsApp number to a CRM lead label; required for autonomous first contact. */
+  verifyOutreachLead?: (number: string) => Promise<string | null>;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -32,6 +36,17 @@ export interface QueueInput {
 }
 export interface QueueResult { id: string; status: MessageRow['status']; reason?: string; approvalId?: string | null }
 
+/** Remove internal employee identities and workflow annotations from customer-facing copy. */
+export function sanitizeCustomerMessage(value: string): string {
+  const internalLine = /^\s*(?:by\s+(?:the\s+)?(?:ceo|chief executive officer|head of|director of)\b.*|(?:prepared|generated|drafted|sent)\s+by\b.*|(?:agent|role|employee|department|internal analysis|routing note|internal note|internal only|internal use only)\s*:\s*.*|(?:ceo|chief executive officer|head of [^|—–-]+|director of [^|—–-]+)\s*[|—–-]\s*TT[-\s]?\d{3}.*|(?:—|–|-{1,2})?\s*TT[-\s]?\d{3}\b.*)$/i;
+  return value.split(/\r?\n/)
+    .filter((line) => !internalLine.test(line))
+    .map((line) => line.replace(/\bTT[-\s]?\d{3}\b/gi, '').trimEnd())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 const dayStartIso = (now: Date): string => {
   const lt = localTime(now);
   return new Date(`${lt.date}T00:00:00+02:00`).toISOString(); // Africa/Blantyre is a fixed UTC+2
@@ -41,15 +56,26 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
   const to = normalizePhone(input.to);
   if (!to) throw new OutboxError(`"${input.to}" is not a valid phone number. Use international format, e.g. +265888123456.`);
   const now = deps.now();
+  const autonomousOutreach = input.purpose === 'outreach' && input.agent === 'outreach' && input.roleId === 'director-sales-business-development';
+  let verifiedContactLabel = input.contactLabel?.trim() || null;
   const founder = deps.founderNumber();
   const blocked = await deps.store.blockedNumbers();
   const base = decide({ to, purpose: input.purpose, agent: input.agent, text: input.text, hasDocument: Boolean(input.documentId) }, { founderNumber: founder, blocked });
-  const text = base.audience === 'client' ? withOptOut(input.text.trim(), input.purpose) : input.text.trim();
+  if (base.audience === 'client' && autonomousOutreach) {
+    const crmLabel = await deps.verifyOutreachLead?.(to);
+    if (!crmLabel || !/\(lead\)$/i.test(crmLabel)) {
+      throw new OutboxError('Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number. No customer message was queued.');
+    }
+    verifiedContactLabel = crmLabel;
+  }
+  const customerCopy = base.audience === 'client' ? sanitizeCustomerMessage(input.text.trim()) : input.text.trim();
+  if (base.audience === 'client' && customerCopy.length < 2) throw new OutboxError('The customer message contains no usable business content after internal notes were removed.');
+  const text = base.audience === 'client' ? withOptOut(customerCopy, input.purpose) : customerCopy;
 
   const row = await deps.store.add({
     direction: 'out', number: to, audience: base.audience, purpose: input.purpose, from_role_id: input.roleId, text,
     document_id: input.documentId ?? null, approval_id: null, status: 'queued', reason: null, provider_message_id: null,
-    attempts: 0, task_id: input.taskId ?? null, signature: null, contact_label: input.contactLabel ?? null, created_at: now.toISOString(), sent_at: null,
+    attempts: 0, task_id: input.taskId ?? null, signature: null, contact_label: verifiedContactLabel, created_at: now.toISOString(), sent_at: null,
   });
 
   if (base.verdict === 'block') { await deps.store.update(row.id, { status: 'blocked', reason: base.reason }); return { id: row.id, status: 'blocked', reason: base.reason }; }
@@ -67,6 +93,13 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
     // Messages to the Founder carry who sent them and their signature, so he knows exactly who is talking.
     patch.text = `[${deps.senderLabel(input.roleId)}]\n${text}\n\n${stamp.block}`;
     await deps.store.update(row.id, patch);
+    return { id: row.id, status: 'queued' };
+  }
+
+  // Founder-authorized autonomous first contact: only Outreach may send, and only for a named CRM prospect.
+  // Other customer-facing purposes remain behind the normal approval gate.
+  if (base.audience === 'client' && autonomousOutreach && verifiedContactLabel) {
+    await deps.store.update(row.id, { ...patch, status: 'queued', reason: null });
     return { id: row.id, status: 'queued' };
   }
 
@@ -126,6 +159,13 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
     if (row.audience === 'client') {
       if (blocked.has(row.number)) { await deps.store.update(row.id, { status: 'blocked', claimed_at: null, reason: 'This number opted out before the message was sent.' }); out.push({ id: row.id, status: 'blocked' }); continue; }
       if (!sendWindowOpen(now)) { await wait('Outside the sending window (Mon-Sat 07:30-19:30). It will go out when the window opens.'); continue; }
+      const cooldownMs = Math.max(0, deps.cooldownMs ?? deps.pauseMs ?? 0);
+      if (cooldownMs > 0) {
+        const latest = (await deps.store.recent(200)).find((message) => message.direction === 'out' && message.audience === 'client' && message.status === 'sent' && message.sent_at);
+        const sentAt = latest?.sent_at ? new Date(latest.sent_at).getTime() : 0;
+        const remaining = sentAt ? cooldownMs - (now.getTime() - sentAt) : 0;
+        if (remaining > 0) { await wait(`Customer-send cooldown active. Try again in about ${Math.ceil(remaining / 1000)} seconds.`); continue; }
+      }
       if (counts.client >= CLIENT_DAILY_LIMIT()) { await wait(`Daily customer limit of ${CLIENT_DAILY_LIMIT()} reached. It will go out tomorrow.`); continue; }
     } else if (counts.founder >= FOUNDER_DAILY_LIMIT()) { await wait('Daily limit of messages to the Founder reached.'); continue; }
 

@@ -15,7 +15,7 @@ export const OPT_OUT_LINE = 'Reply STOP to opt out.';
 export const SEND_WINDOW = { open: '07:30', close: '19:30' } as const; // office time, Monday to Saturday
 
 export const FOUNDER_DAILY_LIMIT = () => Number(process.env.TAMBALA_WHATSAPP_FOUNDER_DAILY_LIMIT) || 40;
-export const CLIENT_DAILY_LIMIT = () => Number(process.env.TAMBALA_WHATSAPP_DAILY_LIMIT) || 25;
+export const CLIENT_DAILY_LIMIT = () => Math.min(5, Math.max(1, Number(process.env.TAMBALA_WHATSAPP_DAILY_LIMIT) || 5));
 
 export function sendWindowOpen(now: Date): boolean {
   const lt: LocalTime = localTime(now);

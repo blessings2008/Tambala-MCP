@@ -52,7 +52,7 @@ function harness(over: Partial<ActionExecDeps> & { founder?: string | null } = {
   const outbox: OutboxDeps = {
     store, now: () => new Date('2026-11-09T08:00:00Z'), founderNumber: () => (over.founder === undefined ? FOUNDER : over.founder),
     transport: { configured: () => true, sendText: async () => ({ id: 'x' }), sendDocument: async () => ({ id: 'x' }) },
-    loadDocument: async () => ({ base64: 'JVBERi0=', fileName: 'x.pdf' }), sign: async () => ({ block: '— sig', fingerprint: 'AAAA-BBBB-CCCC-DDDD' }),
+    loadDocument: async () => ({ base64: 'JVBERi0=', fileName: 'x.pdf' }), verifyOutreachLead: async () => 'Lakeview Lodge (lead)', sign: async () => ({ block: '— sig', fingerprint: 'AAAA-BBBB-CCCC-DDDD' }),
     approvals: { create: async (a) => { approvals.push(a); return `abcdef12-0000-4000-8000-00000000000${approvals.length}`; } }, senderLabel: (r) => r, pauseMs: 0,
   };
   const deps: ActionExecDeps = {
@@ -69,12 +69,22 @@ const parse = (...lines: string[]) => parseActions(`ACTIONS:\n${lines.join('\n')
 test('a whatsapp action waits for approval, and an unauthorised role is refused', async () => {
   const h = harness();
   const [r] = await executeActions(h.deps, ctx('outreach'), parse(WA));
-  assert.equal(r.ok, true); assert.match(r.detail, /waiting for the Founder/);
+  assert.equal(r.ok, true); assert.match(r.detail, /awaiting Founder approval/);
   assert.equal(h.store.rows.filter((m) => m.number === '265888123456')[0].status, 'pending_approval');
   const [denied] = await executeActions(h.deps, ctx('security'), parse(WA));
   assert.equal(denied.ok, false); assert.match(denied.detail, /not allowed/);
   const [bad] = await executeActions(h.deps, ctx('outreach'), parse(WA.replace('+265888123456', 'call me please')));
   assert.equal(bad.ok, false); assert.match(bad.detail, /not a valid phone number/);
+});
+
+test('first-contact outreach action reports queued status, not Founder approval', async () => {
+  const h = harness();
+  const outreach = parse(WA.replace('"purpose":"followup"', '"purpose":"outreach"'));
+  const [r] = await executeActions(h.deps, ctx('outreach'), outreach);
+  assert.equal(r.ok, true);
+  assert.match(r.detail, /queued for sending; delivery is not confirmed yet/i);
+  assert.doesNotMatch(r.detail, /waiting for the Founder|awaiting Founder approval/i);
+  assert.equal(h.store.rows.find((m) => m.number === '265888123456')?.status, 'queued');
 });
 
 test('notify_founder reaches the Founder immediately, and says so honestly when no number is set', async () => {

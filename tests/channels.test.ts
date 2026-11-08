@@ -5,7 +5,7 @@ import { jidToNumber, maskNumber, normalizePhone } from '../src/channels/phone.t
 import { CLIENT_FACING_AGENTS, decide, sendWindowOpen, validateText, withOptOut } from '../src/channels/policy.ts';
 import { connectionState, EvolutionError, evolutionConfigured, sendDocument, sendText } from '../src/channels/evolution.ts';
 import { InMemoryMessageStore } from '../src/channels/message-store.ts';
-import { onApprovalDecided, OutboxError, processOutbox, queueMessage, type OutboxDeps } from '../src/channels/outbox.ts';
+import { onApprovalDecided, OutboxError, processOutbox, queueMessage, sanitizeCustomerMessage, type OutboxDeps } from '../src/channels/outbox.ts';
 import { handleEvolutionWebhook, messageText, senderNumber, type InboundDeps } from '../src/channels/inbound.ts';
 
 const at = (iso: string) => new Date(iso);
@@ -123,19 +123,20 @@ function outboxHarness(over: Partial<OutboxDeps> & { nowIso?: string; founder?: 
     loadDocument: async (id) => (id === 'doc-1' ? { base64: 'JVBERi0=', fileName: 'TT-Q-2026-0001.pdf' } : null),
     sign: async () => ({ block: '— TT-002 · Head of Sales\n  ✍ AAAA-BBBB-CCCC-DDDD', fingerprint: 'AAAA-BBBB-CCCC-DDDD' }),
     approvals: { create: async (a) => { approvals.push(a); return `abcdef12-0000-4000-8000-000000000${approvals.length}`; } },
-    senderLabel: (r) => `TT-002 ${r}`, pauseMs: 0, ...over,
+    senderLabel: (r) => `TT-002 ${r}`, pauseMs: 0,
+    verifyOutreachLead: async (_number) => 'Verified Test Lodge (lead)', ...over,
   };
   return { deps, store, sent, approvals, setNow: (v: string) => { nowIso = v; } };
 }
 const sales = { roleId: 'director-sales-business-development', agent: 'outreach' };
 
-test('outbox: a customer message waits for approval, tells the Founder, and goes out only after approval', async () => {
+test('outbox: customer follow-ups wait for approval, tell the Founder, and go out only after approval', async () => {
   const h = outboxHarness();
-  const r = await queueMessage(h.deps, { ...sales, to: '0888 123 456', text: 'Hello Chikondi, following up on the website.', purpose: 'outreach', contactLabel: 'Lakeview Lodge' });
+  const r = await queueMessage(h.deps, { ...sales, to: '0888 123 456', text: 'Hello Chikondi, following up on the website.', purpose: 'followup', contactLabel: 'Lakeview Lodge' });
   assert.equal(r.status, 'pending_approval');
   assert.equal(h.approvals.length, 1); assert.equal(h.approvals[0].subjectType, 'outbox_message'); assert.equal(h.approvals[0].subjectId, r.id);
   const row = (await h.store.byId(r.id))!;
-  assert.match(row.text, /Reply STOP to opt out\.$/); assert.equal(row.signature, 'AAAA-BBBB-CCCC-DDDD'); assert.equal(row.number, '265888123456');
+  assert.doesNotMatch(row.text, /Reply STOP to opt out\.$/); assert.equal(row.signature, 'AAAA-BBBB-CCCC-DDDD'); assert.equal(row.number, '265888123456');
   // the Founder is told right away, with a code he can reply to
   const notice = h.store.rows.find((x) => x.number === FOUNDER)!;
   assert.equal(notice.status, 'queued'); assert.match(notice.text, /Reply YES abcdef NO abcdef|YES abcdef/);
@@ -148,6 +149,61 @@ test('outbox: a customer message waits for approval, tells the Founder, and goes
   assert.equal(out.find((o) => o.id === r.id)!.status, 'sent');
   assert.equal(h.sent.at(-1)!.number, '265888123456');
   assert.equal((await h.store.byId(r.id))!.status, 'sent');
+});
+
+test('outbox: autonomous first contact removes internal analysis and routing notes', async () => {
+  const h = outboxHarness();
+  const result = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello, we build business websites.\nInternal analysis: prioritise this prospect.\nRouting note: assign to CEO.', purpose: 'outreach', contactLabel: 'Verified Test Lodge (lead)' });
+  assert.equal(result.status, 'queued');
+  assert.match(h.store.rows[0].text, /Hello, we build business websites/);
+  assert.doesNotMatch(h.store.rows[0].text, /Internal analysis|Routing note|prioritise this prospect|assign to CEO/i);
+});
+
+test('outbox: first-contact Outreach is queued autonomously and strips internal employee metadata', async () => {
+  const h = outboxHarness({ cooldownMs: 90_000 });
+  const r = await queueMessage(h.deps, {
+    ...sales, to: '0888123456',
+    text: 'Hello Lakeview Lodge, we build professional websites for businesses.\n\nPrepared by CEO · TT-001',
+    purpose: 'outreach', contactLabel: 'Lakeview Lodge (lead)',
+  });
+  assert.equal(r.status, 'queued');
+  assert.equal(h.approvals.length, 0);
+  const row = (await h.store.byId(r.id))!;
+  assert.match(row.text, /professional websites/);
+  assert.match(row.text, /Reply STOP to opt out/);
+  assert.doesNotMatch(row.text, /CEO|TT[- ]?001|Prepared by/i);
+  const sent = await processOutbox(h.deps);
+  assert.equal(sent.find((item) => item.id === r.id)?.status, 'sent');
+  assert.doesNotMatch(h.sent.at(-1)!.text, /CEO|TT[- ]?001|Prepared by/i);
+});
+
+test('outbox: autonomous first contact is rejected when the number is not a CRM lead', async () => {
+  const h = outboxHarness({ verifyOutreachLead: async () => null });
+  await assert.rejects(
+    queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello there.', purpose: 'outreach', contactLabel: 'Unverified Prospect' }),
+    /matching CRM lead/,
+  );
+  assert.equal(h.store.rows.length, 0);
+});
+
+test('outbox: customer cooldown is enforced between separate worker runs', async () => {
+  const h = outboxHarness({ cooldownMs: 90_000 });
+  const first = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello first prospect.', purpose: 'outreach', contactLabel: 'First Lodge' });
+  await processOutbox(h.deps);
+  assert.equal((await h.store.byId(first.id))!.status, 'sent');
+  const second = await queueMessage(h.deps, { ...sales, to: '0888777888', text: 'Hello second prospect.', purpose: 'outreach', contactLabel: 'Second Lodge' });
+  const early = await processOutbox(h.deps);
+  assert.equal(early.find((item) => item.id === second.id)?.status, 'waiting');
+  assert.match(early.find((item) => item.id === second.id)?.reason ?? '', /cooldown/i);
+  h.setNow('2026-11-09T08:01:30Z');
+  const later = await processOutbox(h.deps);
+  assert.equal(later.find((item) => item.id === second.id)?.status, 'sent');
+});
+
+test('outbox: customer message sanitizer removes employee identifiers and internal attribution', () => {
+  const clean = sanitizeCustomerMessage('Hello, we can help with your website.\n\nBy CEO TT 001\nPrepared by CEO · TT-001');
+  assert.equal(clean, 'Hello, we can help with your website.');
+  assert.doesNotMatch(clean, /CEO|TT[- ]?001/i);
 });
 
 test('outbox: rejection retires the message; the Founder dashboard send skips approval but only for the Founder', async () => {

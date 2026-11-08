@@ -29,11 +29,14 @@ export function productionOutboxDeps(store: MessageStore = messageStore(), now: 
     sign: (input) => signWork(input),
     approvals: { create: (input) => createApprovalRequest({ ...input }) },
     senderLabel: (roleId) => labelForRole(roleId),
-    pauseMs: 4000,
+    cooldownMs: Math.max(90_000, Number(process.env.TAMBALA_WHATSAPP_COOLDOWN_MS) || 90_000),
+    verifyOutreachLead: contactLabel,
   };
 }
 
-export const queueWhatsApp = (input: QueueInput): Promise<QueueResult> => queueMessage(productionOutboxDeps(), input);
+export async function queueWhatsApp(input: QueueInput): Promise<QueueResult> {
+  return queueMessage(productionOutboxDeps(), input);
+}
 
 let sending = false;
 /** Send whatever is due. One pass at a time per process. */

@@ -101,13 +101,12 @@ test('a duty is not run before its time or on the wrong day', async () => {
   assert.equal((await runDuty(notFriday.deps, duty('weekly-priorities-review'))).status, 'not_due');
 });
 
-test('outreach drafts are parked for Founder approval, never sent', async () => {
+test('sales pipeline duty completes under autonomous first-contact guardrails', async () => {
   const { deps, calls } = fakeDeps({ now: '2026-11-09T07:00:00Z' });
   const out = await runDuty(deps, duty('sales-pipeline-review'));
-  assert.equal(out.status, 'awaiting_approval');
-  assert.equal(calls.approvals.length, 1);
-  assert.match(JSON.stringify(calls.approvals[0]), /prepared_outreach/);
-  assert.match(buildDutyPrompt(duty('sales-pipeline-review'), localTime(at('2026-11-09T07:00:00Z'))), /never claim it was sent/);
+  assert.equal(out.status, 'completed');
+  assert.equal(calls.approvals.length, 0);
+  assert.match(buildDutyPrompt(duty('sales-pipeline-review'), localTime(at('2026-11-09T07:00:00Z'))), /never claim a message was sent unless the outbox confirms it/i);
 });
 
 test('an unavailable employee records a skip once, then works when available', async () => {
