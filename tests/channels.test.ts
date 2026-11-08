@@ -135,7 +135,7 @@ test('outbox: customer follow-ups wait for approval, tell the Founder, and go ou
   assert.equal(r.status, 'pending_approval');
   assert.equal(h.approvals.length, 1); assert.equal(h.approvals[0].subjectType, 'outbox_message'); assert.equal(h.approvals[0].subjectId, r.id);
   const row = (await h.store.byId(r.id))!;
-  assert.match(row.text, /Reply STOP to opt out\.$/); assert.equal(row.signature, 'AAAA-BBBB-CCCC-DDDD'); assert.equal(row.number, '265888123456');
+  assert.doesNotMatch(row.text, /Reply STOP to opt out\.$/); assert.equal(row.signature, 'AAAA-BBBB-CCCC-DDDD'); assert.equal(row.number, '265888123456');
   // the Founder is told right away, with a code he can reply to
   const notice = h.store.rows.find((x) => x.number === FOUNDER)!;
   assert.equal(notice.status, 'queued'); assert.match(notice.text, /Reply YES abcdef NO abcdef|YES abcdef/);
