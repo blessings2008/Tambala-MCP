@@ -88,10 +88,10 @@ details.emp{border:1px solid var(--line);background:#121e31;border-radius:10px;p
 </main>
 </div>
 
-<div class="gate" id="gate"><form id="gateForm"><h2>Control Centre</h2><p>Enter the dashboard token (the same value as TAMBALA_CHAT_TEST_TOKEN).</p><input id="gateToken" type="password" autocomplete="off" placeholder="Token" required><button type="submit">Open</button><div class="err" id="gateErr"></div></form></div>
+<div class="gate" id="gate"><form id="gateForm"><h2>Control Centre</h2><p>Enter the dashboard token. Founder approval actions require a separate approval token.</p><input id="gateToken" type="password" autocomplete="off" placeholder="Token" required><button type="submit">Open</button><div class="err" id="gateErr"></div></form></div>
 <div class="toast" id="toast"></div>
 <script>
-const KEY='tambala_chat_test_token';let data=null,timer=null;
+const KEY='tambala_chat_test_token',FOUNDER_KEY='tambala_founder_approval_token';let data=null,timer=null;
 const $=id=>document.getElementById(id);
 function h(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined&&text!==null)e.textContent=text;return e}
 function badge(text,kind){return h('span','badge '+(kind||''),text)}
@@ -180,8 +180,22 @@ function render(){
 }
 
 
-function authHeaders(){return {Authorization:'Bearer '+sessionStorage.getItem(KEY),'content-type':'application/json'}}
-async function post(path,body){const r=await fetch(path,{method:'POST',headers:authHeaders(),body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.error||('Server returned '+r.status));return j}
+function authHeaders(token){return {Authorization:'Bearer '+token,'content-type':'application/json'}}
+async function post(path,body){
+ let token=sessionStorage.getItem(KEY);
+ if(path==='/api/dashboard/approvals/decide'){
+  token=sessionStorage.getItem(FOUNDER_KEY);
+  if(!token){
+   token=window.prompt('Enter your separate Founder approval token (TAMBALA_FOUNDER_APPROVAL_TOKEN).');
+   if(!token||!token.trim())throw Error('Founder approval cancelled.');
+   token=token.trim();sessionStorage.setItem(FOUNDER_KEY,token);
+  }
+ }
+ const r=await fetch(path,{method:'POST',headers:authHeaders(token),body:JSON.stringify(body)});
+ const j=await r.json().catch(()=>({}));
+ if(!r.ok){if(path==='/api/dashboard/approvals/decide'&&r.status===401)sessionStorage.removeItem(FOUNDER_KEY);throw Error(j.error||('Server returned '+r.status))}
+ return j
+}
 function notify(msg){const t=$('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',4200)}
 
 function sigil(mark,keyed){
