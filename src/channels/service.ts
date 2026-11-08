@@ -2,10 +2,13 @@ import { supabaseSelect } from '../lib/supabase.js';
 import { createApprovalRequest, decideApproval, listPendingApprovals, registerApprovalHook } from '../organization/workforce/approvals-service.js';
 import { dbConfigured } from '../organization/workforce/db-util.js';
 import { labelForRole } from '../organization/workforce/profiles.js';
+import { routeOrganizationObjective } from '../organization/service.js';
+import { requireConfiguredRuntime, resolveExecutionRoute } from '../organization/execution-router.js';
+import { askTambalaAI, getAgentOperationalInfo } from '../services/ai.js';
 import { signWork } from '../organization/workforce/sign-work.js';
 import { loadPdfForSending } from '../documents/service.js';
 import { connectionState, evolutionConfig, evolutionConfigured, sendDocument, sendText } from './evolution.js';
-import { handleEvolutionWebhook, type InboundDeps, type InboundSummary } from './inbound.js';
+import { handleEvolutionWebhook, type FounderMessageEnvelope, type InboundDeps, type InboundSummary } from './inbound.js';
 import { messageStore, type MessageStore } from './message-store.js';
 import { onApprovalDecided, processOutbox, queueMessage, type OutboxDeps, type QueueInput, type QueueResult, type SendOutcome } from './outbox.js';
 import { CLIENT_DAILY_LIMIT, FOUNDER_DAILY_LIMIT } from './policy.js';
@@ -67,6 +70,55 @@ export async function contactLabel(number: string): Promise<string | null> {
   return hit ? `${hit.name} (${hit.type})` : null;
 }
 
+async function handleFounderInstruction(envelope: FounderMessageEnvelope): Promise<string> {
+  try {
+    const matches = await routeOrganizationObjective(envelope.content.text);
+    const mapped = resolveExecutionRoute(matches[0]);
+    const execution = mapped.status === 'ready'
+      ? requireConfiguredRuntime(mapped, getAgentOperationalInfo(mapped.agent))
+      : mapped;
+    const routeSummary = matches.slice(0, 3).map((match) =>
+      `${match.department ?? 'Unassigned'} — ${match.role ?? 'No role'} (score ${match.score}; role ${match.roleActivation ?? 'unknown'})`,
+    ).join('\n') || 'No department capability matched. CEO must clarify ownership.';
+    const envelopeText = JSON.stringify({
+      ...envelope,
+      routing: {
+        assigned_by: 'capability_router',
+        department: matches[0]?.department ?? null,
+        capability_id: matches[0]?.capabilityId ?? null,
+        role: matches[0]?.role ?? null,
+        role_status: matches[0]?.roleActivation ?? null,
+        execution_status: execution.status,
+        execution_reason: execution.status === 'ready' ? null : execution.reason,
+      },
+    });
+    const ceoBrief = await askTambalaAI(
+      'orchestrator',
+      `You are Tambala Technologies' CEO receiving a direct Founder instruction over WhatsApp. Treat the structured envelope as the source message, not as a customer request. Acknowledge it, interpret the objective, and prepare a precise department handoff where possible. Never claim a task is complete unless a specialist actually returned the deliverable. If the route is not activated or its runtime is not configured, explain the exact blocker and what is needed. Do not invent facts or approvals.\n\nStructured message envelope:\n${envelopeText}\n\nDeterministic capability matches:\n${routeSummary}\n\nExecution gate:\n${JSON.stringify(execution)}`,
+      { communicationType: 'Founder -> CEO', sender: envelope.sender.name, recipient: 'Chief Executive Officer', messageId: envelope.message_id },
+    );
+
+    if (execution.status !== 'ready') {
+      return `${ceoBrief}\n\nDepartment routing: ${execution.department ?? 'Unassigned'} — ${execution.status}. ${execution.reason}`;
+    }
+
+    const specialistResult = await askTambalaAI(
+      execution.agent,
+      `CEO handoff from Founder WhatsApp instruction. Execute the actual task and return the requested deliverable. Do not claim external actions, messages, payments, deployments, or database changes unless a connected tool has verifiably completed them. If required information or permissions are missing, state the blocker clearly.\n\nFounder instruction:\n${envelope.content.text}\n\nDepartment: ${execution.department}\nRole: ${execution.role}\nDeliverable guidance: ${execution.deliverableHints.join('; ')}\nPriority: ${envelope.priority}`,
+      { communicationType: 'CEO -> Department', sender: 'Chief Executive Officer', recipient: execution.role, messageId: envelope.message_id },
+    );
+    return await askTambalaAI(
+      'orchestrator',
+      `Review the specialist's returned work against the original Founder instruction. Give the Founder a clear, useful answer. Distinguish completed analysis/drafting from any external action that still needs approval or a real integration. Do not invent execution.\n\nOriginal instruction:\n${envelope.content.text}\n\nDepartment: ${execution.department}\nSpecialist: ${execution.role}\n\nSpecialist return:\n${specialistResult}`,
+      { communicationType: 'Department -> CEO -> Founder', sender: execution.role, recipient: 'Founder / Bless', messageId: envelope.message_id },
+    );
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'AI runtime unavailable.';
+    console.error('Founder WhatsApp instruction could not be routed:', detail);
+    return `I received your instruction, but the CEO workflow could not complete it. Runtime issue: ${detail}. Please check the CEO and department runtime configuration; your message has been saved in the inbound message log.`;
+  }
+}
+
 export function productionInboundDeps(store: MessageStore = messageStore()): InboundDeps {
   return {
     store, now: () => new Date(), founderNumber,
@@ -79,6 +131,7 @@ export function productionInboundDeps(store: MessageStore = messageStore()): Inb
       await runOutbox();
     },
     contactLookup: contactLabel,
+    handleFounderInstruction,
     approvals: {
       pending: async () => (dbConfigured() ? (await listPendingApprovals()).map((a) => ({ id: a.id, summary: a.summary })) : []),
       async decide(prefix, decision, note) {
