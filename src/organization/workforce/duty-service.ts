@@ -223,7 +223,7 @@ export async function clarifyTaskRoom(handoffId: string, clarification: string):
   const store = handoffStore();
   const resumed = await resumeFounderHandoff(store, handoffId, clarification);
   await processHandoffs(productionHandoffDeps(store));
-  return resumed;
+  return (await store.get(handoffId)) ?? resumed;
 }
 export async function assignWork(agent: AgentName, request: string): Promise<Handoff> {
   return queueHandoff(handoffStore(), { fromRoleId: 'founder', toAgent: agent, request, sign: signWork });
