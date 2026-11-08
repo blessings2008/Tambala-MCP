@@ -317,6 +317,9 @@ test('inbound: ordinary Founder messages are delivered to the CEO as structured 
   assert.equal(envelopes[0].priority, 'high');
   assert.match(envelopes[0].content.text, /sales pipeline report/);
   assert.match(h.replies[0], /CEO received/);
+  const founderStop = await handleEvolutionWebhook(h.deps, evt(`${FOUNDER}@s.whatsapp.net`, 'STOP', 'F6'));
+  assert.equal(founderStop.optOuts, 0);
+  assert.equal(founderStop.routedToOrganization, 1);
 });
 
 test('inbound: media without captions is retained as a readable inbound message', () => {
