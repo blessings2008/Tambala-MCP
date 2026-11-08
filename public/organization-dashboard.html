@@ -87,6 +87,17 @@ details.emp{border:1px solid var(--line);background:#121e31;border-radius:10px;p
   <article class="card"><div class="section-head"><h2>Agenda &amp; attendance</h2><span>Meeting records</span></div><div class="list" id="boardAgenda"></div><div class="list" id="boardAttendance"></div></article>
   <article class="card"><div class="section-head"><h2>Minutes &amp; follow-up actions</h2><span>Evidence-based tracking</span></div><div class="list" id="boardMinutes"></div><div class="list" id="boardActions"></div></article>
  </div>
+ <div class="grid two" style="margin-top:14px">
+  <article class="card"><div class="section-head"><h2>Meeting working papers</h2><span>Founder / Secretary</span></div>
+   <label for="boardEditMeeting">Selected meeting</label><select id="boardEditMeeting"></select>
+   <form id="boardAgendaForm" class="form"><h3>Add agenda item</h3><input id="boardAgendaTitle" required minlength="3" maxlength="200" placeholder="Agenda item title"><textarea id="boardAgendaBackground" maxlength="4000" placeholder="Background and documents to review"></textarea><button class="primary" type="submit">Add to agenda</button></form>
+   <form id="boardMinutesForm" class="form"><h3>Minutes record</h3><textarea id="boardMinutesSummary" required minlength="10" maxlength="6000" placeholder="Summary of discussions, recommendations and decisions"></textarea><textarea id="boardMinutesNotes" placeholder="Discussion notes — one item per line"></textarea><textarea id="boardMinutesEvidence" placeholder="Evidence references — one per line"></textarea><label><input id="boardMinutesConfirm" type="checkbox"> Confirm these minutes as Founder</label><button class="primary" type="submit">Save minutes</button></form>
+  </article>
+  <article class="card"><div class="section-head"><h2>Follow-up action</h2><span>Accountability</span></div>
+   <form id="boardActionForm" class="form"><input id="boardActionTitle" required minlength="3" maxlength="200" placeholder="Action title"><textarea id="boardActionDescription" maxlength="3000" placeholder="Expected outcome / evidence"></textarea><input id="boardActionRole" required placeholder="Responsible role ID (e.g. director-finance-accounting)"><input id="boardActionDue" type="datetime-local"><button class="primary" type="submit">Create action</button></form>
+   <div class="section-head"><h3>Attendance register</h3></div><div class="list" id="boardAttendanceEditor"></div>
+  </article>
+ </div>
 </section>
 <section class="view" id="view-people"><div class="page-head"><div><div class="eyebrow">WORKFORCE</div><h1>Staff directory</h1><div class="sub">Every role is a staff member with a job description, working hours, standing duties and a weekly record. <span class="sync" id="staffNote"></span></div></div></div>
 <div class="grid stats"><article class="card"><div class="stat-top">On duty now <span class="stat-icon">♙</span></div><div class="stat-value" id="wfOn">—</div><div class="stat-foot" id="wfOnFoot"></div></article><article class="card"><div class="stat-top">Duties done today <span class="stat-icon">✓</span></div><div class="stat-value" id="wfDone">—</div><div class="stat-foot" id="wfDoneFoot"></div></article><article class="card"><div class="stat-top">Overdue or failed <span class="stat-icon">!</span></div><div class="stat-value" id="wfBad">—</div><div class="stat-foot" id="wfBadFoot"></div></article><article class="card"><div class="stat-top">Skipped <span class="stat-icon">⏸</span></div><div class="stat-value" id="wfSkip">—</div><div class="stat-foot" id="wfSkipFoot">Employee inactive or unequipped</div></article></div>
@@ -234,9 +245,12 @@ async function boardPost(path,body){
  return j;
 }
 function renderBoard(d){
+ const meetings=d.meetings||[], selected=$('boardEditMeeting');
  $('boardMemberCount').textContent=d.members.length+' appointed seats';
  fill('boardMembers',d.members.map(m=>row(m.seat_title,m.role_id+' · '+m.member_type.replaceAll('_',' '),badge(m.active?'Active':'Inactive',m.active?'good':'pending'))),'No appointed seats','Apply the approved governance migration to seed the Board register.');
- fill('boardMeetings',d.meetings.map(m=>{
+ selected.replaceChildren(...meetings.map(m=>{const o=h('option','', '#'+m.meeting_number+' · '+m.title);o.value=m.id;return o}));
+ if(!meetings.some(m=>m.id===selected.value)&&meetings.length)selected.value=meetings[0].id;
+ fill('boardMeetings',meetings.map(m=>{
   const r=row('#'+m.meeting_number+' · '+m.title,(m.meeting_type||'').replaceAll('_',' ')+' · '+(m.scheduled_at?new Date(m.scheduled_at).toLocaleString():'Time not set')+' · '+(m.purpose||'No purpose entered'),badge(m.status,statusKind(m.status)));
   const actions=h('div','actions');
   if(m.status==='scheduled'){const b=h('button','outline-btn','Open');b.addEventListener('click',async()=>{try{await boardPost('/api/dashboard/board/meetings/status',{meetingId:m.id,status:'in_session'});notify('Meeting opened.');await loadBoard()}catch(e){notify(e.message)}});actions.append(b)}
@@ -244,12 +258,35 @@ function renderBoard(d){
   if(['scheduled','in_session'].includes(m.status)){const b=h('button','outline-btn','Cancel');b.addEventListener('click',async()=>{if(!confirm('Cancel this Board meeting?'))return;try{await boardPost('/api/dashboard/board/meetings/status',{meetingId:m.id,status:'cancelled'});notify('Meeting cancelled.');await loadBoard()}catch(e){notify(e.message)}});actions.append(b)}
   r.append(actions);return r;
  }),'No meetings yet','Create the first meeting using the form above.');
- fill('boardRecommendations',d.recommendations.map(x=>row(x.title,x.recommendation+' · proposed by '+x.proposed_by_role_id,badge(x.status.replaceAll('_',' '),statusKind(x.status)))),'No recommendations','Appointed advisers can submit non-binding recommendations through the MCP Board tools.');
- fill('boardAgenda',d.agenda.map(x=>row('#'+x.item_number+' · '+x.title,x.background||'No background provided',badge(x.status,statusKind(x.status)))),'No agenda items','Agenda items will appear here once added by the Founder or Board Secretary.');
- fill('boardAttendance',d.attendance.map(x=>row(x.seat_title,x.role_id,badge(x.attendance_status,statusKind(x.attendance_status)))),'No attendance recorded','Attendance is recorded for each meeting.');
- fill('boardMinutes',d.minutes.map(x=>row(x.summary||'Minutes draft',x.founder_confirmed_at?'Founder-confirmed':'Awaiting Founder confirmation',badge(x.founder_confirmed_at?'Confirmed':'Draft',x.founder_confirmed_at?'good':'pending'))),'No minutes yet','The Board Secretary records minutes after the meeting.');
- fill('boardActions',d.actions.map(x=>row(x.title,(x.assigned_role_id||'Unassigned')+' · '+(x.due_at?new Date(x.due_at).toLocaleDateString():'No deadline'),badge(x.status,statusKind(x.status)))),'No follow-up actions','Agreed follow-up actions will be tracked here.');
+ fill('boardRecommendations',(d.recommendations||[]).map(x=>{
+  const r=row(x.title,x.recommendation+' · proposed by '+x.proposed_by_role_id,badge(x.status.replaceAll('_',' '),statusKind(x.status)));
+  if(x.status==='submitted'){const a=h('div','actions');[['Accept','founder_accepted'],['Reject','founder_rejected'],['Defer','deferred']].forEach(([label,status])=>{const b=h('button','outline-btn',label);b.addEventListener('click',async()=>{const note=window.prompt('Record the Founder decision note (optional):')||'';try{await boardPost('/api/dashboard/board/recommendations/decision',{id:x.id,status,note});notify('Founder decision recorded.');await loadBoard()}catch(e){notify(e.message)}});a.append(b)});r.append(a)}
+  return r;
+ }),'No recommendations','Appointed advisers can submit non-binding recommendations through the MCP Board tools.');
+ fill('boardAgenda',(d.agenda||[]).map(x=>row('#'+x.item_number+' · '+x.title,x.background||'No background provided',badge(x.status,statusKind(x.status)))),'No agenda items','Add agenda items using the meeting working papers panel.');
+ fill('boardAttendance',(d.attendance||[]).map(x=>row(x.seat_title,x.role_id,badge(x.attendance_status,statusKind(x.attendance_status)))),'No attendance recorded','Attendance is recorded for each meeting.');
+ fill('boardAttendanceEditor',(d.attendance||[]).filter(x=>x.meeting_id===selected.value).map(x=>{
+  const r=h('div','sigrow'),s=h('select','');['invited','present','absent','apology','observer'].forEach(v=>{const o=h('option','',v);o.value=v;o.selected=v===x.attendance_status;s.append(o)});
+  const b=h('button','sm ok','Save');b.addEventListener('click',async()=>{try{await boardPost('/api/dashboard/board/attendance/update',{id:x.id,attendanceStatus:s.value});notify('Attendance updated.');await loadBoard()}catch(e){notify(e.message)}});
+  r.append(h('div','sc',x.seat_title+' · '+x.role_id),s,b);return r;
+ }),'No invited seats for this meeting','Create a meeting to initialise its attendance register.');
+ const minutes=(d.minutes||[]).find(x=>x.meeting_id===selected.value);
+ $('boardMinutesSummary').value=minutes?.summary||'';
+ $('boardMinutesNotes').value=Array.isArray(minutes?.discussion_notes)?minutes.discussion_notes.join('\n'):'';
+ $('boardMinutesEvidence').value=Array.isArray(minutes?.evidence_refs)?minutes.evidence_refs.join('\n'):'';
+ $('boardMinutesConfirm').checked=Boolean(minutes?.founder_confirmed_at);
+ fill('boardMinutes',(d.minutes||[]).map(x=>row(x.summary||'Minutes draft',x.founder_confirmed_at?'Founder-confirmed':'Awaiting Founder confirmation',badge(x.founder_confirmed_at?'Confirmed':'Draft',x.founder_confirmed_at?'good':'pending'))),'No minutes yet','The Board Secretary records minutes after the meeting.');
+ fill('boardActions',(d.actions||[]).map(x=>{
+  const r=row(x.title,(x.assigned_role_id||'Unassigned')+' · '+(x.due_at?new Date(x.due_at).toLocaleDateString():'No deadline'),badge(x.status,statusKind(x.status)));
+  const a=h('div','actions'),s=h('select','');['open','in_progress','blocked','completed','cancelled'].forEach(v=>{const o=h('option','',v.replaceAll('_',' '));o.value=v;o.selected=v===x.status;s.append(o)});
+  const evidence=el2('input',{type:'text',placeholder:'Completion evidence (optional)',maxlength:'4000'}),b=h('button','sm ok','Update');b.addEventListener('click',async()=>{try{await boardPost('/api/dashboard/board/actions/update',{id:x.id,status:s.value,evidence:evidence.value});notify('Action updated.');await loadBoard()}catch(e){notify(e.message)}});
+  a.append(s,evidence,b);r.append(a);return r;
+ }),'No follow-up actions','Create actions from the follow-up panel.');
 }
+$('boardEditMeeting').addEventListener('change',loadBoard);
+$('boardAgendaForm').addEventListener('submit',async e=>{e.preventDefault();try{await boardPost('/api/dashboard/board/agenda/create',{meetingId:$('boardEditMeeting').value,title:$('boardAgendaTitle').value,background:$('boardAgendaBackground').value});$('boardAgendaForm').reset();notify('Agenda item added.');await loadBoard()}catch(err){notify(err.message)}});
+$('boardMinutesForm').addEventListener('submit',async e=>{e.preventDefault();try{await boardPost('/api/dashboard/board/minutes/save',{meetingId:$('boardEditMeeting').value,summary:$('boardMinutesSummary').value,discussionNotes:$('boardMinutesNotes').value.split('\n').map(x=>x.trim()).filter(Boolean),evidenceRefs:$('boardMinutesEvidence').value.split('\n').map(x=>x.trim()).filter(Boolean),founderConfirm:$('boardMinutesConfirm').checked});notify($('boardMinutesConfirm').checked?'Minutes saved and Founder-confirmed.':'Minutes draft saved.');await loadBoard()}catch(err){notify(err.message)}});
+$('boardActionForm').addEventListener('submit',async e=>{e.preventDefault();try{const due=$('boardActionDue').value;await boardPost('/api/dashboard/board/actions/create',{meetingId:$('boardEditMeeting').value,title:$('boardActionTitle').value,description:$('boardActionDescription').value,assignedRoleId:$('boardActionRole').value,dueAt:due?new Date(due).toISOString():null});$('boardActionForm').reset();notify('Follow-up action created.');await loadBoard()}catch(err){notify(err.message)}});
 async function loadBoard(){
  try{
   const r=await fetch('/api/dashboard/board',{headers:authHeaders(founderToken())});
