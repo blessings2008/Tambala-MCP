@@ -77,7 +77,7 @@ test('keeps the legacy numeric maxResults argument and caps it safely', async ()
   }) as typeof fetch;
 
   await webResearch('test query', 999);
-  assert.equal(sentPayload?.max_results, 10);
+  assert.equal(sentPayload?.max_results, 20);
 });
 
 test('formats research with citation guidance and prompt-injection protection', () => {
@@ -95,4 +95,44 @@ test('formats research with citation guidance and prompt-injection protection', 
   assert.match(context, /Evidence snippet/);
   assert.match(context, /untrusted external data/);
   assert.match(context, /0\.877/);
+});
+
+test('supports finance topic, fast search, regional hints and wildcard/path domain filters', async () => {
+  process.env.TAMBALA_WEB_SEARCH_API_KEY = 'test-key';
+  let sentPayload: Record<string, unknown> | undefined;
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    sentPayload = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(JSON.stringify({ results: [] }), { status: 200 });
+  }) as typeof fetch;
+
+  await webResearch('Malawi banking sector', {
+    topic: 'finance',
+    searchDepth: 'fast',
+    chunksPerSource: 4,
+    country: 'Malawi',
+    includeDomains: ['*.mw', 'linkedin.com/in/'],
+  });
+
+  assert.equal(sentPayload?.topic, 'finance');
+  assert.equal(sentPayload?.search_depth, 'fast');
+  assert.equal(sentPayload?.chunks_per_source, 4);
+  assert.equal(sentPayload?.country, 'Malawi');
+  assert.deepEqual(sentPayload?.include_domains, ['*.mw', 'linkedin.com/in']);
+});
+
+test('allows zero-day news freshness and rejects days on non-news searches', async () => {
+  process.env.TAMBALA_WEB_SEARCH_API_KEY = 'test-key';
+  let sentPayload: Record<string, unknown> | undefined;
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    sentPayload = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(JSON.stringify({ results: [] }), { status: 200 });
+  }) as typeof fetch;
+
+  await webResearch('Malawi news today', { topic: 'news', days: 0 });
+  assert.equal(sentPayload?.days, 0);
+
+  await assert.rejects(
+    () => webResearch('Malawi technology', { topic: 'general', days: 3 }),
+    /only supported for news searches/,
+  );
 });
