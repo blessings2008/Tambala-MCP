@@ -9,7 +9,7 @@ import { getOrganizationSnapshot, routeOrganizationObjective } from './organizat
 import { requireConfiguredRuntime, resolveExecutionRoute, type ExecutionRoute, type RoutedCapability } from './organization/execution-router.js';
 import { runtimeConfig } from './config/runtime.js';
 import { ApprovalError, decideApproval } from './organization/workforce/approvals-service.js';
-import { assignWork, deleteCustomDutyById, runDutiesOnce, saveDutyConfig } from './organization/workforce/duty-service.js';
+import { assignWork, clarifyTaskRoom, deleteCustomDutyById, runDutiesOnce, saveDutyConfig } from './organization/workforce/duty-service.js';
 import { DutyConfigError } from './organization/workforce/duty-config.js';
 import { HandoffError } from './organization/workforce/handoffs.js';
 import { verifySignature } from './organization/workforce/sign-work.js';
@@ -461,7 +461,7 @@ const server = createHttpServer(async (req, res) => {
   if (requestPath.startsWith('/api/dashboard/') && req.method === 'POST' && requestPath !== '/api/dashboard/approvals/decide') {
     try {
       const body = await readJsonBody(req, 60_000) as Record<string, unknown>;
-      if (requestPath === '/api/dashboard/signatures/verify') {
+      const roomReply = requestPath.match(/^\\/api\\/dashboard\\/rooms\\/([0-9a-fA-F-]{36})\\/reply$/);\n      if (roomReply) {\n        const clarification = typeof body.clarification === 'string' ? body.clarification : '';\n        const handoff = await clarifyTaskRoom(roomReply[1], clarification);\n        json(res, 200, { ok: true, handoffId: handoff.id, roomId: handoff.room_id, status: 'resumed' });\n      } else if (requestPath === '/api/dashboard/signatures/verify') {
         json(res, 200, await verifySignature({ fingerprint: typeof body.fingerprint === 'string' ? body.fingerprint : undefined, id: typeof body.id === 'string' ? body.id : undefined }));
       } else if (requestPath === '/api/dashboard/handoffs/assign') {
         const agent = String(body.agent ?? '');
