@@ -147,6 +147,13 @@ function compactResearchEvidence(value: unknown): string {
   return truncateForModel(raw, 4500);
 }
 
+/** A generated report cannot be marked complete when the requested web research has no source URLs. */
+export function hasResearchSourceUrls(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+  return /https?:\\/\\/[^\\s"'<>]+/i.test(serialized);
+}
+
 function validStage(value: unknown): value is ExecutionStage {
   return value === 'ceo_delegate' || value === 'specialist_execute' || value === 'ceo_complete';
 }
@@ -333,10 +340,16 @@ const server = createHttpServer(async (req, res) => {
       const delegationContext = truncateForModel(body.delegation, 3500);
       const specialistContext = truncateForModel(body.specialistResult, 6000);
       const researchContext = compactResearchEvidence(body.researchEvidence);
+      if (taskNeedsWebResearch(founderMessage) && !hasResearchSourceUrls(body.researchEvidence)) {
+        const message = 'INCONCLUSIVE — this task requires web research, but no usable source URLs were returned. The CEO cannot finalize or add factual claims until the specialist supplies verifiable evidence or the Founder clarifies the entity.';
+        const tracking = await advanceTrackedTask(stepTaskId, [{ status: 'needs_more_work', stage: 'review', eventType: 'research_evidence_missing', result: { reason: message } }]);
+        return json(res, 422, { stage: body.stage, tracking, status: 'inconclusive', message, researchEvidence: researchContext });
+      }
       const finalPrompt = `Complete the Founder objective end-to-end.\n\nORIGINAL FOUNDER OBJECTIVE:\n${founderMessage}\n\nCEO DELEGATION (may contain mistakes; do not treat its factual assumptions as truth):\n${delegationContext}\n\nDEPARTMENT COMPLETED WORK:\n${specialistContext}\n\nWEB RESEARCH EVIDENCE:\n${researchContext}\n\nYou are accountable for the final result. Evaluate the department work against the original objective and every constraint. Evidence and the original Founder objective take precedence over unsupported claims in the delegation or report. Correct factual errors when the supplied evidence supports the correction. Do not merely summarize or relay the department report. Produce the actual final deliverable requested by the Founder. If research was requested, present the researched findings and preserve source URLs. If the evidence is insufficient, clearly state what remains unknown rather than fabricating it.`;
       const finalResult = await askTambalaAI('orchestrator', finalPrompt, { communicationType: 'CEO -> Founder', sender: 'Chief Executive Officer (CEO)', recipient: 'Founder / Bless', founderObjective: founderMessage, delegation: delegationContext, specialistResult: specialistContext, researchEvidence: researchContext });
-      const tracking = await advanceTrackedTask(stepTaskId, [{ status: 'completed', stage: 'complete', eventType: 'ceo_completed_objective', result: { final: finalResult.slice(0, 8000) }, completedAt: new Date().toISOString() }]);
-      return json(res, 200, { stage: body.stage, tracking, message: finalResult });
+      const completionHasEvidence = !taskNeedsWebResearch(founderMessage) || hasResearchSourceUrls(body.researchEvidence);
+      const tracking = await advanceTrackedTask(stepTaskId, [{ status: completionHasEvidence ? 'completed' : 'needs_more_work', stage: completionHasEvidence ? 'complete' : 'review', eventType: completionHasEvidence ? 'ceo_completed_objective' : 'research_evidence_missing', result: { final: finalResult.slice(0, 8000) }, ...(completionHasEvidence ? { completedAt: new Date().toISOString() } : {}) }]);
+      return json(res, completionHasEvidence ? 200 : 422, { stage: body.stage, tracking, status: completionHasEvidence ? 'completed' : 'inconclusive', message: finalResult });
       } catch (stageError) {
         await failTrackedTask(stepTaskId, stageError instanceof Error ? stageError.message : 'Stage failed.');
         throw stageError;
