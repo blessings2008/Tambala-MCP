@@ -60,6 +60,12 @@ export function isUsableDepartmentReport(department: string, value: string): boo
     || normalized.includes('no ' + shortKey + ' report was supplied')
     || normalized.includes('no ' + shortKey + ' report supplied')) return false;
 
+  // Catch wording variants that describe a missing submission rather than
+  // a department reporting that its underlying records are empty.
+  if (shortKey === 'operations'
+    && /\bno operational report (?:was )?(?:supplied|provided|submitted)\b/.test(normalized)) return false;
+
+
   const otherDepartments = [
     'Sales & Business Development',
     'Operations & Administration',
