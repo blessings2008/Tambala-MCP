@@ -8,6 +8,9 @@ test('Founder company status requests trigger coordinated department reporting',
     'Give me the company status.',
     'I need an overall status report for the business.',
     'Send an operational status update for the organisation.',
+    'Prepare a short organizational status report covering Sales, Operations, Technology and Finance.',
+    'Prepare an organisational status report for the board.',
+    'Give me an organizational status update.',
   ]) assert.equal(isCompanyStatusRequest(prompt), true, prompt);
 });
 
