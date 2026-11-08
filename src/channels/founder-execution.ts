@@ -63,7 +63,7 @@ export function isUsableDepartmentReport(department: string, value: string): boo
   // Catch wording variants that describe a missing submission rather than
   // a department reporting that its underlying records are empty.
   if (shortKey === 'operations'
-    && /\\bno operational report (?:was )?(?:supplied|provided|submitted)\\b/.test(normalized)) return false;
+    && /\bno operational report (?:was )?(?:supplied|provided|submitted)\b/.test(normalized)) return false;
 
 
   const otherDepartments = [
