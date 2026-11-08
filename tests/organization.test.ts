@@ -317,3 +317,20 @@ test('every department has an accountable lead connected to its reporting struct
   }
 });
 
+
+
+test('the advisory Board cannot resolve or approve organizational approval requests', () => {
+  const boardResult = authorizeOrganizationalAction({
+    actorRole: role('board'),
+    action: 'resolve_board_approval',
+  });
+  const founderResult = authorizeOrganizationalAction({
+    actorRole: role('founder'),
+    action: 'resolve_board_approval',
+  });
+  assert.equal(boardResult.allowed, false);
+  assert.equal(boardResult.requiresApproval, false);
+  assert.match(boardResult.reason, /advisory/);
+  assert.equal(founderResult.allowed, false);
+  assert.match(founderResult.reason, /advisory/);
+});
