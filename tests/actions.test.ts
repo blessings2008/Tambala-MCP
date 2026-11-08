@@ -69,7 +69,7 @@ const parse = (...lines: string[]) => parseActions(`ACTIONS:\n${lines.join('\n')
 test('a whatsapp action waits for approval, and an unauthorised role is refused', async () => {
   const h = harness();
   const [r] = await executeActions(h.deps, ctx('outreach'), parse(WA));
-  assert.equal(r.ok, true); assert.match(r.detail, /waiting for the Founder/);
+  assert.equal(r.ok, true); assert.match(r.detail, /awaiting Founder approval/);
   assert.equal(h.store.rows.filter((m) => m.number === '265888123456')[0].status, 'pending_approval');
   const [denied] = await executeActions(h.deps, ctx('security'), parse(WA));
   assert.equal(denied.ok, false); assert.match(denied.detail, /not allowed/);
