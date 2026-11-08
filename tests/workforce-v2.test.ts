@@ -131,6 +131,8 @@ test('custom duties validate, get unique ids, and run through the same engine', 
   assert.equal(custom.custom, true); assert.equal(custom.cadence.kind, 'weekly'); assert.ok(custom.approval);
   const { deps } = dutyDeps('Ten lodges.', '2026-11-11T09:00:00Z', list); // Wednesday 11:00 office
   assert.equal((await runDuty(deps, custom)).status, 'awaiting_approval');
+  const ceoMinutes = validateCustomDuty({ ...ok, title: 'Morning board minutes', agent: 'orchestrator', cadence: { kind: 'weekdays' }, time: '08:25', contexts: ['briefing', 'organization'], requiresApproval: false }, new Set());
+  assert.deepEqual(ceoMinutes.contexts, ['briefing', 'organization']);
   for (const bad of [{ ...ok, title: 'x' }, { ...ok, agent: 'ghost' }, { ...ok, time: '25:00' }, { ...ok, time: '03:00' }, { ...ok, cadence: { kind: 'weekly', day: 9 } }, { ...ok, contexts: ['briefing'] }, { ...ok, job: 'short' }]) {
     assert.throws(() => validateCustomDuty(bad, new Set()), DutyConfigError);
   }
