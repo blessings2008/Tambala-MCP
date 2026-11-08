@@ -35,14 +35,36 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
   const releaseSlot = acquireAgentRequestSlot(agent);
   try {
     const contextText = context === undefined ? '' : `\n\nTambala business context:\n${JSON.stringify(context)}`;
-    const response = await getClient(agent).chat.completions.create({
-      model: config.model,
-      messages: [
-        { role: 'system', content: AGENT_PROMPT_RULES[agent] },
-        { role: 'user', content: `${input}${contextText}` },
-      ],
-      temperature: 0.2,
-    });
+    let response: { choices: Array<{ message: { content: string | null } }> };
+    try {
+      response = await getClient(agent).chat.completions.create({
+        model: config.model,
+        messages: [
+          { role: 'system', content: AGENT_PROMPT_RULES[agent] },
+          { role: 'user', content: `${input}${contextText}` },
+        ],
+        temperature: 0.2,
+      });
+    } catch (error) {
+      const providerError = error as { status?: number; code?: string; request_id?: string; message?: string };
+      const status = typeof providerError.status === 'number' ? providerError.status : undefined;
+      const code = typeof providerError.code === 'string' ? providerError.code : undefined;
+      const requestId = typeof providerError.request_id === 'string' ? providerError.request_id : undefined;
+      const detail = providerError.message || 'Unknown provider error';
+      console.error('AI provider request failed', JSON.stringify({
+        agent,
+        provider: config.provider,
+        model: config.model,
+        baseURL: config.baseURL,
+        apiKeySource: config.apiKeySource,
+        apiKeyPresent: Boolean(config.apiKey?.trim()),
+        status,
+        code,
+        requestId,
+        message: detail,
+      }));
+      throw new Error(`${agent} agent ${config.provider} request failed${status ? ` (HTTP ${status})` : ''}: ${detail}`);
+    }
     const content = response.choices[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) throw new Error(`The ${agent} AI provider returned an empty response.`);
     return content;
