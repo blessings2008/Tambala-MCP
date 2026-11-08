@@ -232,13 +232,37 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         await deps.store.updateRoom(h.room_id, { status: 'ready_for_review', deliverable: stamped.slice(0, 8000) });
         await deps.store.roomEvent(h.room_id, 'room_ready_for_review', h.to_role_id, { taskId });
       }
+      const review = (await deps.askAgent('orchestrator', [
+        'CEO REVIEW — you own acceptance of this delegated work.',
+        'Review only whether the employee completed the exact request. Use the request and deliverable below; do not add facts or assume missing work was done.',
+        'Return exactly one first-line decision: DECISION: ACCEPT, DECISION: REVISION_REQUIRED, or DECISION: FOUNDER_INPUT_REQUIRED. Follow it with a short reason.',
+        `ORIGINAL REQUEST: ${h.request}`,
+        `EMPLOYEE DELIVERABLE: ${stamped.slice(0, 7000)}`,
+        'Accept only if the requested deliverable is actually present and any required evidence is included. If it is incomplete, request a specific revision. If the subject or instructions are ambiguous, ask the Founder.',
+      ].join('\\n\\n'), contextPacket)).trim();
+      const decision = review.match(/^\\s*DECISION:\\s*(ACCEPT|REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)\\b/im)?.[1];
+      if (decision !== 'ACCEPT') {
+        const reason = review.slice(0, 1500) || 'CEO review did not return a recognized decision.';
+        await deps.tasks.advance(taskId, [
+          { status: 'needs_more_work', stage: 'ceo', eventType: decision === 'REVISION_REQUIRED' ? 'ceo_revision_requested' : 'ceo_review_waiting_for_founder', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, review: reason } },
+        ]);
+        const awaitingFounder = decision !== 'REVISION_REQUIRED';
+        const contextSummary = [h.context_summary, `CEO REVIEW FEEDBACK: ${reason}`].filter(Boolean).join('\\n\\n').slice(0, 3000);
+        await deps.store.update(h.id, { status: awaitingFounder ? 'awaiting_founder' : 'queued', context_summary: contextSummary, result: stamped.slice(0, 8000), error: reason, completed_at: null });
+        if (h.room_id) {
+          await deps.store.updateRoom(h.room_id, { status: awaitingFounder ? 'awaiting_founder' : 'revision_requested', deliverable: stamped.slice(0, 8000), blocker: reason });
+          await deps.store.roomEvent(h.room_id, awaitingFounder ? 'ceo_review_needs_founder' : 'ceo_revision_requested', 'ceo', { review: reason });
+        }
+        outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: awaitingFounder ? 'waiting' : 'retry', reason, taskId, roomId: h.room_id ?? undefined });
+        continue;
+      }
       await deps.tasks.advance(taskId, [
         { status: 'returned_to_ceo', stage: 'review', eventType: 'department_work_returned', roleId: h.to_role_id, result: { handoffId: h.id, roomId: h.room_id, summary: stamped.slice(0, 8000) } },
-        { status: 'completed', stage: 'complete', eventType: 'handoff_completed', roleId: h.to_role_id, completedAt: deps.now().toISOString() },
+        { status: 'completed', stage: 'complete', eventType: 'handoff_completed', roleId: 'ceo', completedAt: deps.now().toISOString() },
       ]);
-      await deps.store.update(h.id, { status: 'completed', result: stamped.slice(0, 8000), completed_at: deps.now().toISOString() });
+      await deps.store.update(h.id, { status: 'completed', result: stamped.slice(0, 8000), completed_at: deps.now().toISOString(), error: null });
       if (h.room_id) {
-        await deps.store.roomEvent(h.room_id, 'ceo_review_accepted', 'ceo', { taskId });
+        await deps.store.roomEvent(h.room_id, 'ceo_review_accepted', 'ceo', { taskId, review });
         await deps.store.updateRoom(h.room_id, { status: 'archived', closed_at: deps.now().toISOString(), blocker: null });
         await deps.store.roomEvent(h.room_id, 'room_archived', 'ceo', { retained: true });
       }
