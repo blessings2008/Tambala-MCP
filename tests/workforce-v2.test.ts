@@ -93,7 +93,7 @@ test('the Founder assigns work and the employee completes it', async () => {
   assert.equal(out[0].status, 'completed');
   assert.equal(store.rows[0].status, 'completed');
   assert.equal(store.rows[0].result, 'Here is the overview.\n\n— TT-005\n  ✍ TEST-SIG');
-  assert.match(asked[0], /The Founder has asked for your help/); assert.match(asked[0], /Do not hand work on/);
+  assert.match(asked[0], /The Founder has assigned this work to your room/); assert.match(asked[0], /Do not hand work on/);
   assert.equal((await processHandoffs(deps)).length, 0); // nothing left in the inbox
 });
 
