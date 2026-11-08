@@ -44,7 +44,7 @@ export function normalizeResearchQuery(input: string): string {
     .replace(/^(please\s+)?(research|investigate|look\s*up|find|identify)\s+/i, '')
     .trim();
 
-  const stop = /\s+(?:and|then|to)\s+(?:determine|identify|find|assess|analyse|analyze|research|investigate|recommend|prepare)\b/i.exec(query);
+  const stop = /\s+(?:(?:and|then|to)\s+)+(?:determine|identify|find|assess|analyse|analyze|research|investigate|recommend|prepare)\b/i.exec(query);
   if (stop?.index && stop.index > 0) query = query.slice(0, stop.index).trim();
 
   query = query.replace(/[.?!,:;]+$/g, '').trim();
