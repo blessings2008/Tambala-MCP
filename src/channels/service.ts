@@ -29,7 +29,7 @@ export function productionOutboxDeps(store: MessageStore = messageStore(), now: 
     sign: (input) => signWork(input),
     approvals: { create: (input) => createApprovalRequest({ ...input }) },
     senderLabel: (roleId) => labelForRole(roleId),
-    pauseMs: 4000,
+    cooldownMs: Math.max(90_000, Number(process.env.TAMBALA_WHATSAPP_COOLDOWN_MS) || 90_000),
   };
 }
 
