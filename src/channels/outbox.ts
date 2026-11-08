@@ -148,6 +148,13 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
     if (row.audience === 'client') {
       if (blocked.has(row.number)) { await deps.store.update(row.id, { status: 'blocked', claimed_at: null, reason: 'This number opted out before the message was sent.' }); out.push({ id: row.id, status: 'blocked' }); continue; }
       if (!sendWindowOpen(now)) { await wait('Outside the sending window (Mon-Sat 07:30-19:30). It will go out when the window opens.'); continue; }
+      const cooldownMs = Math.max(0, deps.cooldownMs ?? deps.pauseMs ?? 0);
+      if (cooldownMs > 0) {
+        const latest = (await deps.store.recent(200)).find((message) => message.direction === 'out' && message.audience === 'client' && message.status === 'sent' && message.sent_at);
+        const sentAt = latest?.sent_at ? new Date(latest.sent_at).getTime() : 0;
+        const remaining = sentAt ? cooldownMs - (now.getTime() - sentAt) : 0;
+        if (remaining > 0) { await wait(`Customer-send cooldown active. Try again in about ${Math.ceil(remaining / 1000)} seconds.`); continue; }
+      }
       if (counts.client >= CLIENT_DAILY_LIMIT()) { await wait(`Daily customer limit of ${CLIENT_DAILY_LIMIT()} reached. It will go out tomorrow.`); continue; }
     } else if (counts.founder >= FOUNDER_DAILY_LIMIT()) { await wait('Daily limit of messages to the Founder reached.'); continue; }
 
