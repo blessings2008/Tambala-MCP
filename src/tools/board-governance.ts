@@ -42,6 +42,11 @@ export function registerBoardGovernanceTools(server: McpServer): void {
     inputSchema: { limit: z.number().int().min(1).max(50).optional().default(20) },
   }, async ({ limit }) => {
     const actor = await identity();
+    if (actor.role.id !== 'founder' && actor.role.id !== 'ceo') await activeBoardMember(actor.role.id);
+    if (actor.role.id === 'ceo') {
+      const ceoSeat = await supabaseSelect<Member>('organization_board_members', `select=role_id,active&role_id=eq.ceo&active=eq.true&limit=1`);
+      if (!ceoSeat.length) throw new Error('CEO access to Board records is not currently appointed.');
+    }
     const [members, meetings, attendance, agenda, minutes, recommendations, actions] = await Promise.all([
       supabaseSelect<Member>('organization_board_members', 'select=role_id,seat_title,member_type,active,voting_rights&order=created_at.asc'),
       supabaseSelect<Meeting>('organization_board_meetings', `select=id,meeting_number,title,meeting_type,status,scheduled_at,purpose,created_at&order=scheduled_at.desc.nullslast,created_at.desc&limit=${limit}`),
