@@ -70,6 +70,7 @@ export interface HandoffStore {
   claim(id: string): Promise<boolean>;
   update(id: string, patch: Partial<Handoff>): Promise<void>;
   recent(sinceIso: string): Promise<Handoff[]>;
+  get(id: string): Promise<Handoff | null>;
   createRoom(room: Omit<TaskRoom, 'id'>): Promise<TaskRoom>;
   updateRoom(id: string, patch: Partial<TaskRoom>): Promise<void>;
   roomEvent(roomId: string, eventType: string, actorRoleId: string | null, payload?: unknown): Promise<void>;
@@ -84,6 +85,7 @@ export class SupabaseHandoffStore implements HandoffStore {
   }
   async update(id: string, patch: Partial<Handoff>) { await supabaseUpdate('organization_handoffs', patch as Record<string, unknown>, `id=eq.${encodeURIComponent(id)}`); }
   recent(sinceIso: string) { return supabaseSelect<Handoff>('organization_handoffs', `select=*&created_at=gte.${encodeURIComponent(sinceIso)}&order=created_at.desc&limit=100`); }
+  async get(id: string) { return (await supabaseSelect<Handoff>('organization_handoffs', `select=*&id=eq.${encodeURIComponent(id)}&limit=1`))[0] ?? null; }
   createRoom(room: Omit<TaskRoom, 'id'>) { return supabaseInsert<TaskRoom>('organization_task_rooms', room as unknown as Record<string, unknown>); }
   async updateRoom(id: string, patch: Partial<TaskRoom>) { await supabaseUpdate('organization_task_rooms', { ...patch, updated_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(id)}`); }
   async roomEvent(roomId: string, eventType: string, actorRoleId: string | null, payload?: unknown) {
@@ -100,6 +102,7 @@ export class InMemoryHandoffStore implements HandoffStore {
   async claim(id: string) { const r = this.rows.find((x) => x.id === id); if (!r || r.status !== 'queued') return false; r.status = 'running'; return true; }
   async update(id: string, patch: Partial<Handoff>) { const r = this.rows.find((x) => x.id === id); if (r) Object.assign(r, patch); }
   async recent(sinceIso: string) { return this.rows.filter((r) => r.created_at >= sinceIso).reverse(); }
+  async get(id: string) { return this.rows.find((r) => r.id === id) ?? null; }
   async createRoom(room: Omit<TaskRoom, 'id'>) { const row = { ...room, id: randomUUID() }; this.rooms.push(row); return row; }
   async updateRoom(id: string, patch: Partial<TaskRoom>) { const row = this.rooms.find((r) => r.id === id); if (row) Object.assign(row, patch); }
   async roomEvent(roomId: string, eventType: string, actorRoleId: string | null, payload?: unknown) { this.roomEvents.push({ room_id: roomId, event_type: eventType, actor_role_id: actorRoleId, payload }); }
@@ -137,7 +140,7 @@ export async function queueHandoff(store: HandoffStore, input: {
   return created;
 }
 
-export interface HandoffDeps {
+export async function resumeFounderHandoff(store: HandoffStore, handoffId: string, clarification: string, actorRoleId = 'founder'): Promise<Handoff> {\n  const answer = clarification.trim();\n  if (answer.length < 2 || answer.length > 2000) throw new HandoffError('Provide a clarification between 2 and 2,000 characters.');\n  const handoff = await store.get(handoffId);\n  if (!handoff || handoff.status !== 'awaiting_founder' || !handoff.room_id) throw new HandoffError('This handoff is not waiting for Founder clarification.');\n  const context = [handoff.context_summary, `FOUNDER CLARIFICATION: ${answer}`].filter(Boolean).join('\\n\\n').slice(0, 3000);\n  await store.update(handoff.id, { status: 'queued', context_summary: context, error: null, completed_at: null });\n  await store.updateRoom(handoff.room_id, { status: 'active', blocker: null });\n  await store.roomEvent(handoff.room_id, 'founder_clarification_received', actorRoleId, { clarification: answer });\n  return { ...handoff, status: 'queued', context_summary: context, error: null, completed_at: null };\n}\nexport interface HandoffDeps {
   store: HandoffStore; now: () => Date;
   agentUnavailableReason(agent: AgentName): Promise<string | null>;
   senderLabel(roleId: string): Promise<string>;
