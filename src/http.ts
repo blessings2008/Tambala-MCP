@@ -465,7 +465,7 @@ const server = createHttpServer(async (req, res) => {
       if (roomReply) {
         const clarification = typeof body.clarification === 'string' ? body.clarification : '';
         const handoff = await clarifyTaskRoom(roomReply[1], clarification);
-        json(res, 200, { ok: true, handoffId: handoff.id, roomId: handoff.room_id, status: 'resumed' });
+        json(res, 200, { ok: true, handoffId: handoff.id, roomId: handoff.room_id, status: handoff.status });
       } else if (requestPath === '/api/dashboard/signatures/verify') {
         json(res, 200, await verifySignature({ fingerprint: typeof body.fingerprint === 'string' ? body.fingerprint : undefined, id: typeof body.id === 'string' ? body.id : undefined }));
       } else if (requestPath === '/api/dashboard/handoffs/assign') {
