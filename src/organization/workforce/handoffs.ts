@@ -205,7 +205,9 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         actionHelp(agent),
         'Keep it under 300 words, plain and scannable. Say what you did, what you found, and anything blocked.',
       ].filter(Boolean).join('\n\n');
-      const raw = (await deps.askAgent(agent, prompt, await deps.buildContext())).trim();
+      const contextPacket = await deps.buildContext();
+      if (h.room_id) await deps.store.updateRoom(h.room_id, { context_packet: { context_summary: h.context_summary, source_duty_id: h.source_duty_id, organization_context: contextPacket } });
+      const raw = (await deps.askAgent(agent, prompt, contextPacket)).trim();
       const acted = parseActions(raw);
       const result = acted.clean.trim();
       if (!result) throw new Error('The employee returned no work product.');
