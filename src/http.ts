@@ -28,6 +28,7 @@ import { handleHealth, handleNotFound } from './http/health.js';
 import { isAuthorized, unauthorized } from './http/auth.js';
 import { advanceTrackedTask, beginTrackedTask, failTrackedTask } from './organization/task-tracking.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo, type AgentName } from './services/ai.js';
+import { supabaseInsert, supabaseSelect, supabaseUpdate } from './lib/supabase.js';
 
 const nodeHandler = toNodeHandler(mcpHandler);
 const chatAgents = Object.keys(AGENT_DIRECTORY) as AgentName[];
@@ -196,12 +197,13 @@ const server = createHttpServer(async (req, res) => {
 
 
   if ((requestPath === '/api/chat-test/status' || requestPath === '/api/chat-test' || requestPath === '/api/chat-test/collaborate' || requestPath === '/api/chat-test/step' || requestPath === '/api/dashboard' || requestPath === '/api/dashboard/approvals/decide' || requestPath.startsWith('/api/dashboard/')) && (req.method === 'GET' || req.method === 'POST')) {
-    const authorized = requestPath === '/api/dashboard/approvals/decide'
+    const founderOnlyDashboardPath = requestPath === '/api/dashboard/approvals/decide' || requestPath === '/api/dashboard/board' || requestPath.startsWith('/api/dashboard/board/');
+    const authorized = founderOnlyDashboardPath
       ? founderApprovalTokenMatches(bearerToken(req))
       : chatTokenMatches(bearerToken(req));
     if (!authorized) {
-      json(res, 401, { error: requestPath === '/api/dashboard/approvals/decide'
-        ? 'Founder approval authentication is required.'
+      json(res, 401, { error: founderOnlyDashboardPath
+        ? 'Founder authentication is required for Board governance.'
         : 'Unauthorized. Check the chat test token.' });
       return;
     }
@@ -389,7 +391,36 @@ const server = createHttpServer(async (req, res) => {
   if (requestPath.startsWith('/api/dashboard/') && req.method === 'POST' && requestPath !== '/api/dashboard/approvals/decide') {
     try {
       const body = await readJsonBody(req, 60_000) as Record<string, unknown>;
-      if (requestPath === '/api/dashboard/signatures/verify') {
+      if (requestPath === '/api/dashboard/board/meetings/create') {
+        const title = typeof body.title === 'string' ? body.title.trim() : '';
+        const meetingType = ['ordinary', 'strategic_review', 'special', 'inaugural'].includes(String(body.meetingType)) ? String(body.meetingType) : 'ordinary';
+        const scheduledAt = typeof body.scheduledAt === 'string' && body.scheduledAt.trim() ? body.scheduledAt.trim() : null;
+        if (title.length < 3 || title.length > 200) { json(res, 400, { error: 'Meeting title must be between 3 and 200 characters.' }); return; }
+        if (scheduledAt && Number.isNaN(Date.parse(scheduledAt))) { json(res, 400, { error: 'Enter a valid meeting date and time.' }); return; }
+        const meeting = await supabaseInsert<Record<string, unknown>>('organization_board_meetings', {
+          title, meeting_type: meetingType, scheduled_at: scheduledAt,
+          purpose: typeof body.purpose === 'string' ? body.purpose.trim().slice(0, 2000) : '',
+          chair_role_id: 'founder', created_by_role_id: 'founder', secretary_role_id: 'director-board-governance',
+        });
+        const members = await supabaseSelect<{ role_id: string; seat_title: string }>('organization_board_members', 'select=role_id,seat_title&active=eq.true');
+        for (const member of members) {
+          await supabaseInsert('organization_board_attendance', {
+            meeting_id: meeting.id, role_id: member.role_id, seat_title: member.seat_title,
+            attendance_status: member.role_id === 'founder' ? 'present' : 'invited',
+          });
+        }
+        json(res, 201, { ok: true, meeting, invitedSeats: members.length });
+      } else if (requestPath === '/api/dashboard/board/meetings/status') {
+        const meetingId = String(body.meetingId ?? '');
+        const status = String(body.status ?? '');
+        if (!/^[0-9a-f-]{36}$/i.test(meetingId) || !['in_session', 'completed', 'cancelled'].includes(status)) { json(res, 400, { error: 'Invalid meeting or status.' }); return; }
+        const rows = await supabaseSelect<{ id: string; status: string }>('organization_board_meetings', `select=id,status&id=eq.${encodeURIComponent(meetingId)}&limit=1`);
+        const transitions: Record<string, string[]> = { scheduled: ['in_session', 'cancelled'], in_session: ['completed', 'cancelled'] };
+        if (!rows.length || !transitions[rows[0].status]?.includes(status)) { json(res, 409, { error: 'That meeting status transition is not allowed.' }); return; }
+        const now = new Date().toISOString();
+        const meeting = await supabaseUpdate('organization_board_meetings', { status, opened_at: status === 'in_session' ? now : undefined, closed_at: ['completed', 'cancelled'].includes(status) ? now : null }, `id=eq.${encodeURIComponent(meetingId)}`);
+        json(res, 200, { ok: true, meeting });
+      } else if (requestPath === '/api/dashboard/signatures/verify') {
         json(res, 200, await verifySignature({ fingerprint: typeof body.fingerprint === 'string' ? body.fingerprint : undefined, id: typeof body.id === 'string' ? body.id : undefined }));
       } else if (requestPath === '/api/dashboard/handoffs/assign') {
         const agent = String(body.agent ?? '');
@@ -482,6 +513,27 @@ const server = createHttpServer(async (req, res) => {
   if (requestPath === '/api/dashboard' && req.method === 'GET') {
     try { json(res, 200, await buildDashboard()); }
     catch (error) { console.error('Dashboard build failed:', error instanceof Error ? error.message : error); json(res, 500, { error: 'Dashboard data could not be built.' }); }
+    return;
+  }
+
+
+  if (requestPath === '/api/dashboard/board' && req.method === 'GET') {
+    try {
+      const [members, meetings, attendance, agenda, minutes, recommendations, actions] = await Promise.all([
+        supabaseSelect<Record<string, unknown>>('organization_board_members', 'select=role_id,seat_title,member_type,active,voting_rights&order=created_at.asc'),
+        supabaseSelect<Record<string, unknown>>('organization_board_meetings', 'select=id,meeting_number,title,meeting_type,status,scheduled_at,purpose,created_at,opened_at,closed_at&order=created_at.desc&limit=30'),
+        supabaseSelect<Record<string, unknown>>('organization_board_attendance', 'select=id,meeting_id,role_id,seat_title,attendance_status,recorded_at&order=recorded_at.desc&limit=100'),
+        supabaseSelect<Record<string, unknown>>('organization_board_agenda_items', 'select=id,meeting_id,item_number,title,background,presenter_role_id,status,created_at&order=created_at.asc&limit=100'),
+        supabaseSelect<Record<string, unknown>>('organization_board_minutes', 'select=id,meeting_id,summary,discussion_notes,evidence_refs,prepared_by_role_id,founder_confirmed_at,created_at,updated_at&order=updated_at.desc&limit=30'),
+        supabaseSelect<Record<string, unknown>>('organization_board_recommendations', 'select=id,meeting_id,agenda_item_id,title,recommendation,rationale,risk_level,status,proposed_by_role_id,founder_decision_note,founder_decided_at,created_at&order=created_at.desc&limit=50'),
+        supabaseSelect<Record<string, unknown>>('organization_board_actions', 'select=id,meeting_id,recommendation_id,title,description,assigned_role_id,due_at,status,completion_evidence,created_at&order=due_at.asc.nullslast,created_at.desc&limit=100'),
+      ]);
+      json(res, 200, { authority: 'The AI Advisory Board is non-voting and advisory. Only the Founder makes binding decisions.', members, meetings, attendance, agenda, minutes, recommendations, actions });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Board records could not be loaded.';
+      console.error('Board dashboard load failed:', message);
+      json(res, 503, { error: 'Board governance records are not available yet. Confirm that the approved governance migration has been applied.', detail: message.slice(0, 300) });
+    }
     return;
   }
 
