@@ -21,6 +21,8 @@ export interface OutboxDeps {
   senderLabel: (roleId: string) => string;
   /** Pause between customer sends, to look like a person rather than a script. Zero in tests. */
   pauseMs?: number;
+  /** Minimum gap between customer sends, including across separate worker runs. */
+  cooldownMs?: number;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -31,6 +33,17 @@ export interface QueueInput {
   founderApproved?: boolean;
 }
 export interface QueueResult { id: string; status: MessageRow['status']; reason?: string; approvalId?: string | null }
+
+/** Remove internal employee identities and workflow annotations from customer-facing copy. */
+export function sanitizeCustomerMessage(value: string): string {
+  const internalLine = /^\\s*(?:(?:prepared|generated|drafted|sent)\\s+by\\b.*|(?:agent|role|employee|department)\\s*:\\s*.*|(?:ceo|chief executive officer|head of [^|—–-]+|director of [^|—–-]+)\\s*[|—–-]\\s*TT[-\\s]?\\d{3}.*|(?:—|–|-{1,2})?\\s*TT[-\\s]?\\d{3}\\b.*)$/i;
+  return value.split(/\\r?\\n/)
+    .filter((line) => !internalLine.test(line))
+    .map((line) => line.replace(/\\bTT[-\\s]?\\d{3}\\b/gi, '').trimEnd())
+    .join('\\n')
+    .replace(/\\n{3,}/g, '\\n\\n')
+    .trim();
+}
 
 const dayStartIso = (now: Date): string => {
   const lt = localTime(now);
@@ -44,7 +57,7 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
   const founder = deps.founderNumber();
   const blocked = await deps.store.blockedNumbers();
   const base = decide({ to, purpose: input.purpose, agent: input.agent, text: input.text, hasDocument: Boolean(input.documentId) }, { founderNumber: founder, blocked });
-  const text = base.audience === 'client' ? withOptOut(input.text.trim(), input.purpose) : input.text.trim();
+  const customerCopy = base.audience === 'client' ? sanitizeCustomerMessage(input.text.trim()) : input.text.trim();\n  if (base.audience === 'client' && customerCopy.length < 2) throw new OutboxError('The customer message contains no usable business content after internal notes were removed.');\n  const text = base.audience === 'client' ? withOptOut(customerCopy, input.purpose) : customerCopy;
 
   const row = await deps.store.add({
     direction: 'out', number: to, audience: base.audience, purpose: input.purpose, from_role_id: input.roleId, text,
@@ -70,7 +83,7 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
     return { id: row.id, status: 'queued' };
   }
 
-  if (input.founderApproved && input.roleId === 'founder') {
+  // Founder-authorized autonomous first contact: only Outreach may send, and only for a named CRM prospect.\n  // Other customer-facing purposes remain behind the normal approval gate.\n  if (base.audience === 'client' && input.purpose === 'outreach' && input.agent === 'outreach' && input.contactLabel?.trim()) {\n    await deps.store.update(row.id, { ...patch, status: 'queued', reason: null });\n    return { id: row.id, status: 'queued' };\n  }\n\n  if (input.founderApproved && input.roleId === 'founder') {
     await deps.store.update(row.id, { ...patch, status: 'queued' });
     return { id: row.id, status: 'queued' };
   }
