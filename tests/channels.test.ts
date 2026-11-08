@@ -154,7 +154,7 @@ test('outbox: first-contact Outreach is queued autonomously and strips internal 
   const h = outboxHarness({ cooldownMs: 90_000 });
   const r = await queueMessage(h.deps, {
     ...sales, to: '0888123456',
-    text: 'Hello Lakeview Lodge, we build professional websites for businesses.\\n\\nPrepared by CEO · TT-001',
+    text: 'Hello Lakeview Lodge, we build professional websites for businesses.\n\nPrepared by CEO · TT-001',
     purpose: 'outreach', contactLabel: 'Lakeview Lodge (lead)',
   });
   assert.equal(r.status, 'queued');
@@ -183,7 +183,7 @@ test('outbox: customer cooldown is enforced between separate worker runs', async
 });
 
 test('outbox: customer message sanitizer removes employee identifiers and internal attribution', () => {
-  const clean = sanitizeCustomerMessage('Hello, we can help with your website.\\n\\nBy CEO TT 001\\nPrepared by CEO · TT-001');
+  const clean = sanitizeCustomerMessage('Hello, we can help with your website.\n\nBy CEO TT 001\nPrepared by CEO · TT-001');
   assert.equal(clean, 'Hello, we can help with your website.');
   assert.doesNotMatch(clean, /CEO|TT[- ]?001/i);
 });
