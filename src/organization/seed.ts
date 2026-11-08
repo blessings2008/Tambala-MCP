@@ -17,12 +17,12 @@ const roles: OrganizationalRole[] = [
   },
   {
     id: 'board',
-    title: 'Board of Directors',
+    title: 'AI Advisory Board',
     kind: 'shared_responsibility',
     unitId: 'executive-governance',
     reportsToRoleId: 'founder',
-    purpose: 'Provide strategic oversight, review risk and performance, and decide matters assigned to the Board.',
-    capabilities: ['governance.review', 'strategy.review', 'approvals.resolve_board'],
+    purpose: 'Provide strategic oversight, challenge assumptions, review risk and performance, and submit non-binding recommendations to the Founder. The Board has no independent approval or execution authority.',
+    capabilities: ['governance.review', 'strategy.review'],
     activation: 'planned',
   },
   {
