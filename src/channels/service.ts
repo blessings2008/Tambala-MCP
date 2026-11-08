@@ -104,7 +104,7 @@ async function handleFounderInstruction(envelope: FounderMessageEnvelope): Promi
 
     const specialistResult = await askTambalaAI(
       execution.agent,
-      `CEO handoff from Founder WhatsApp instruction. Execute the actual task and return the requested deliverable. Do not claim external actions, messages, payments, deployments, or database changes unless a connected tool has verifiably completed them. If required information or permissions are missing, state the blocker clearly.\n\nFounder instruction:\n${envelope.content.text}\n\nDepartment: ${execution.department}\nRole: ${execution.role}\nDeliverable guidance: ${execution.deliverableHints.join('; ')}\nPriority: ${envelope.priority}`,
+      `CEO handoff from Founder WhatsApp instruction. Execute the actual task and return the requested deliverable. Use the CEO's interpretation below, but treat the original Founder instruction as authoritative if there is any conflict. Do not claim external actions, messages, payments, deployments, or database changes unless a connected tool has verifiably completed them. If required information or permissions are missing, state the blocker clearly.\n\nCEO handoff summary:\n${ceoBrief}\n\nFounder instruction:\n${envelope.content.text}\n\nDepartment: ${execution.department}\nRole: ${execution.role}\nDeliverable guidance: ${execution.deliverableHints.join('; ')}\nPriority: ${envelope.priority}`,
       { communicationType: 'CEO -> Department', sender: 'Chief Executive Officer', recipient: execution.role, messageId: envelope.message_id },
     );
     return await askTambalaAI(
@@ -115,7 +115,8 @@ async function handleFounderInstruction(envelope: FounderMessageEnvelope): Promi
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'AI runtime unavailable.';
     console.error('Founder WhatsApp instruction could not be routed:', detail);
-    return `I received your instruction, but the CEO workflow could not complete it. Runtime issue: ${detail}. Please check the CEO and department runtime configuration; your message has been saved in the inbound message log.`;
+    const safeDetail = detail.replace(/(?:gsk_|sk-|Bearer\\s+)[A-Za-z0-9._-]{12,}/g, '[redacted]').slice(0, 240);
+    return `I received your instruction, but the CEO workflow could not complete it. Runtime issue: ${safeDetail}. Please check the CEO and department runtime configuration; your message has been saved in the inbound message log.`;
   }
 }
 
