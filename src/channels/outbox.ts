@@ -23,6 +23,8 @@ export interface OutboxDeps {
   pauseMs?: number;
   /** Minimum gap between customer sends, including across separate worker runs. */
   cooldownMs?: number;
+  /** Resolves a normalized WhatsApp number to a CRM lead label; required for autonomous first contact. */
+  verifyOutreachLead?: (number: string) => Promise<string | null>;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -54,6 +56,15 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
   const to = normalizePhone(input.to);
   if (!to) throw new OutboxError(`"${input.to}" is not a valid phone number. Use international format, e.g. +265888123456.`);
   const now = deps.now();
+  const autonomousOutreach = input.purpose === 'outreach' && input.agent === 'outreach' && input.roleId === 'director-sales-business-development';
+  let verifiedContactLabel = input.contactLabel?.trim() || null;
+  if (autonomousOutreach) {
+    const crmLabel = await deps.verifyOutreachLead?.(to);
+    if (!crmLabel || !/\(lead\)$/i.test(crmLabel)) {
+      throw new OutboxError('Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number. No customer message was queued.');
+    }
+    verifiedContactLabel = crmLabel;
+  }
   const founder = deps.founderNumber();
   const blocked = await deps.store.blockedNumbers();
   const base = decide({ to, purpose: input.purpose, agent: input.agent, text: input.text, hasDocument: Boolean(input.documentId) }, { founderNumber: founder, blocked });
@@ -64,7 +75,7 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
   const row = await deps.store.add({
     direction: 'out', number: to, audience: base.audience, purpose: input.purpose, from_role_id: input.roleId, text,
     document_id: input.documentId ?? null, approval_id: null, status: 'queued', reason: null, provider_message_id: null,
-    attempts: 0, task_id: input.taskId ?? null, signature: null, contact_label: input.contactLabel ?? null, created_at: now.toISOString(), sent_at: null,
+    attempts: 0, task_id: input.taskId ?? null, signature: null, contact_label: verifiedContactLabel, created_at: now.toISOString(), sent_at: null,
   });
 
   if (base.verdict === 'block') { await deps.store.update(row.id, { status: 'blocked', reason: base.reason }); return { id: row.id, status: 'blocked', reason: base.reason }; }
@@ -87,7 +98,7 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
 
   // Founder-authorized autonomous first contact: only Outreach may send, and only for a named CRM prospect.
   // Other customer-facing purposes remain behind the normal approval gate.
-  if (base.audience === 'client' && input.purpose === 'outreach' && input.agent === 'outreach' && input.roleId === 'director-sales-business-development' && input.contactLabel?.trim()) {
+  if (base.audience === 'client' && autonomousOutreach && verifiedContactLabel) {
     await deps.store.update(row.id, { ...patch, status: 'queued', reason: null });
     return { id: row.id, status: 'queued' };
   }
