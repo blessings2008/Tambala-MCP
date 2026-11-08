@@ -59,11 +59,11 @@ function boundedInteger(value: number | undefined, fallback: number, min: number
 function normalizeDomains(domains: string[] | undefined): string[] | undefined {
   if (!domains?.length) return undefined;
   const normalized = [...new Set(domains
-    .map((entry) => entry.trim().toLowerCase().replace(/^https?:\\/\\//, '').replace(/\\/$/, ''))
+    .map((entry) => entry.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, ''))
     .filter((entry) => {
       if (!entry || entry.length > 300 || /[?#@]/.test(entry)) return false;
       const [host, ...pathParts] = entry.split('/');
-      const validHost = /^(?:\\*\\.)?(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)*[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(host);
+      const validHost = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(host);
       const validPath = pathParts.every((part) => /^[a-z0-9._~-]+$/.test(part));
       return validHost && validPath;
     }))];
