@@ -221,6 +221,14 @@ test('outbox: transient failures retry three times then fail; permanent ones fai
   await processOutbox(p.deps); assert.equal((await p.store.byId(q2.id))!.status, 'failed'); assert.equal((await p.store.byId(q2.id))!.attempts, 1);
 });
 
+test('outbox: concurrent workers cannot claim the same in-memory queue row', async () => {
+  const h = outboxHarness();
+  const q = await queueMessage(h.deps, { roleId: 'ceo', agent: 'orchestrator', to: FOUNDER, text: 'Single delivery only', purpose: 'notify_founder' });
+  const [a, b] = await Promise.all([processOutbox(h.deps), processOutbox(h.deps)]);
+  assert.equal(a.concat(b).filter((x) => x.id === q.id && x.status === 'sent').length, 1);
+  assert.equal(h.sent.filter((x) => x.text.includes('Single delivery only')).length, 1);
+});
+
 test('outbox: invalid numbers are refused up front', async () => {
   const h = outboxHarness();
   await assert.rejects(queueMessage(h.deps, { ...sales, to: 'call me', text: 'Hello there', purpose: 'followup' }), OutboxError);
