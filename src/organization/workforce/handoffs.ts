@@ -7,7 +7,7 @@ import { splitBlocks } from './blocks.js';
 import { roleIdFor } from './profiles.js';
 
 export const MAX_HANDOFFS_PER_DUTY = 2;
-const MAX_ATTEMPTS = 3;
+export const MAX_HANDOFF_ATTEMPTS = 5;
 
 export type HandoffStatus = 'queued' | 'running' | 'awaiting_founder' | 'completed' | 'failed';
 export type TaskRoomStatus = 'active' | 'awaiting_founder' | 'blocked' | 'ready_for_review' | 'revision_requested' | 'completed' | 'failed' | 'cancelled' | 'archived';
@@ -270,8 +270,14 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'completed', taskId, roomId: h.room_id ?? undefined });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Handoff failed.';
-      await deps.tasks.fail(taskId, message);
-      const final = attempt >= MAX_ATTEMPTS;
+      const final = attempt >= MAX_HANDOFF_ATTEMPTS;
+      if (final) {
+        await deps.tasks.fail(taskId, message);
+      } else {
+        await deps.tasks.advance(taskId, [
+          { status: 'needs_more_work', stage: 'ceo', eventType: 'handoff_retry_scheduled', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, attempt, maxAttempts: MAX_HANDOFF_ATTEMPTS, error: message.slice(0, 500) } },
+        ]);
+      }
       await deps.store.update(h.id, { status: final ? 'failed' : 'queued', error: message.slice(0, 500), completed_at: final ? deps.now().toISOString() : null });
       if (h.room_id) {
         await deps.store.updateRoom(h.room_id, { status: final ? 'failed' : 'active', blocker: message.slice(0, 500), ...(final ? { closed_at: deps.now().toISOString() } : {}) });
