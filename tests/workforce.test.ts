@@ -30,7 +30,9 @@ test('office clock: UTC+2, weekday and ISO week', () => {
 test('cadence: weekday duties skip weekends, weekly duties fire on their day, periods differ', () => {
   const sat = localTime(at('2026-11-07T08:00:00Z'));
   const mon = localTime(at('2026-11-09T08:00:00Z'));
-  assert.equal(runsToday({ kind: 'weekdays' }, sat), false);\n  assert.equal(runsToday({ kind: 'daily' }, sat), true);\n  assert.equal(periodKey({ kind: 'daily' }, sat), '2026-11-07');
+  assert.equal(runsToday({ kind: 'weekdays' }, sat), false);
+  assert.equal(runsToday({ kind: 'daily' }, sat), true);
+  assert.equal(periodKey({ kind: 'daily' }, sat), '2026-11-07');
   assert.equal(runsToday({ kind: 'weekdays' }, mon), true);
   assert.equal(runsToday({ kind: 'weekly', day: 1 }, mon), true);
   assert.equal(runsToday({ kind: 'weekly', day: 5 }, mon), false);
@@ -63,7 +65,8 @@ function fakeDeps(input: Partial<DutyDeps> & { now?: string } = {}) {
     store, now: () => at(nowIso ?? '2026-11-09T07:00:00Z'), // Monday 09:00 office time
     duties: async () => resolveDuties([], []),
     employee: async () => ({ employeeNumber: 'TT-002', title: 'Head of Sales' }),
-    sign: async () => ({ block: '— TT-002 · Head of Sales\n  ✍ TEST' }),
+    sign: async () => ({ block: '— TT-002 · Head of Sales
+  ✍ TEST' }),
     actions: { run: async () => '' },
     handoffs: { queue: async (input) => { calls.handoffs.push(input); } },
     unavailableReason: async () => null,
@@ -200,7 +203,9 @@ test('new tools are registered; deciding approvals is Founder-only', () => {
   registerAllTools({ registerTool: (n: string) => { names.push(n); } } as never);
   for (const n of ['get_workforce_status', 'run_due_organization_duties', 'get_daily_briefing', 'decide_organization_approval', 'submit_prospect_for_review', 'list_prospect_discovery_queue', 'update_prospect_review_status']) assert.ok(names.includes(n), n);
   assert.ok(SENSITIVE_TOOLS.has('decide_organization_approval'));
-  assert.ok(STANDARD_WRITE_TOOLS.has('run_due_organization_duties'));\n  assert.ok(STANDARD_WRITE_TOOLS.has('submit_prospect_for_review'));\n  assert.ok(STANDARD_WRITE_TOOLS.has('update_prospect_review_status'));
+  assert.ok(STANDARD_WRITE_TOOLS.has('run_due_organization_duties'));
+  assert.ok(STANDARD_WRITE_TOOLS.has('submit_prospect_for_review'));
+  assert.ok(STANDARD_WRITE_TOOLS.has('update_prospect_review_status'));
 });
 
 test('the activation script puts every duty owner to work', async () => {
