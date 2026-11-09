@@ -89,6 +89,7 @@ export async function askTambalaAIWithWebResearch(agent: AgentName, input: strin
             if (name.length < 3 || name.length > 100 || !source || seenNames.has(key)) return false;
             if (!`${source.title} ${source.content}`.toLowerCase().includes(key)) return false;
             if (/directory|business listings|web design|software development|digital marketing|IT solutions/i.test(name)) return false;
+            if (/^(infi-tech|uprise malawi|chikotech solutions)$/i.test(name)) return false;
             seenNames.add(key);
             return true;
           }).slice(0, 20).map((candidate) => ({
