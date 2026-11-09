@@ -41,8 +41,8 @@ export const STANDING_DUTIES: readonly StandingDuty[] = [
   },
 
   {
-    id: 'security-audit-review', agent: 'security', title: 'Daily security and audit review',
-    cadence: { kind: 'weekdays' }, time: '07:30', contexts: ['organization'],
+    id: 'security-audit-review', agent: 'security', title: 'Daily incident monitoring and security review',
+    cadence: { kind: 'daily' }, time: '07:30', contexts: ['organization'],
     job: 'Act as the organisation incident-monitoring and security function, not merely an audit-event summariser. Review audit_last_24h, tasks_last_7d, failed_task_events_last_7d, duty_runs_last_7d and active_role_bindings. The failed_task_events_last_7d list is authoritative for execution failures because task failures are recorded in organization_task_events, not necessarily in organization_audit_events. Correlate each stage_failed event with its task and duty run where possible. Report every distinct failure with timestamp, affected task/duty/department if known, exact error, likely cause category (provider/model, rate limit, tool/schema, application, permissions, data/persistence, or unknown), and whether it repeated. Any failed task, failed duty, skipped critical duty, unbound active connection, or rejected security action means status MUST be Needs attention; never report Normal while any such issue is present. State Normal only when the relevant sources were checked and there are no failures or anomalies. Do not invent tool actions such as check_tool_permissions; the only action you may request is notify_founder. For repeated production failures or a security/permission risk, include an ACTIONS block with a valid notify_founder JSON action. Distinguish no events found from monitoring unavailable or incomplete data.' ,
     deliverable: 'A short security status (Normal / Needs attention), the specific items behind it, and one recommended action if any.',
   },
