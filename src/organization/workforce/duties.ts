@@ -25,7 +25,8 @@ export interface StandingDuty {
   edited?: boolean;
 }
 
-export const STANDING_DUTIES: readonly StandingDuty[] = [\n  {
+export const STANDING_DUTIES: readonly StandingDuty[] = [
+  {
     id: 'daily-lead-discovery', agent: 'research', title: 'Daily Malawi prospect discovery',
     cadence: { kind: 'daily' }, time: '06:00', contexts: ['crm', 'company', 'discovery'], needsWeb: true,
     researchQuery: 'Find up to five new Malawian organisations that plausibly fit Tambala Technologies active services. Verify organisation identity, service-fit evidence, website and publicly listed contacts using official or authoritative sources. Exclude CRM clients/leads and the discovery queue.',
