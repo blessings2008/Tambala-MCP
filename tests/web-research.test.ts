@@ -166,6 +166,19 @@ test('formats research with citation guidance and prompt-injection protection', 
   assert.match(context, /0\.877/);
 });
 
+test('caps each source evidence excerpt to keep AI research requests compact', () => {
+  const context = formatResearchContext({
+    query: 'Malawi prospecting',
+    results: [{
+      title: 'Long source',
+      url: 'https://example.com/long',
+      content: 'X'.repeat(2_000),
+    }],
+  });
+  const evidence = context.match(/Page evidence: (X+)/)?.[1] ?? '';
+  assert.equal(evidence.length, 250);
+});
+
 test('supports finance topic, fast search, regional hints and wildcard/path domain filters', async () => {
   process.env.TAMBALA_WEB_SEARCH_API_KEY = 'test-key';
   let sentPayload: Record<string, unknown> | undefined;
