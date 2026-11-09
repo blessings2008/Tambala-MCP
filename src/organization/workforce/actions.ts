@@ -108,8 +108,8 @@ function extractActionValues(source: string): { values: unknown[]; rejected: str
     residueText = residueText.slice(0, start) + residueText.slice(end);
   }
   const residueLines = residueText.split('\n')
-    .map((line) => line.replace(/^[\\s,;:_*\\-\\u0060]+|[\\s,;:_*\\-\\u0060]+$/g, '').trim())
-    .filter((line) => line && !/^(?:none|no actions?)(?:\\.|!)?$/i.test(line));
+    .map((line) => line.replace(/^[\s,;:_*\-\x60]+|[\s,;:_*\-\x60]+$/g, '').trim())
+    .filter((line) => line && !/^(?:none|no actions?)(?:\.|!)?$/i.test(line));
   for (const line of residueLines) rejected.push(`Not JSON: ${line.slice(0, 60)}`);
   return { values, rejected };
 }
