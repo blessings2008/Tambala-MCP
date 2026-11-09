@@ -383,7 +383,11 @@ export async function clarifyTaskRoom(roomId: string, clarification: string): Pr
   return (await store.get(resumed.id)) ?? resumed;
 }
 export async function assignWork(agent: AgentName, request: string): Promise<Handoff> {
-  return queueHandoff(handoffStore(), { fromRoleId: 'founder', toAgent: agent, request, sign: signWork });
+  const store = handoffStore();
+  const queued = await queueHandoff(store, { fromRoleId: 'founder', toAgent: agent, request, sign: signWork });
+  // Direct assignments are inbox events: process now, not at the next scheduled duty.
+  await processHandoffs(productionHandoffDeps(store));
+  return (await store.get(queued.id)) ?? queued;
 }
 
 export async function saveDutyConfig(input: { dutyId?: string; override?: unknown; custom?: unknown; customId?: string }): Promise<void> {
@@ -419,7 +423,6 @@ export async function buildWorkforce(now: Date = new Date()) {
   ]);
   let tasks: Row[] = [];
   if (dbConfigured()) tasks = await recentRows('organization_tasks', `select=status,assigned_role_id&created_at=gte.${encodeURIComponent(week)}&limit=500`);
-  const working = isWorkingHours(lt);
   const profiles = getEmployeeProfiles();
   const labelFor = (roleId: string) => roleId === 'founder' ? 'Founder' : (identityForRole(roleId)?.employeeNumber ?? roleId);
   const signing = signingAvailable();
@@ -428,7 +431,6 @@ export async function buildWorkforce(now: Date = new Date()) {
     const role = snapshot.organization.roles.find((r) => r.id === p.roleId);
     const info = getAgentOperationalInfo(p.agent);
     const active = role?.activation === 'active';
-    const status = !active ? 'inactive' : !info.ready ? 'unequipped' : working ? 'on_duty' : 'off_hours';
     const myDuties = duties.filter((d) => d.agent === p.agent).map((d) => {
       const base = periodKey(d.cadence, lt);
       const mine = runs.filter((r) => r.duty_id === d.id).sort((a, b) => b.started_at.localeCompare(a.started_at));
@@ -444,6 +446,12 @@ export async function buildWorkforce(now: Date = new Date()) {
     });
     const mineRuns = runs.filter((r) => r.role_id === p.roleId);
     const inbox = handoffRows.filter((h) => h.to_role_id === p.roleId);
+    const status = !active ? 'inactive'
+      : !info.ready ? 'unequipped'
+        : inbox.some((h) => h.status === 'running') ? 'processing'
+          : inbox.some((h) => h.status === 'queued') ? 'assigned'
+            : inbox.some((h) => h.status === 'awaiting_founder') ? 'awaiting_founder'
+              : 'available';
     return {
       ...p, status, activation: role?.activation ?? 'unknown', modelReady: info.ready, duties: myDuties,
       identity: identityMark(p.employeeNumber), signingReady: signing,
@@ -454,7 +462,7 @@ export async function buildWorkforce(now: Date = new Date()) {
 
   const all = employees.flatMap((e) => e.duties).filter((d) => d.state !== 'not_today' && d.state !== 'off');
   return {
-    office: { time: `${lt.date} ${String(Math.floor(lt.minutes / 60)).padStart(2, '0')}:${String(lt.minutes % 60).padStart(2, '0')}`, workingHours: working },
+    office: { time: `${lt.date} ${String(Math.floor(lt.minutes / 60)).padStart(2, '0')}:${String(lt.minutes % 60).padStart(2, '0')}`, workingHours: isWorkingHours(lt) },
     persistence: dbConfigured() ? 'database' : 'memory',
     canEdit: dbConfigured(),
     signing,

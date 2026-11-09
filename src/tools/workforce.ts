@@ -12,7 +12,7 @@ function text(value: unknown, isError = false) {
 
 export function registerWorkforceTools(server: McpServer): void {
   server.registerTool('get_workforce_status', {
-    description: 'Read the staff directory: each employee’s status (on duty, off hours, unequipped, inactive), today’s duties and their state, and weekly results. Read-only.',
+    description: 'Read the staff directory: each employee’s live operational state (available, assigned, processing, awaiting Founder input, unequipped, inactive), inbox and recent work. Calendar duties are separate from employee availability. Read-only.',
     inputSchema: {},
   }, async () => {
     const w = await buildWorkforce();
@@ -58,7 +58,7 @@ export function registerWorkforceTools(server: McpServer): void {
   });
 
   server.registerTool('assign_work_to_employee', {
-    description: 'Assign a piece of work directly to an employee, as their manager. It lands in their inbox and is done on the next duty cycle (or when duties are run). The employee only works if their role is active and equipped; otherwise it waits. Results are internal; drafts are never sent.',
+    description: 'Assign work directly to an employee as their manager. The assignment is placed in the employee inbox and processed immediately, without waiting for a scheduled duty. If the employee is inactive or unequipped, the handoff remains queued with the blocker shown. Results are internal; drafts are never sent.',
     inputSchema: {
       employee: z.enum(Object.keys(AGENT_DIRECTORY).filter((a) => a !== 'orchestrator') as [string, ...string[]]).describe('Employee key, e.g. outreach, finance, marketing.'),
       request: z.string().min(5).max(1000).describe('What you need done, in plain words.'),
@@ -66,7 +66,10 @@ export function registerWorkforceTools(server: McpServer): void {
   }, async ({ employee, request }) => {
     try {
       const h = await assignWork(employee as keyof typeof AGENT_DIRECTORY, request);
-      return text({ queued: true, handoffId: h.id, to: employee, request: h.request });
+      return text({
+        handoffId: h.id, roomId: h.room_id, to: employee, request: h.request,
+        status: h.status, queued: h.status === 'queued', result: h.result, blocker: h.error,
+      });
     } catch (error) {
       if (error instanceof HandoffError) return text({ error: error.message }, true);
       throw error;
