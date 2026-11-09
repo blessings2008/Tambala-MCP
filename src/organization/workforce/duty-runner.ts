@@ -6,6 +6,7 @@ import { roleIdFor } from './profiles.js';
 import { localTime, OFFICE_TZ, periodKey, runsToday, timeReached, type LocalTime } from './schedule.js';
 import type { DutyRun, DutyStore } from './duty-store.js';
 import type { OrganizationTaskTransition } from '../task-lifecycle.js';
+import { persistDiscoveredProspects } from './lead-discovery-persistence.js';
 
 export type DutyOutcomeStatus = 'completed' | 'awaiting_approval' | 'skipped' | 'failed' | 'not_due' | 'already_running';
 export interface DutyOutcome { dutyId: string; status: DutyOutcomeStatus; reason?: string; taskId?: string; runId?: string; handoffs?: number }
@@ -64,8 +65,9 @@ function dueNow(duty: StandingDuty, lt: LocalTime, existing: DutyRun | null, now
   if (!runsToday(duty.cadence, lt) || !timeReached(duty.time, lt)) return false;
   if (!existing) return true;
   if (existing.status === 'skipped') return true;
-  if (existing.status === 'failed') return existing.attempts < MAX_ATTEMPTS;
-  if (existing.status === 'running') return nowMs - Date.parse(existing.started_at) > STALE_RUNNING_MS && existing.attempts < MAX_ATTEMPTS;
+  const maxAttempts = duty.id === 'daily-lead-discovery' ? 5 : MAX_ATTEMPTS;
+  if (existing.status === 'failed') return existing.attempts < maxAttempts;
+  if (existing.status === 'running') return nowMs - Date.parse(existing.started_at) > STALE_RUNNING_MS && existing.attempts < maxAttempts;
   return false;
 }
 
@@ -120,6 +122,10 @@ export async function runDuty(deps: DutyDeps, duty: StandingDuty, opts: { force?
       const who = await deps.employee(duty.agent);
       body = (await deps.ask(duty, buildDutyPrompt(duty, lt, who), context)).trim();
       if (!body) throw new Error('The employee returned no work product.');
+      if (duty.id === 'daily-lead-discovery') {
+        const persisted = await persistDiscoveredProspects(body);
+        body = `${persisted.cleanBody}\n\nDatabase result: ${persisted.saved} prospect(s) saved to the discovery queue; ${persisted.duplicates} duplicate(s) skipped; ${persisted.rejected} item(s) rejected.\n${persisted.details.join('\n')}`;
+      }
       if (!duty.report) {
         const parsed = extractHandoffs(body, duty.agent);
         const acted = parseActions(body);

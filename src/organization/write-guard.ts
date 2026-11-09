@@ -6,7 +6,7 @@ import type { OrganizationalRole } from './model.js';
 /** Tools that change CRM/work records. Need a bound role with delegated workflow authority. */
 export const STANDARD_WRITE_TOOLS: ReadonlySet<string> = new Set([
   'create_client', 'update_client', 'create_project', 'update_project',
-  'create_lead', 'update_lead', 'create_task', 'update_task',
+  'create_lead', 'update_lead', 'submit_prospect_for_review', 'update_prospect_review_status', 'create_task', 'update_task',
   'record_activity', 'run_tambala_automation', 'run_due_organization_duties', 'assign_work_to_employee', 'create_document',
 ]);
 
