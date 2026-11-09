@@ -131,7 +131,8 @@ export async function askTambalaAIWithWebResearch(agent: AgentName, input: strin
   }
 
   const researchContext = formatResearchContext(research);
-  const discoveryNotes = prospectDiscoveryNotes ? `\n\nDISCOVERED CANDIDATES AND THEIR ORIGINAL EVIDENCE:\n${prospectDiscoveryNotes}\nTreat these as candidates only; use the verification sources to qualify them and preserve both source URLs where relevant.` : '';\n  const response = await askTambalaAIInternal(agent, `${input}${discoveryNotes}\n\n${researchContext}\n\nCITATION RULES: Cite the supplied source URLs next to factual claims that depend on them. If the supplied sources do not establish a claim, label it unknown rather than filling the gap.`, context);
+  const discoveryNotes = prospectDiscoveryNotes ? `\n\nDISCOVERED CANDIDATES AND THEIR ORIGINAL EVIDENCE:\n${prospectDiscoveryNotes}\nTreat these as candidates only; use the verification sources to qualify them and preserve both source URLs where relevant.` : '';
+  const response = await askTambalaAIInternal(agent, `${input}${discoveryNotes}\n\n${researchContext}\n\nCITATION RULES: Cite the supplied source URLs next to factual claims that depend on them. If the supplied sources do not establish a claim, label it unknown rather than filling the gap.`, context);
   return { response, research: researchContext };
 }
 
