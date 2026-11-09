@@ -35,6 +35,44 @@ test('actions parse strictly; bad lines are reported, never silently dropped', (
   assert.equal(parseActions('Just text, no blocks.').clean, 'Just text, no blocks.');
 });
 
+test('actions accept fenced, pretty-printed and array-form JSON without weakening validation', () => {
+  const fenced = parseActions(`Work completed.
+ACTIONS:
+\`\`\`json
+{
+  "type": "notify_founder",
+  "text": "The board report is ready."
+}
+\`\`\`
+`);
+  assert.equal(fenced.actions.length, 1);
+  assert.equal(fenced.actions[0].type, 'notify_founder');
+  assert.deepEqual(fenced.rejected, []);
+
+  const array = parseActions(`Work completed.
+ACTIONS:
+[
+  {"type":"notify_founder","text":"First update"},
+  {"type":"notify_founder","text":"Second update"}
+]
+`);
+  assert.equal(array.actions.length, 2);
+  assert.deepEqual(array.rejected, []);
+
+  const mixed = parseActions(`Work completed.
+ACTIONS:
+\`\`\`json
+[
+  {"type":"notify_founder","text":"Valid action"},
+  {"type":"teleport","to":"mars"}
+]
+\`\`\`
+`);
+  assert.equal(mixed.actions.length, 1);
+  assert.equal(mixed.rejected.length, 1);
+  assert.match(mixed.rejected[0], /teleport/);
+});
+
 test('permissions: only the right roles may message customers, make documents and create payment links', () => {
   assert.deepEqual(allowedActionTypes('security'), ['notify_founder']);
   assert.deepEqual(allowedActionTypes('outreach'), ['notify_founder', 'whatsapp', 'document']);
