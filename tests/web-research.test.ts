@@ -58,11 +58,13 @@ test('uses advanced search controls, deduplicates URLs and ranks useful sources'
     timeRange: 'month',
     includeDomains: ['https://example.com/'],
     excludeDomains: ['blocked.example'],
+    includeRawContent: true,
   });
 
   assert.equal(sentPayload?.search_depth, 'advanced');
   assert.equal(sentPayload?.topic, 'news');
   assert.equal(sentPayload?.time_range, 'month');
+  assert.equal(sentPayload?.include_raw_content, 'markdown');
   assert.deepEqual(sentPayload?.include_domains, ['example.com']);
   assert.deepEqual(sentPayload?.exclude_domains, ['blocked.example']);
   assert.equal(result.results.length, 2);
@@ -211,4 +213,25 @@ test('research evidence validator requires an actual HTTP(S) source URL', () => 
   assert.equal(hasResearchSourceUrls('Source: https://example.com/report'), true);
   assert.equal(hasResearchSourceUrls({ sources: [{ url: 'https://example.org/news' }] }), true);
   assert.equal(hasResearchSourceUrls('javascript:alert(1)'), false);
+});
+
+
+test('supports 20 sequentially batched candidate-enrichment searches', async () => {
+  process.env.TAMBALA_WEB_SEARCH_API_KEY = 'test-key';
+  const seenQueries: string[] = [];
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const payload = JSON.parse(String(init?.body)) as { query: string };
+    seenQueries.push(payload.query);
+    const slug = payload.query.match(/Candidate(\\d+)/)?.[1] ?? String(seenQueries.length);
+    return new Response(JSON.stringify({
+      query: payload.query,
+      results: [{ title: `Candidate ${slug} leadership`, url: `https://candidate${slug}.mw/leadership`, content: 'Managing director and public contact details', raw_content: 'Leadership page with public details', score: 0.9 }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+
+  const queries = Array.from({ length: 20 }, (_, index) => `"Candidate${index + 1}" Malawi CEO contact`);
+  const result = await webResearchMany(queries, { maxResults: 2, includeRawContent: true });
+  assert.equal(seenQueries.length, 20);
+  assert.equal(result.results.length, 20);
+  assert.ok(result.results.every((item) => item.content.includes('Leadership page')));
 });
