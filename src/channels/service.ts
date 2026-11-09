@@ -5,7 +5,7 @@ import { labelForRole } from '../organization/workforce/profiles.js';
 import { routeOrganizationObjective } from '../organization/service.js';
 import { requireConfiguredRuntime, resolveExecutionRoute } from '../organization/execution-router.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../services/ai.js';
-import { getVerifiedCompanyContext } from '../services/ai/context.js';
+import { getCompactCompanyContext } from '../services/ai/context.js';
 import { signWork } from '../organization/workforce/sign-work.js';
 import { loadPdfForSending } from '../documents/service.js';
 import { connectionState, evolutionConfig, evolutionConfigured, sendDocument, sendText } from './evolution.js';
@@ -91,7 +91,7 @@ async function handleFounderInstruction(envelope: FounderMessageEnvelope): Promi
     const execution = mapped.status === 'ready'
       ? requireConfiguredRuntime(mapped, getAgentOperationalInfo(mapped.agent))
       : mapped;
-    const companyContext = await getVerifiedCompanyContext().catch((error) => {
+    const companyContext = await getCompactCompanyContext().catch((error) => {
       console.warn('Verified company context unavailable to Founder workflow:', error instanceof Error ? error.message : error);
       return {
         company: { name: 'Tambala Technologies', country: 'Malawi', base: 'Lilongwe, Malawi', description: 'Software, websites, and digital products' },
