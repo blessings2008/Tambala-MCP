@@ -179,7 +179,7 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
     try {
       response = await getClient(agent).chat.completions.create(requestPayload);
     } catch (error) {
-      const providerError = error as { status?: number; code?: string; request_id?: string; message?: string };
+      const providerError = error as { status?: number; code?: string; request_id?: string; message?: string; headers?: Headers | Record<string, string> };
       const status = typeof providerError.status === 'number' ? providerError.status : undefined;
       const code = typeof providerError.code === 'string' ? providerError.code : undefined;
       const requestId = typeof providerError.request_id === 'string' ? providerError.request_id : undefined;
@@ -187,8 +187,8 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
       const detailLower = detail.toLowerCase();
       const tpmFailure = /\btpm\b|tokens? per minute|token throughput|per-minute token|token rate limit|requested .* tokens?.* limit/i.test(detail);
       const rateLimitFailure = status === 429 || code === 'rate_limit_exceeded' || /rate.?limit|too many requests/i.test(detailLower);
-      const category = tpmFailure ? 'tpm' as const : rateLimitFailure ? 'rate_limit' as const : status === 413 ? 'tpm' as const : 'provider' as const;
-      const headers = providerError.headers as Headers | Record<string, string> | undefined;
+      const category = tpmFailure ? 'tpm' as const : rateLimitFailure ? 'rate_limit' as const : 'provider' as const;
+      const headers = providerError.headers;
       let retryAfterSeconds: number | undefined;
       try {
         const retryHeader = headers && typeof (headers as Headers).get === 'function'
