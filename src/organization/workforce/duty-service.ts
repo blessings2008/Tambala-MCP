@@ -47,6 +47,15 @@ const BOARD_DEPARTMENT_DUTIES = [
 
 /** Build an explicit, evidence-backed attendance and report matrix for the CEO's board minutes. */
 export function buildBoardMeetingSnapshot(runs: DutyRun[], dutyList: StandingDuty[]) {
+  const openingDuty = dutyList.find((item) => item.id === 'morning-board-opening');
+  const openingRun = runs.filter((run) => run.duty_id === 'morning-board-opening')
+    .sort((a, b) => b.started_at.localeCompare(a.started_at))
+    .find((run) => (run.status === 'completed' || run.status === 'awaiting_approval') && Boolean(run.summary?.trim()));
+  const opening = {
+    status: openingRun ? 'COMPLETE' as const : 'MISSING' as const,
+    title: openingDuty?.title ?? 'Chair opening',
+    report: openingRun?.summary ?? null,
+  };
   const departmentUpdates = BOARD_DEPARTMENT_DUTIES.map((dutyId) => {
     const duty = dutyList.find((item) => item.id === dutyId);
     const candidates = runs.filter((run) => run.duty_id === dutyId)
@@ -68,11 +77,14 @@ export function buildBoardMeetingSnapshot(runs: DutyRun[], dutyList: StandingDut
   const missingDepartments = departmentUpdates
     .filter((item) => !item.report)
     .map((item) => item.department);
+  const missingItems = [...(!opening.report ? [opening.title] : []), ...missingDepartments];
   return {
-    status: missingDepartments.length ? 'PARTIAL' as const : 'COMPLETE' as const,
+    status: missingItems.length ? 'PARTIAL' as const : 'COMPLETE' as const,
+    opening,
     expectedDepartmentReports: departmentUpdates.length,
     receivedDepartmentReports: departmentUpdates.length - missingDepartments.length,
     missingDepartments,
+    missingItems,
     departmentUpdates,
   };
 }
