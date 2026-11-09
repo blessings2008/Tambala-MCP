@@ -170,7 +170,7 @@ export async function webResearch(
     if (!retryable || attempt === maxAttempts) {
       throw new Error(`Web research provider returned ${lastFailure}${retryable ? ` after ${maxAttempts} attempts` : ''}.`);
     }
-    await new Promise((resolve) => setTimeout(resolve, Math.min(750 * attempt, 3_000)));
+    await new Promise((resolve) => setTimeout(resolve, Math.min(250 * attempt, 1_000)));
   }
   if (!response?.ok) throw new Error(`Web research failed after ${maxAttempts} attempts: ${lastFailure}.`);
 
