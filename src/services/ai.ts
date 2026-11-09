@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { getAgentRuntimeConfig, getAgentRuntimeInfo, type AgentName } from './ai/models.js';
 import { acquireAgentRequestSlot, getAgentLimitInfo } from './ai/limits.js';
 import { AGENT_PROMPT_RULES } from './ai/rules.js';
-import { formatResearchContext, webResearch } from './web-research.js';
+import { formatResearchContext, webResearch, webResearchMany } from './web-research.js';
 
 const clients = new Map<AgentName, OpenAI>();
 
@@ -49,8 +49,62 @@ export async function askTambalaAI(agent: AgentName, input: string, context?: un
 }
 
 /** Run a web search first, then give the returned evidence to the agent as explicit external research context. */
-export async function askTambalaAIWithWebResearch(agent: AgentName, input: string, context?: unknown, query?: string, searchOptions?: import('./web-research.js').WebResearchOptions): Promise<{ response: string; research: ReturnType<typeof formatResearchContext> }> {
-  const research = await webResearch(query ?? input, searchOptions ?? 5);
+export async function askTambalaAIWithWebResearch(agent: AgentName, input: string, context?: unknown, query?: string | string[], searchOptions?: import('./web-research.js').WebResearchOptions): Promise<{ response: string; research: ReturnType<typeof formatResearchContext> }> {
+  let research = Array.isArray(query)
+    ? await webResearchMany(query, searchOptions)
+    : await webResearch(query ?? input, searchOptions ?? 5);
+
+  // Prospecting is deliberately two-stage: discover named organisations from
+  // the broad sector evidence, then search each candidate by name. This stops
+  // generic directories from becoming the final deliverable.
+  if (agent === 'outreach' && Array.isArray(query) && research.results.length) {
+    const discoveryPrompt = [
+      'You are doing the discovery pass for a Malawi-wide prospecting task.',
+      'Read only the supplied web research source titles and snippets.',
+      'Extract up to 8 real organisation/business names that are explicitly mentioned in those sources.',
+      'Do not list directories, competitor agencies, search engines, or generic industry pages as prospects.',
+      'Return ONLY valid JSON in this shape: {"candidates":[{"name":"Exact organisation name","source_url":"exact URL from supplied evidence"}]}.',
+      'Do not invent or complete names. If no individual organisations are named, return {"candidates":[]}.',
+      formatResearchContext(research),
+    ].join('\n\n');
+    const discovery = await askTambalaAIInternal(agent, discoveryPrompt, context);
+    const json = discovery.match(/\{[\s\S]*\}/)?.[0];
+    let candidates: Array<{ name: string; source_url: string }> = [];
+    if (json) {
+      try {
+        const parsed = JSON.parse(json) as { candidates?: unknown };
+        if (Array.isArray(parsed.candidates)) {
+          candidates = parsed.candidates.filter((candidate): candidate is { name: string; source_url: string } => {
+            if (!candidate || typeof candidate !== 'object') return false;
+            const item = candidate as Record<string, unknown>;
+            if (typeof item.name !== 'string' || typeof item.source_url !== 'string') return false;
+            const name = item.name.trim();
+            const source = research.results.find((result) => result.url === item.source_url);
+            return name.length >= 3 && name.length <= 100 && Boolean(source)
+              && `${source?.title ?? ''} ${source?.content ?? ''}`.toLowerCase().includes(name.toLowerCase());
+          }).slice(0, 8);
+        }
+      } catch {
+        candidates = [];
+      }
+    }
+    if (candidates.length) {
+      const verificationQueries = candidates.map(({ name }) => `"${name}" Malawi official website contact services`);
+      const verification = await webResearchMany(verificationQueries, { ...searchOptions, maxResults: 3 });
+      const seen = new Set<string>();
+      const combined = [...verification.results, ...research.results].filter((item) => {
+        const key = item.url.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).slice(0, 20);
+      research = {
+        query: `Discovery searches: ${research.query} | Candidate verification: ${verification.query}`.slice(0, 1_000),
+        results: combined,
+      };
+    }
+  }
+
   const researchContext = formatResearchContext(research);
   const response = await askTambalaAIInternal(agent, `${input}\n\n${researchContext}\n\nCITATION RULES: Cite the supplied source URLs next to factual claims that depend on them. If the supplied sources do not establish a claim, label it unknown rather than filling the gap.`, context);
   return { response, research: researchContext };
@@ -62,12 +116,12 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
   try {
     const systemPrompt = boundText(AGENT_PROMPT_RULES[agent], MAX_SYSTEM_PROMPT_CHARS);
     const researchHeavyOutreach = agent === 'outreach' && input.includes('WEB RESEARCH RESULT');
-    const userInputLimit = researchHeavyOutreach ? 7_000 : MAX_USER_INPUT_CHARS;
-    const contextLimit = researchHeavyOutreach ? 1_400 : MAX_CONTEXT_CHARS;
+    const userInputLimit = researchHeavyOutreach ? 12_000 : MAX_USER_INPUT_CHARS;
+    const contextLimit = researchHeavyOutreach ? 1_800 : MAX_CONTEXT_CHARS;
     const userInput = boundText(input, userInputLimit);
     const contextText = context === undefined ? '' : '\n\nTambala business context:\n' + serializeBoundedContext(context, contextLimit);
     const userMessage = boundText(userInput + contextText, userInputLimit + contextLimit + 40);
-    const completionBudget = agent === 'operations' ? 1_600 : researchHeavyOutreach ? 1_400 : MAX_COMPLETION_TOKENS;
+    const completionBudget = agent === 'operations' ? 1_600 : researchHeavyOutreach ? 2_200 : MAX_COMPLETION_TOKENS;
     const requestPayload = {
       model: config.model,
       messages: [

@@ -33,8 +33,8 @@ export interface WebResearchOptions {
 const TAVILY_URL = 'https://api.tavily.com/search';
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_RESULTS = 20;
-const MAX_CONTEXT_SOURCES = 12;
-const MAX_SNIPPET_LENGTH = 500;
+const MAX_CONTEXT_SOURCES = 20;
+const MAX_SNIPPET_LENGTH = 420;
 const TRACKING_PARAMS = new Set([
   'fbclid', 'gclid', 'mc_cid', 'mc_eid', 'ref', 'ref_src',
 ]);
@@ -212,6 +212,74 @@ export async function webResearch(
     query: data.query?.trim() || searchQuery,
     answer: typeof data.answer === 'string' ? data.answer : undefined,
     results,
+  };
+}
+
+/**
+ * Malawi prospecting needs company-level discovery, not one broad query that
+ * tends to return directories and competitors. Search distinct local sectors
+ * and service-fit signals, then merge results with domain diversity.
+ */
+export function buildProspectingSearchQueries(activeServiceNames: string[] = []): string[] {
+  const services = [...new Set(activeServiceNames.map((name) => name.trim()).filter(Boolean))].slice(0, 8);
+  const serviceHint = (services.length ? services.join(', ') : 'websites, custom software, digital products, social media management').slice(0, 110);
+  const bases = [
+    'Malawi private schools colleges academies training institutions official website contact',
+    'Malawi hotels lodges resorts restaurants tourism businesses official website contact',
+    'Malawi clinics hospitals pharmacies medical centres official website contact',
+    'Malawi construction companies property developers real estate firms official website contact',
+    'Malawi retailers wholesalers manufacturers distributors companies official website contact',
+    'Malawi NGOs non-profit organisations professional services firms official website contact',
+    'Malawi businesses without a website outdated website weak online presence company names',
+    'Malawi companies seeking website development software digital transformation social media management',
+  ];
+  const suffix = ` | service fit: ${serviceHint}`;
+  return bases.map((base) => `${base.slice(0, 300 - suffix.length)}${suffix}`);
+}
+
+/** Run focused searches in parallel and preserve source/domain diversity. */
+export async function webResearchMany(
+  queries: string[],
+  options: WebResearchOptions = {},
+): Promise<WebResearchResult> {
+  const uniqueQueries = [...new Set(queries.map((query) => query.trim()).filter(Boolean))].slice(0, 8);
+  if (!uniqueQueries.length) throw new Error('At least one focused research query is required.');
+  const perQuery = boundedInteger(options.maxResults, 5, 2, 6);
+  const batches = await Promise.all(uniqueQueries.map((query) =>
+    webResearch(query, { ...options, maxResults: perQuery }),
+  ));
+  const seen = new Set<string>();
+  const candidates = batches.flatMap((batch) => batch.results.map((result) => ({ ...result, query: batch.query })))
+    .filter((result) => {
+      const key = result.url.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+  const selected: typeof candidates = [];
+  const selectedUrls = new Set<string>();
+  const selectedDomains = new Set<string>();
+  // First pass: one result per domain so a directory cannot crowd out all
+  // individual organisations. Second pass fills the remaining evidence slots.
+  for (const item of candidates) {
+    const domain = new URL(item.url).hostname.replace(/^www\./, '').toLowerCase();
+    if (selectedDomains.has(domain)) continue;
+    selected.push(item);
+    selectedUrls.add(item.url);
+    selectedDomains.add(domain);
+    if (selected.length >= 20) break;
+  }
+  if (selected.length < 20) {
+    for (const item of candidates) {
+      if (selectedUrls.has(item.url)) continue;
+      selected.push(item);
+      if (selected.length >= 20) break;
+    }
+  }
+  return {
+    query: uniqueQueries.join(' | ').slice(0, 1_000),
+    results: selected.map(({ query: _query, ...result }) => result),
   };
 }
 
