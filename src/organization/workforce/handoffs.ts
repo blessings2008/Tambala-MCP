@@ -174,7 +174,7 @@ export interface HandoffDeps {
   tasks: {
     begin(objective: string): Promise<{ taskId: string }>;
     advance(taskId: string, transitions: OrganizationTaskTransition[]): Promise<unknown>;
-    fail(taskId: string, message: string): Promise<void>;
+    fail(taskId: string, message: string, sourceAgent?: AgentName): Promise<void>;
   };
 }
 
@@ -262,7 +262,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         const revisionExhausted = !awaitingFounder && attempt >= MAX_HANDOFF_ATTEMPTS;
         const contextSummary = [h.context_summary, `CEO REVIEW FEEDBACK: ${reason}`].filter(Boolean).join('\n\n').slice(0, 3000);
         if (revisionExhausted) {
-          await deps.tasks.fail(taskId, `Maximum of ${MAX_HANDOFF_ATTEMPTS} attempts reached: ${reason}`);
+          await deps.tasks.fail(taskId, `Maximum of ${MAX_HANDOFF_ATTEMPTS} attempts reached: ${reason}`, agent);
           await deps.store.update(h.id, { status: 'failed', context_summary: contextSummary, result: stamped.slice(0, 8000), error: reason, completed_at: deps.now().toISOString() });
           if (h.room_id) {
             await deps.store.updateRoom(h.room_id, { status: 'failed', deliverable: stamped.slice(0, 8000), blocker: reason, closed_at: deps.now().toISOString() });
@@ -294,7 +294,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       const message = error instanceof Error ? error.message : 'Handoff failed.';
       const final = attempt >= MAX_HANDOFF_ATTEMPTS;
       if (final) {
-        await deps.tasks.fail(taskId, message);
+        await deps.tasks.fail(taskId, message, agent);
       } else {
         await deps.tasks.advance(taskId, [
           { status: 'needs_more_work', stage: 'ceo', eventType: 'handoff_retry_scheduled', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, attempt, maxAttempts: MAX_HANDOFF_ATTEMPTS, error: message.slice(0, 500) } },

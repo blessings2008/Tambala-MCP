@@ -1,4 +1,4 @@
-import { AGENT_DIRECTORY } from '../../services/ai/models.js';
+import { AGENT_DIRECTORY, type AgentName } from '../../services/ai/models.js';
 import type { ContextKind, StandingDuty } from './duties.js';
 import { actionHelp, parseActions, type Action } from './actions.js';
 import { colleagueList, extractHandoffs, MAX_HANDOFFS_PER_DUTY } from './handoffs.js';
@@ -31,7 +31,7 @@ export interface DutyDeps {
   tasks: {
     begin(objective: string): Promise<{ taskId: string; tracking: 'recorded' | 'unavailable' }>;
     advance(taskId: string, transitions: OrganizationTaskTransition[]): Promise<unknown>;
-    fail(taskId: string, message: string): Promise<void>;
+    fail(taskId: string, message: string, sourceAgent?: AgentName): Promise<void>;
   };
   approvals: { create(input: { actionType: string; summary: string; requestedByRoleId: string; riskLevel: 'low' | 'medium'; taskId: string; content: string }): Promise<void> };
   reports: { save(input: { kind: 'daily_briefing'; periodKey: string; title: string; body: string; taskId: string }): Promise<void> };
@@ -154,7 +154,7 @@ export async function runDuty(deps: DutyDeps, duty: StandingDuty, opts: { force?
     return { dutyId: duty.id, status, taskId, runId: run.id, handoffs: pendingHandoffs.length };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Duty failed.';
-    await deps.tasks.fail(taskId, message);
+    await deps.tasks.fail(taskId, message, duty.agent);
     await deps.store.update(run.id, { status: 'failed', error: message.slice(0, 500), completed_at: new Date().toISOString() });
     return { dutyId: duty.id, status: 'failed', reason: message, taskId, runId: run.id };
   }
