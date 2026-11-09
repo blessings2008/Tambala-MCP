@@ -222,7 +222,7 @@ test('supports 20 sequentially batched candidate-enrichment searches', async () 
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     const payload = JSON.parse(String(init?.body)) as { query: string };
     seenQueries.push(payload.query);
-    const slug = payload.query.match(/Candidate(\\d+)/)?.[1] ?? String(seenQueries.length);
+    const slug = payload.query.match(/Candidate(\d+)/)?.[1] ?? String(seenQueries.length);
     return new Response(JSON.stringify({
       query: payload.query,
       results: [{ title: `Candidate ${slug} leadership`, url: `https://candidate${slug}.mw/leadership`, content: 'Managing director and public contact details', raw_content: 'Leadership page with public details', score: 0.9 }],
