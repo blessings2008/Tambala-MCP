@@ -27,6 +27,25 @@ export async function section<T>(load: () => Promise<T>): Promise<Section<T>> {
 
 const OPEN_STATUSES = new Set(['created', 'ceo_analyzing', 'delegated', 'executing', 'waiting_for_tool', 'department_review', 'returned_to_ceo', 'needs_more_work']);
 
+/** Merge task-stage events with actual duty-run records for the dashboard activity feed. */
+export function mergeRecentActivity(taskEvents: Row[], dutyRuns: Row[]): Row[] {
+  const duties = dutyRuns.map((run) => ({
+    event_type: `duty_${String(run.status ?? 'unknown')}`,
+    stage: 'duty',
+    department_id: null,
+    created_at: run.completed_at ?? run.started_at,
+    summary: run.summary ?? null,
+    error: run.error ?? null,
+    role_id: run.role_id ?? null,
+    duty_id: run.duty_id ?? null,
+    attempts: run.attempts ?? null,
+    source: 'duty_run',
+  }));
+  return [...taskEvents, ...duties]
+    .sort((a, b) => Date.parse(String(b.created_at ?? '')) - Date.parse(String(a.created_at ?? '')))
+    .slice(0, 40);
+}
+
 export function summarizeTasks(tasks: Row[]) {
   const byStatus: Record<string, number> = {};
   const byDepartment: Record<string, number> = {};
@@ -84,7 +103,7 @@ export async function buildDashboard() {
       };
     }),
     section(() => db<Row>('organization_tasks', 'select=id,objective,status,current_stage,assigned_department_id,assigned_role_id,error_message,created_at,updated_at,completed_at&order=created_at.desc&limit=100')),
-    section(() => db<Row>('organization_task_events', 'select=id,task_id,event_type,stage,actor_role_id,department_id,created_at&order=created_at.desc&limit=40')),
+    section(async () => { const [taskEvents, dutyRuns] = await Promise.all([db<Row>('organization_task_events', 'select=id,task_id,event_type,stage,actor_role_id,department_id,created_at&order=created_at.desc&limit=40'), db<Row>('organization_duty_runs', 'select=id,duty_id,role_id,status,attempts,summary,error,started_at,completed_at&order=started_at.desc&limit=40')]); return mergeRecentActivity(taskEvents, dutyRuns); }),
     section(() => db<Row>('organization_approval_requests', 'select=id,action_type,summary,requested_by_role_id,required_authority,status,risk_level,task_id,content,created_at&status=eq.pending&order=created_at.asc&limit=50')),
     section(() => db<Row>('organization_decisions', 'select=id,title,status,required_authority,proposed_by_role_id,created_at,decided_at&order=created_at.desc&limit=15')),
     section(() => db<Row>('organization_audit_events', 'select=id,actor_role_id,action,target_type,target_id,outcome,reason,created_at&order=created_at.desc&limit=40')),
