@@ -7,7 +7,7 @@ import { splitBlocks } from './blocks.js';
 import { roleIdFor } from './profiles.js';
 
 export const MAX_HANDOFFS_PER_DUTY = 2;
-const MAX_ATTEMPTS = 3;
+export const MAX_HANDOFF_ATTEMPTS = 5;
 
 export type HandoffStatus = 'queued' | 'running' | 'awaiting_founder' | 'completed' | 'failed';
 export type TaskRoomStatus = 'active' | 'awaiting_founder' | 'blocked' | 'ready_for_review' | 'revision_requested' | 'completed' | 'failed' | 'cancelled' | 'archived';
@@ -248,11 +248,22 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
           { status: 'needs_more_work', stage: 'ceo', eventType: decision === 'REVISION_REQUIRED' ? 'ceo_revision_requested' : 'ceo_review_waiting_for_founder', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, review: reason } },
         ]);
         const awaitingFounder = decision !== 'REVISION_REQUIRED';
+        const revisionExhausted = !awaitingFounder && attempt >= MAX_HANDOFF_ATTEMPTS;
         const contextSummary = [h.context_summary, `CEO REVIEW FEEDBACK: ${reason}`].filter(Boolean).join('\n\n').slice(0, 3000);
+        if (revisionExhausted) {
+          await deps.tasks.fail(taskId, `Maximum of ${MAX_HANDOFF_ATTEMPTS} attempts reached: ${reason}`);
+          await deps.store.update(h.id, { status: 'failed', context_summary: contextSummary, result: stamped.slice(0, 8000), error: reason, completed_at: deps.now().toISOString() });
+          if (h.room_id) {
+            await deps.store.updateRoom(h.room_id, { status: 'failed', deliverable: stamped.slice(0, 8000), blocker: reason, closed_at: deps.now().toISOString() });
+            await deps.store.roomEvent(h.room_id, 'room_failed', 'ceo', { reason, attempt, maxAttempts: MAX_HANDOFF_ATTEMPTS });
+          }
+          outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'failed', reason, taskId, roomId: h.room_id ?? undefined });
+          continue;
+        }
         await deps.store.update(h.id, { status: awaitingFounder ? 'awaiting_founder' : 'queued', context_summary: contextSummary, result: stamped.slice(0, 8000), error: reason, completed_at: null });
         if (h.room_id) {
           await deps.store.updateRoom(h.room_id, { status: awaitingFounder ? 'awaiting_founder' : 'revision_requested', deliverable: stamped.slice(0, 8000), blocker: reason });
-          await deps.store.roomEvent(h.room_id, awaitingFounder ? 'ceo_review_needs_founder' : 'ceo_revision_requested', 'ceo', { review: reason });
+          await deps.store.roomEvent(h.room_id, awaitingFounder ? 'ceo_review_needs_founder' : 'ceo_revision_requested', 'ceo', { review: reason, attempt, maxAttempts: MAX_HANDOFF_ATTEMPTS });
         }
         outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: awaitingFounder ? 'waiting' : 'retry', reason, taskId, roomId: h.room_id ?? undefined });
         continue;
@@ -270,8 +281,14 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'completed', taskId, roomId: h.room_id ?? undefined });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Handoff failed.';
-      await deps.tasks.fail(taskId, message);
-      const final = attempt >= MAX_ATTEMPTS;
+      const final = attempt >= MAX_HANDOFF_ATTEMPTS;
+      if (final) {
+        await deps.tasks.fail(taskId, message);
+      } else {
+        await deps.tasks.advance(taskId, [
+          { status: 'needs_more_work', stage: 'ceo', eventType: 'handoff_retry_scheduled', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, attempt, maxAttempts: MAX_HANDOFF_ATTEMPTS, error: message.slice(0, 500) } },
+        ]);
+      }
       await deps.store.update(h.id, { status: final ? 'failed' : 'queued', error: message.slice(0, 500), completed_at: final ? deps.now().toISOString() : null });
       if (h.room_id) {
         await deps.store.updateRoom(h.room_id, { status: final ? 'failed' : 'active', blocker: message.slice(0, 500), ...(final ? { closed_at: deps.now().toISOString() } : {}) });
