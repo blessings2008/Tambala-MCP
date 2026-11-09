@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { getAgentRuntimeConfig, getAgentRuntimeInfo, type AgentName } from './ai/models.js';
 import { acquireAgentRequestSlot, getAgentLimitInfo } from './ai/limits.js';
 import { AGENT_PROMPT_RULES } from './ai/rules.js';
-import { formatResearchContext, webResearch } from './web-research.js';
+import { formatResearchContext, webResearch, webResearchMany } from './web-research.js';
 
 const clients = new Map<AgentName, OpenAI>();
 
@@ -49,8 +49,10 @@ export async function askTambalaAI(agent: AgentName, input: string, context?: un
 }
 
 /** Run a web search first, then give the returned evidence to the agent as explicit external research context. */
-export async function askTambalaAIWithWebResearch(agent: AgentName, input: string, context?: unknown, query?: string, searchOptions?: import('./web-research.js').WebResearchOptions): Promise<{ response: string; research: ReturnType<typeof formatResearchContext> }> {
-  const research = await webResearch(query ?? input, searchOptions ?? 5);
+export async function askTambalaAIWithWebResearch(agent: AgentName, input: string, context?: unknown, query?: string | string[], searchOptions?: import('./web-research.js').WebResearchOptions): Promise<{ response: string; research: ReturnType<typeof formatResearchContext> }> {
+  const research = Array.isArray(query)
+    ? await webResearchMany(query, searchOptions)
+    : await webResearch(query ?? input, searchOptions ?? 5);
   const researchContext = formatResearchContext(research);
   const response = await askTambalaAIInternal(agent, `${input}\n\n${researchContext}\n\nCITATION RULES: Cite the supplied source URLs next to factual claims that depend on them. If the supplied sources do not establish a claim, label it unknown rather than filling the gap.`, context);
   return { response, research: researchContext };
