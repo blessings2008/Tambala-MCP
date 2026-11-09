@@ -21,13 +21,15 @@ const definition: OrganizationDefinition = {
   ],
 };
 
-test('routes next-client objectives to sales and produces a short research query', () => {
+test('routes next-client objectives to sales and produces a service-aware Malawi research query', () => {
   const objective = 'Find our next client and identify a qualified prospect we can contact.';
   const matches = routeObjective(definition, objective);
   assert.equal(matches[0]?.capability.id, 'sales_prospecting');
   const query = buildResearchQuery(objective, matches[0]!);
   assert.ok(query.length > 0);
-  assert.ok(query.length < objective.length);
+  assert.ok(query.length <= 500);
+  assert.match(query, /Malawi/i);
+  assert.match(query, /website development/i);
   assert.doesNotMatch(query, /Find our next client/i);
 });
 

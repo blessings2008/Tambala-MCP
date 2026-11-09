@@ -33,8 +33,8 @@ export interface WebResearchOptions {
 const TAVILY_URL = 'https://api.tavily.com/search';
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_RESULTS = 20;
-const MAX_CONTEXT_SOURCES = 5;
-const MAX_SNIPPET_LENGTH = 900;
+const MAX_CONTEXT_SOURCES = 12;
+const MAX_SNIPPET_LENGTH = 500;
 const TRACKING_PARAMS = new Set([
   'fbclid', 'gclid', 'mc_cid', 'mc_eid', 'ref', 'ref_src',
 ]);
@@ -142,25 +142,37 @@ export async function webResearch(
   if (includeDomains) payload.include_domains = includeDomains;
   if (excludeDomains) payload.exclude_domains = excludeDomains;
 
-  let response: Response;
-  try {
-    response = await fetch(TAVILY_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (error) {
-    if (error instanceof Error && error.name === 'TimeoutError') {
-      throw new Error(`Web research timed out after ${timeoutMs}ms.`);
+  let response: Response | null = null;
+  let lastFailure = 'unknown network error';
+  const maxAttempts = 5;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      response = await fetch(TAVILY_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      lastFailure = error instanceof Error ? error.message : 'unknown network error';
+      if (attempt === maxAttempts) {
+        const detail = error instanceof Error && error.name === 'TimeoutError' ? `timed out after ${timeoutMs}ms` : lastFailure;
+        throw new Error(`Web research failed after ${maxAttempts} attempts: ${detail}.`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(250 * attempt, 1_000)));
+      continue;
     }
-    throw new Error(`Web research request failed: ${error instanceof Error ? error.message : 'unknown network error'}`);
-  }
 
-  if (!response.ok) {
+    if (response.ok) break;
     const detail = await response.text().catch(() => '');
-    throw new Error(`Web research provider returned HTTP ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ''}.`);
+    lastFailure = `HTTP ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ''}`;
+    const retryable = response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500;
+    if (!retryable || attempt === maxAttempts) {
+      throw new Error(`Web research provider returned ${lastFailure}${retryable ? ` after ${maxAttempts} attempts` : ''}.`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, Math.min(250 * attempt, 1_000)));
   }
+  if (!response?.ok) throw new Error(`Web research failed after ${maxAttempts} attempts: ${lastFailure}.`);
 
   let data: {
     query?: string;

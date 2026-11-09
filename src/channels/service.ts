@@ -4,7 +4,8 @@ import { dbConfigured } from '../organization/workforce/db-util.js';
 import { labelForRole } from '../organization/workforce/profiles.js';
 import { routeOrganizationObjective } from '../organization/service.js';
 import { requireConfiguredRuntime, resolveExecutionRoute } from '../organization/execution-router.js';
-import { askTambalaAI, getAgentOperationalInfo } from '../services/ai.js';
+import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../services/ai.js';
+import { getCompactCompanyContext } from '../services/ai/context.js';
 import { signWork } from '../organization/workforce/sign-work.js';
 import { loadPdfForSending } from '../documents/service.js';
 import { connectionState, evolutionConfig, evolutionConfigured, sendDocument, sendText } from './evolution.js';
@@ -90,6 +91,19 @@ async function handleFounderInstruction(envelope: FounderMessageEnvelope): Promi
     const execution = mapped.status === 'ready'
       ? requireConfiguredRuntime(mapped, getAgentOperationalInfo(mapped.agent))
       : mapped;
+    const companyContext = await getCompactCompanyContext().catch((error) => {
+      console.warn('Verified company context unavailable to Founder workflow:', error instanceof Error ? error.message : error);
+      return {
+        company: { name: 'Tambala Technologies', country: 'Malawi', base: 'Lilongwe, Malawi', description: 'Software, websites, and digital products' },
+        services: [],
+        prospecting_defaults: {
+          geographic_scope: 'Malawi-wide',
+          market_approach: 'Cross-sector; qualify businesses against Tambala services rather than asking for a market type.',
+          first_batch_target: 20,
+          clarification_rule: 'Do not ask obvious scoping questions; use these defaults unless a genuine blocker remains.',
+        },
+      };
+    });
     const routeSummary = matches.slice(0, 3).map((match) =>
       `${match.department ?? 'Unassigned'} — ${match.role ?? 'No role'} (score ${match.score}; role ${match.roleActivation ?? 'unknown'})`,
     ).join('\n') || 'No department capability matched. CEO must clarify ownership.';
@@ -107,23 +121,42 @@ async function handleFounderInstruction(envelope: FounderMessageEnvelope): Promi
     });
     const ceoBrief = await askTambalaAI(
       'orchestrator',
-      `You are Tambala Technologies' CEO receiving a direct Founder instruction over WhatsApp. Treat the structured envelope as the source message, not as a customer request. Acknowledge it, interpret the objective, and prepare a precise department handoff where possible. Never claim a task is complete unless a specialist actually returned the deliverable. If the route is not activated or its runtime is not configured, explain the exact blocker and what is needed. Do not invent facts or approvals.\n\nStructured message envelope:\n${envelopeText}\n\nDeterministic capability matches:\n${routeSummary}\n\nExecution gate:\n${JSON.stringify(execution)}`,
-      { communicationType: 'Founder -> CEO', sender: envelope.sender.name, recipient: 'Chief Executive Officer', messageId: envelope.message_id },
+      `You are Tambala Technologies' CEO receiving a direct Founder instruction over WhatsApp. Treat the structured envelope as the source message, not as a customer request. Acknowledge it, interpret the objective, and prepare a precise department handoff where possible. Never claim a task is complete unless a specialist actually returned the deliverable. If the route is not activated or its runtime is not configured, explain the exact blocker and what is needed. Do not invent facts or approvals.\n\nVERIFIED TAMBALA OPERATING CONTEXT (company profile, active services and CRM exclusions):\n${JSON.stringify(companyContext).slice(0, 10000)}\n\nPROSPECTING DEFAULTS: When the objective is to identify potential clients, use Malawi-wide cross-sector prospecting, assess fit against Tambala's active services, default to 20 qualified prospects, infer reasonable decision-maker roles, and exclude existing CRM leads/clients. Do not ask the Founder to choose a market type, industry, company size, revenue range, job title, or batch size. Ask only if a genuine blocker cannot be resolved from company records or research.\n\nStructured message envelope:\n${envelopeText}\n\nDeterministic capability matches:\n${routeSummary}\n\nExecution gate:\n${JSON.stringify(execution)}`,
+      { communicationType: 'Founder -> CEO', sender: envelope.sender.name, recipient: 'Chief Executive Officer', messageId: envelope.message_id, companyContext },
     );
 
     if (execution.status !== 'ready') {
       return `${ceoBrief}\n\nDepartment routing: ${execution.department ?? 'Unassigned'} — ${execution.status}. ${execution.reason}`;
     }
 
-    const specialistResult = await askTambalaAI(
-      execution.agent,
-      `CEO handoff from Founder WhatsApp instruction. Execute the actual task and return the requested deliverable. Use the CEO's interpretation below, but treat the original Founder instruction as authoritative if there is any conflict. Do not claim external actions, messages, payments, deployments, or database changes unless a connected tool has verifiably completed them. If required information or permissions are missing, state the blocker clearly.\n\nCEO handoff summary:\n${ceoBrief}\n\nFounder instruction:\n${envelope.content.text}\n\nDepartment: ${execution.department}\nRole: ${execution.role}\nDeliverable guidance: ${execution.deliverableHints.join('; ')}\nPriority: ${envelope.priority}`,
-      { communicationType: 'CEO -> Department', sender: 'Chief Executive Officer', recipient: execution.role, messageId: envelope.message_id },
-    );
+    const isProspecting = execution.capabilityId === 'sales_prospecting';
+    const activeServices = Array.isArray(companyContext.services)
+      ? (companyContext.services as Array<Record<string, unknown>>).filter((service) => service.active === true)
+      : [];
+    const serviceSearchTerms = activeServices
+      .map((service) => String(service.name ?? '').trim()).filter(Boolean)
+      .join('; ');
+    const prospectResearchQuery = `Malawi businesses and organizations that may need ${serviceSearchTerms || 'websites, web applications, custom software, or digital products'}; official business websites, public contact details, and decision makers`.slice(0, 300);
+    const specialistTask = `CEO handoff from Founder WhatsApp instruction. Execute the actual task and return the requested deliverable. Use the CEO's interpretation below, but treat the original Founder instruction as authoritative if there is any conflict. Do not claim external actions, messages, payments, deployments, or database changes unless a connected tool has verifiably completed them. If required information or permissions are missing, state the blocker clearly.\n\nVERIFIED TAMBALA OPERATING CONTEXT:\n${JSON.stringify(companyContext).slice(0, 10000)}\n\nCEO handoff summary:\n${ceoBrief}\n\nFounder instruction:\n${envelope.content.text}\n\nDepartment: ${execution.department}\nRole: ${execution.role}\nDeliverable guidance: ${execution.deliverableHints.join('; ')}\nPriority: ${envelope.priority}${isProspecting ? '\n\nPROSPECTING EXECUTION RULES: Identify up to 20 new, qualified Malawi-wide business prospects across relevant sectors. Do not ask the Founder for a market type, industry, company size, revenue range, decision-maker title, or number. Use only verified active Tambala services to judge fit. Prioritize organizations with an evidenced need for websites/web applications, custom software, digital products, or other active services. Exclude all names in prospecting_defaults.excluded_existing_prospects. For each prospect provide business name, location, sector, why it fits, public decision-maker/contact details only when verified, and exact source URLs. Do not invent missing contacts. If evidence supports fewer than 20, return only the qualified prospects and explain the evidence gap.' : ''}`;
+    const specialistContext = { communicationType: 'CEO -> Department', sender: 'Chief Executive Officer', recipient: execution.role, messageId: envelope.message_id, companyContext };
+    let specialistResult: string;
+    const requiresWebResearch = isProspecting || /\b(research|investigate|look\s*up|find|identify|web\s+search|search\s+online|current|latest|prospect|lead generation)\b/i.test(envelope.content.text);
+    if (requiresWebResearch) {
+      const researched = await askTambalaAIWithWebResearch(
+        execution.agent,
+        specialistTask,
+        specialistContext,
+        isProspecting ? prospectResearchQuery : execution.researchQuery,
+        isProspecting ? { maxResults: 20, searchDepth: 'advanced', country: 'Malawi' } : { maxResults: 8, searchDepth: 'advanced' },
+      );
+      specialistResult = `${researched.response}\n\nVERIFIED WEB RESEARCH EVIDENCE:\n${researched.research}`;
+    } else {
+      specialistResult = await askTambalaAI(execution.agent, specialistTask, specialistContext);
+    }
     return await askTambalaAI(
       'orchestrator',
       `Review the specialist's returned work against the original Founder instruction. Give the Founder a clear, useful answer. Distinguish completed analysis/drafting from any external action that still needs approval or a real integration. Do not invent execution.\n\nOriginal instruction:\n${envelope.content.text}\n\nDepartment: ${execution.department}\nSpecialist: ${execution.role}\n\nSpecialist return:\n${specialistResult}`,
-      { communicationType: 'Department -> CEO -> Founder', sender: execution.role, recipient: 'Founder / Bless', messageId: envelope.message_id },
+      { communicationType: 'Department -> CEO -> Founder', sender: execution.role, recipient: 'Founder / Bless', messageId: envelope.message_id, companyContext },
     );
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'AI runtime unavailable.';

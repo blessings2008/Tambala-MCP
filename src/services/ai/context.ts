@@ -61,26 +61,70 @@ export async function resolveClient(subject?: string, id?: string): Promise<DbRo
 }
 
 export async function getVerifiedCompanyContext(): Promise<DbRow> {
-  const [profiles, services, products, portfolio] = await Promise.all([
+  const [profiles, services, products, portfolio, leads, clients] = await Promise.all([
     supabaseSelect<DbRow>('company_profile', 'select=*&id=eq.default&limit=1'),
     supabaseSelect<DbRow>('services'),
     supabaseSelect<DbRow>('products'),
     getApprovedPortfolio(),
+    supabaseSelect<DbRow>('leads', 'select=name,business_name,status&limit=300'),
+    supabaseSelect<DbRow>('clients', 'select=name,business_name,status&limit=300'),
   ]);
   const profile = profiles[0] ?? {};
+  const activeServices = services.filter((row) => row.active === true && !isExcluded(row));
+  const existingProspectNames = [...new Set([...leads, ...clients]
+    .filter((row) => !isExcluded(row))
+    .flatMap((row) => candidateNames(row))
+    .map((name) => name.trim())
+    .filter(Boolean))].slice(0, 60);
+  const country = String(profile.country ?? 'Malawi');
+  const base = String(profile.base_location ?? 'Lilongwe, Malawi');
   return {
     company: {
       name: profile.company_name ?? 'Tambala Technologies',
-      country: profile.country ?? 'Malawi',
-      base: profile.base_location ?? 'Lilongwe, Malawi',
-      description: profile.description ?? null,
+      country,
+      base,
+      description: profile.description ?? 'Software, websites, and digital products',
       contact_name: profile.contact_name ?? null,
     },
-    services,
+    services: activeServices,
     products,
     verified_portfolio: portfolio,
+    prospecting_defaults: {
+      geographic_scope: `${country}-wide; do not restrict prospecting to the base city unless the Founder says so`,
+      base_location: base,
+      market_approach: 'Cross-sector prospecting. Identify real businesses and organizations whose needs plausibly match an active Tambala service; do not ask the Founder to choose a market type or industry.',
+      first_batch_target: 20,
+      fit_signals: [
+        'No website, outdated website, poor mobile experience, or weak online presence',
+        'A visible need for a business website or web application',
+        'A workflow that could reasonably benefit from custom software or a digital product',
+        'A business that actively needs social media account management and content support, when that service is active',
+      ],
+      decision_maker_profiles: ['Owner', 'Founder', 'Managing Director', 'General Manager', 'Operations Manager', 'Marketing Manager'],
+      qualification_rule: 'Infer company size and decision-maker title from public evidence where available. Do not ask the Founder for revenue bands, employee counts, room counts, or preferred job titles.',
+      excluded_existing_prospects: existingProspectNames,
+      excluded_existing_prospects_count: [...new Set([...leads, ...clients].filter((row) => !isExcluded(row)).flatMap((row) => candidateNames(row)))].length,
+      contact_rule: 'Include only publicly verified contact names and contact details. Leave unavailable fields blank and cite the source URL; never fabricate an email, phone number, or person.',
+      clarification_rule: 'Use these defaults and proceed. Ask the Founder only when a genuinely blocking ambiguity cannot be resolved from the request, company records, or web research.',
+    },
     sender: { name: process.env.TAMBALA_SENDER_NAME?.trim() || '[SENDER NAME]', phone: process.env.TAMBALA_SENDER_PHONE?.trim() || '[SENDER PHONE]' },
     rules: GROUNDING_RULES,
+  };
+}
+
+export async function getCompactCompanyContext(): Promise<DbRow> {
+  const context = await getVerifiedCompanyContext();
+  const services = Array.isArray(context.services)
+    ? (context.services as DbRow[]).map((service) => ({
+      name: service.name,
+      description: service.description,
+      active: service.active === true,
+    }))
+    : [];
+  return {
+    company: context.company,
+    services,
+    prospecting_defaults: context.prospecting_defaults,
   };
 }
 

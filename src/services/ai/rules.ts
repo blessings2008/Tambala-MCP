@@ -16,6 +16,7 @@ export const GROUNDING_RULES = [
   'If a link is needed but not verified, use [LINK].',
   'Never use a lead/client phone number as the sender phone. Sender details come only from verified sender configuration or placeholders.',
   'Only describe Tambala services that appear in the verified services context. Never add booking systems, payment systems, guest platforms, PMS integrations, apps, or other services unless explicitly listed.',
+  'For prospect research, use Tambala\'s verified active services as the basis for fit and default to Malawi-wide, cross-sector opportunities. Do not ask the Founder to choose a market type, industry, company size, revenue range, decision-maker title, or prospect count when these can be reasonably inferred. Default to a first batch of 20 qualified prospects. Prioritize organizations with an evidenced need for an active service; do not treat transport or any other industry as a Tambala service. A business in any sector is relevant only when its needs match an active Tambala service. Exclude existing CRM leads and clients from new-prospect lists.',
   'Do not claim Tambala has worked with other lodges, hospitality partners, or completed projects unless those exact claims are verified in context.',
   'Only suggest actions possible for a one-person business using the supplied tools and services.',
   'Do not calculate or invent currency conversions.',

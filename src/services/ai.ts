@@ -22,14 +22,14 @@ function boundText(value: string, maxChars: number): string {
   return normalized.slice(0, head) + marker + (tail ? normalized.slice(-tail) : '');
 }
 
-function serializeBoundedContext(context: unknown): string {
+function serializeBoundedContext(context: unknown, maxChars = MAX_CONTEXT_CHARS): string {
   let serialized: string;
   try {
     serialized = JSON.stringify(context) ?? String(context);
   } catch {
     serialized = '[Context could not be serialized]';
   }
-  return boundText(serialized, MAX_CONTEXT_CHARS);
+  return boundText(serialized, maxChars);
 }
 
 function getClient(agent: AgentName): OpenAI {
@@ -61,10 +61,13 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
   const releaseSlot = acquireAgentRequestSlot(agent);
   try {
     const systemPrompt = boundText(AGENT_PROMPT_RULES[agent], MAX_SYSTEM_PROMPT_CHARS);
-    const userInput = boundText(input, MAX_USER_INPUT_CHARS);
-    const contextText = context === undefined ? '' : '\n\nTambala business context:\n' + serializeBoundedContext(context);
-    const userMessage = boundText(userInput + contextText, MAX_USER_INPUT_CHARS + MAX_CONTEXT_CHARS + 40);
-    const completionBudget = agent === 'operations' ? 1_600 : MAX_COMPLETION_TOKENS;
+    const researchHeavyOutreach = agent === 'outreach' && input.includes('WEB RESEARCH RESULT');
+    const userInputLimit = researchHeavyOutreach ? 7_000 : MAX_USER_INPUT_CHARS;
+    const contextLimit = researchHeavyOutreach ? 1_400 : MAX_CONTEXT_CHARS;
+    const userInput = boundText(input, userInputLimit);
+    const contextText = context === undefined ? '' : '\n\nTambala business context:\n' + serializeBoundedContext(context, contextLimit);
+    const userMessage = boundText(userInput + contextText, userInputLimit + contextLimit + 40);
+    const completionBudget = agent === 'operations' ? 1_600 : researchHeavyOutreach ? 1_400 : MAX_COMPLETION_TOKENS;
     const requestPayload = {
       model: config.model,
       messages: [
