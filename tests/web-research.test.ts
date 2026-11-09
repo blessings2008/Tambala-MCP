@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import {
+  buildProspectingSearchQueries,
   formatResearchContext,
   hasResearchSourceUrls,
   normalizeResearchQuery,
   webResearch,
+  webResearchMany,
 } from '../src/services/web-research.js';
 
 const originalFetch = globalThis.fetch;
@@ -108,6 +110,40 @@ test('keeps the legacy numeric maxResults argument and caps it safely', async ()
 
   await webResearch('test query', 999);
   assert.equal(sentPayload?.max_results, 20);
+});
+
+test('builds focused Malawi sector queries using active Tambala services', () => {
+  const queries = buildProspectingSearchQueries(['Website Development', 'Social Media Management']);
+  assert.equal(queries.length, 8);
+  assert.ok(queries.some((query) => /private schools/i.test(query)));
+  assert.ok(queries.some((query) => /hotels lodges/i.test(query)));
+  assert.ok(queries.some((query) => /clinics hospitals/i.test(query)));
+  assert.ok(queries.every((query) => query.includes('Website Development')));
+  assert.ok(queries.every((query) => query.length <= 300));
+});
+
+test('runs multiple prospecting searches and selects diverse company-level source domains', async () => {
+  process.env.TAMBALA_WEB_SEARCH_API_KEY = 'test-key';
+  const seenQueries: string[] = [];
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const payload = JSON.parse(String(init?.body)) as { query: string; max_results: number };
+    seenQueries.push(payload.query);
+    const slug = payload.query.split(' ')[1]?.toLowerCase().replace(/[^a-z0-9]/g, '') || String(seenQueries.length);
+    return new Response(JSON.stringify({
+      query: payload.query,
+      results: [
+        { title: `Organisation ${slug}`, url: `https://${slug}.mw/about`, content: `Named Malawi organisation discovered for ${payload.query}`, score: 0.9 },
+        { title: 'Repeated directory', url: 'https://directory.example.mw/malawi', content: 'Generic directory listing', score: 0.99 },
+      ],
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+
+  const queries = buildProspectingSearchQueries(['Website Development']);
+  const result = await webResearchMany(queries, { maxResults: 2, searchDepth: 'advanced', country: 'Malawi' });
+  assert.equal(seenQueries.length, 8);
+  assert.equal(result.results.length, 9);
+  assert.equal(new Set(result.results.map((item) => new URL(item.url).hostname)).size, 9);
+  assert.ok(result.results.some((item) => /organisation/i.test(item.title)));
 });
 
 test('formats research with citation guidance and prompt-injection protection', () => {
