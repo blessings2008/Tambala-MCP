@@ -75,7 +75,7 @@ export async function getVerifiedCompanyContext(): Promise<DbRow> {
     .filter((row) => !isExcluded(row))
     .flatMap((row) => candidateNames(row))
     .map((name) => name.trim())
-    .filter(Boolean))];
+    .filter(Boolean))].slice(0, 100);
   const country = String(profile.country ?? 'Malawi');
   const base = String(profile.base_location ?? 'Lilongwe, Malawi');
   return {
@@ -103,6 +103,7 @@ export async function getVerifiedCompanyContext(): Promise<DbRow> {
       decision_maker_profiles: ['Owner', 'Founder', 'Managing Director', 'General Manager', 'Operations Manager', 'Marketing Manager'],
       qualification_rule: 'Infer company size and decision-maker title from public evidence where available. Do not ask the Founder for revenue bands, employee counts, room counts, or preferred job titles.',
       excluded_existing_prospects: existingProspectNames,
+      excluded_existing_prospects_count: [...new Set([...leads, ...clients].filter((row) => !isExcluded(row)).flatMap((row) => candidateNames(row)))].length,
       contact_rule: 'Include only publicly verified contact names and contact details. Leave unavailable fields blank and cite the source URL; never fabricate an email, phone number, or person.',
       clarification_rule: 'Use these defaults and proceed. Ask the Founder only when a genuinely blocking ambiguity cannot be resolved from the request, company records, or web research.',
     },
