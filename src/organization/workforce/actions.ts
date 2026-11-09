@@ -47,20 +47,90 @@ export function mayDo(agent: string, action: Action): string | null {
 
 export interface ParsedActions { clean: string; actions: Action[]; rejected: string[] }
 
-/** One JSON object per line inside the ACTIONS block. Bad lines are reported, never silently dropped. */
+/**
+ * Extract complete JSON values from the ACTIONS block. Models sometimes wrap
+ * actions in Markdown fences, emit pretty-printed multi-line objects, or return
+ * a JSON array. Accept those harmless formatting variations while keeping the
+ * action schema and per-agent permission checks strict.
+ */
+function extractActionValues(source: string): { values: unknown[]; rejected: string[] } {
+  const text = source
+    .replace(/^﻿/, '')
+    .replace(/^```(?:json)?\s*$/gim, '')
+    .trim();
+  const values: unknown[] = [];
+  const rejected: string[] = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    while (cursor < text.length && !'{['.includes(text[cursor])) cursor += 1;
+    if (cursor >= text.length) break;
+    const start = cursor;
+    const stack: string[] = [];
+    let quoted = false;
+    let escaped = false;
+    for (; cursor < text.length; cursor += 1) {
+      const ch = text[cursor];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') quoted = false;
+        continue;
+      }
+      if (ch === '"') { quoted = true; continue; }
+      if (ch === '{' || ch === '[') stack.push(ch);
+      else if (ch === '}' || ch === ']') {
+        const open = stack.pop();
+        if ((open === '{' && ch !== '}') || (open === '[' && ch !== ']')) break;
+        if (stack.length === 0) {
+          const raw = text.slice(start, cursor + 1);
+          try {
+            const parsed: unknown = JSON.parse(raw);
+            if (Array.isArray(parsed)) values.push(...parsed);
+            else values.push(parsed);
+          } catch {
+            rejected.push(`Invalid JSON: ${raw.slice(0, 60)}`);
+          }
+          cursor += 1;
+          break;
+        }
+      }
+    }
+    if (cursor >= text.length && stack.length > 0) {
+      rejected.push(`Invalid JSON: ${text.slice(start, start + 60)}`);
+      break;
+    }
+  }
+  const residue = text.replace(/\{[\s\S]*?\}/g, '').replace(/\[[\s\S]*?\]/g, '')
+    .replace(/^[\s,;\-_*\u0060]+|[\s,;\-_*\u0060]+$/g, '').trim();
+  if (residue && values.length === 0 && rejected.length === 0) {
+    rejected.push(`Not JSON: ${residue.slice(0, 60)}`);
+  } else if (residue && !/^(?:none|no actions?)(?:\.|!)?$/i.test(residue)) {
+    rejected.push(`Not JSON: ${residue.slice(0, 60)}`);
+  }
+  return { values, rejected };
+}
+
+/** Accept one object per line, pretty JSON, fenced JSON and arrays; invalid entries remain visible. */
 export function parseActions(body: string): ParsedActions {
   const { clean, blocks } = splitBlocks(body);
-  const actions: Action[] = []; const rejected: string[] = [];
-  for (const line of (blocks.ACTIONS ?? '').split('\n')) {
-    const raw = line.trim().replace(/^[-*]\s*/, '');
-    if (!raw || raw.toLowerCase() === 'none') continue;
-    if (!raw.startsWith('{')) { rejected.push(`Not JSON: ${raw.slice(0, 60)}`); continue; }
-    let json: unknown;
-    try { json = JSON.parse(raw); } catch { rejected.push(`Invalid JSON: ${raw.slice(0, 60)}`); continue; }
-    const parsed = actionSchema.safeParse(json);
-    if (!parsed.success) { rejected.push(`${(json as { type?: string }).type ?? 'action'}: ${parsed.error.issues[0]?.message ?? 'invalid'}`.slice(0, 120)); continue; }
-    if (actions.length >= MAX_ACTIONS_PER_RUN) { rejected.push(`Over the limit of ${MAX_ACTIONS_PER_RUN} actions per run.`); continue; }
-    actions.push(parsed.data);
+  const actions: Action[] = [];
+  const rejected: string[] = [];
+  if (blocks.ACTIONS !== undefined) {
+    const extracted = extractActionValues(blocks.ACTIONS);
+    rejected.push(...extracted.rejected);
+    for (const json of extracted.values) {
+      const parsed = actionSchema.safeParse(json);
+      if (!parsed.success) {
+        const type = json && typeof json === 'object' && 'type' in json ? String((json as { type?: unknown }).type) : 'action';
+        rejected.push(`${type}: ${parsed.error.issues[0]?.message ?? 'invalid'}`.slice(0, 120));
+        continue;
+      }
+      if (actions.length >= MAX_ACTIONS_PER_RUN) {
+        rejected.push(`Over the limit of ${MAX_ACTIONS_PER_RUN} actions per run.`);
+        continue;
+      }
+      actions.push(parsed.data);
+    }
   }
   const hasBlocks = blocks.ACTIONS !== undefined || blocks.HANDOFFS !== undefined;
   return { clean: hasBlocks ? clean : body, actions, rejected };
