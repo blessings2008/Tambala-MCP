@@ -1,4 +1,4 @@
-import { AGENT_DIRECTORY } from '../../services/ai/models.js';
+import { AGENT_DIRECTORY, type AgentName } from '../../services/ai/models.js';
 import type { ContextKind, StandingDuty } from './duties.js';
 import { actionHelp, parseActions, type Action } from './actions.js';
 import { colleagueList, extractHandoffs, MAX_HANDOFFS_PER_DUTY } from './handoffs.js';
