@@ -51,7 +51,7 @@ export function buildDutyPrompt(duty: StandingDuty, lt: LocalTime, who?: { emplo
     'Keep it under 350 words, plain and scannable.',
   ];
   if (duty.id === 'morning-board-minutes') {
-    parts.push('BOARD MINUTES CONTROL: The supplied context.boardMeeting object is the authoritative attendance and department-report matrix. Include all four departmentUpdates. Use its status exactly: mark the minutes COMPLETE only when boardMeeting.status is COMPLETE; otherwise mark PARTIAL and name every entry in missingDepartments. Quote findings only from each departmentUpdates.report. Do not infer a missing report from another department’s summary.');
+    parts.push('BOARD MINUTES CONTROL: The supplied context.boardMeeting object is the authoritative attendance and department-report matrix. Include the Chair opening and all four departmentUpdates. Use its status exactly: mark the minutes COMPLETE only when boardMeeting.status is COMPLETE; otherwise mark PARTIAL and name every entry in missingItems. Quote findings only from boardMeeting.opening.report and each departmentUpdates.report. Do not infer a missing report from another department’s summary.');
   }
   if (!duty.report) {
     parts.push(actionHelp(duty.agent));
