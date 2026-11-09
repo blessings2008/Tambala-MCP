@@ -148,7 +148,7 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
     const userInput = boundText(input, userInputLimit);
     const contextText = context === undefined ? '' : '\n\nTambala business context:\n' + serializeBoundedContext(context, contextLimit);
     const userMessage = boundText(userInput + contextText, userInputLimit + contextLimit + 40);
-    const completionBudget = agent === 'operations' ? 1_600 : researchHeavyOutreach ? (input.includes('discovery pass') ? 700 : 1_400) : MAX_COMPLETION_TOKENS;
+    const completionBudget = agent === 'operations' ? 1_600 : researchHeavyOutreach ? (input.includes('discovery pass') ? 700 : 1_400) : agent === 'research' ? 1_800 : MAX_COMPLETION_TOKENS;
     const requestPayload = {
       model: config.model,
       messages: [
