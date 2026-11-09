@@ -69,6 +69,35 @@ test('uses advanced search controls, deduplicates URLs and ranks useful sources'
   assert.equal(result.results[1]?.content, 'A');
 });
 
+test('retries transient web research failures up to five attempts', async () => {
+  process.env.TAMBALA_WEB_SEARCH_API_KEY = 'test-key';
+  let attempts = 0;
+  globalThis.fetch = (async () => {
+    attempts += 1;
+    if (attempts < 5) return new Response('temporarily unavailable', { status: 503 });
+    return new Response(JSON.stringify({ results: [{ title: 'Recovered', url: 'https://example.com/recovered', content: 'Recovered source' }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  const result = await webResearch('Malawi business prospects', { maxResults: 1, timeoutMs: 2_000 });
+  assert.equal(attempts, 5);
+  assert.equal(result.results[0]?.title, 'Recovered');
+});
+
+test('does not retry permanent web research client errors', async () => {
+  process.env.TAMBALA_WEB_SEARCH_API_KEY = 'test-key';
+  let attempts = 0;
+  globalThis.fetch = (async () => {
+    attempts += 1;
+    return new Response('invalid request', { status: 400 });
+  }) as typeof fetch;
+
+  await assert.rejects(() => webResearch('Malawi business prospects'), /HTTP 400/);
+  assert.equal(attempts, 1);
+});
+
 test('keeps the legacy numeric maxResults argument and caps it safely', async () => {
   process.env.TAMBALA_WEB_SEARCH_API_KEY = 'test-key';
   let sentPayload: Record<string, unknown> | undefined;
