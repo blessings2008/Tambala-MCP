@@ -112,6 +112,22 @@ export async function getVerifiedCompanyContext(): Promise<DbRow> {
   };
 }
 
+export async function getCompactCompanyContext(): Promise<DbRow> {
+  const context = await getVerifiedCompanyContext();
+  const services = Array.isArray(context.services)
+    ? (context.services as DbRow[]).map((service) => ({
+      name: service.name,
+      description: service.description,
+      active: service.active === true,
+    }))
+    : [];
+  return {
+    company: context.company,
+    services,
+    prospecting_defaults: context.prospecting_defaults,
+  };
+}
+
 export async function getBusinessSummary(): Promise<DbRow> {
   const [leads, clients, projects, tasks] = await Promise.all([
     supabaseSelect<DbRow>('leads', 'select=id,name,business_name,status,next_follow_up_at,created_at'),
