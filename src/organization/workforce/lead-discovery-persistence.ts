@@ -32,7 +32,7 @@ function parseProspectBlock(body: string): { prospects: Row[]; cleanBody: string
   catch { throw new Error('The DISCOVERED_PROSPECTS block contains invalid JSON; no prospects were saved.'); }
   if (!Array.isArray(parsed)) throw new Error('DISCOVERED_PROSPECTS must be a JSON array.');
   return {
-    prospects: parsed.slice(0, 5) as Row[],
+    prospects: parsed as Row[],
     cleanBody: body.replace(match[0], '').trim(),
   };
 }
@@ -85,6 +85,7 @@ export async function persistDiscoveredProspects(body: string): Promise<{ cleanB
         verification_status: verification,
         processing_status: 'new',
         research_notes: optionalString(row.research_notes, 1600),
+        first_contact_message: optionalString(row.first_contact_message, 1800),
       });
       known.add(normalized);
       saved++;
