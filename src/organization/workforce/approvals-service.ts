@@ -6,7 +6,7 @@ import { signWork } from './sign-work.js';
 export type ApprovalRow = {
   id: string; action_type: string; summary: string; requested_by_role_id: string; required_authority: string;
   status: 'pending' | 'approved' | 'rejected' | 'cancelled'; risk_level: 'low' | 'medium' | 'high' | 'critical';
-  decision_note: string | null; resolved_by_role_id: string | null; task_id: string | null; content: string | null;
+  resolution_note: string | null; resolved_by_role_id: string | null; task_id: string | null; content: string | null;
   subject_type: string | null; subject_id: string | null;
   created_at: string; resolved_at: string | null;
 };
@@ -56,7 +56,7 @@ export async function decideApproval(input: {
   let updated: ApprovalRow;
   try {
     updated = await supabaseUpdate<ApprovalRow>('organization_approval_requests', {
-      status: input.decision, decision_note: note || null, resolved_by_role_id: deciderRoleId, resolved_at: new Date().toISOString(),
+      status: input.decision, resolution_note: note || null, resolved_by_role_id: deciderRoleId, resolved_at: new Date().toISOString(),
     }, `id=eq.${input.id}&status=eq.pending`);
   } catch (error) {
     if (error instanceof Error && /returned no record/.test(error.message)) throw new ApprovalError('This request was just resolved by someone else.', 409);
