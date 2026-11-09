@@ -261,7 +261,7 @@ export async function webResearchMany(
   // First pass: one result per domain so a directory cannot crowd out all
   // individual organisations. Second pass fills the remaining evidence slots.
   for (const item of candidates) {
-    const domain = new URL(item.url).hostname.replace(/^www\\./, '').toLowerCase();
+    const domain = new URL(item.url).hostname.replace(/^www\./, '').toLowerCase();
     if (selectedDomains.has(domain)) continue;
     selected.push(item);
     selectedUrls.add(item.url);
