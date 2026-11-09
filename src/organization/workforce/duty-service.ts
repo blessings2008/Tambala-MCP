@@ -211,7 +211,7 @@ async function dispatchIncidentToIT(input: {
     console.error('[incident] IT dispatch unavailable: durable database is not configured.', input.source, input.message);
     return;
   }
-  const message = input.message.slice(0, 1200);
+  const message = input.message.slice(0, 420);
   const key = `${input.taskId ?? 'no-task'}|${input.source}|${message.toLowerCase().replace(/\s+/g, ' ').slice(0, 240)}`;
   const now = Date.now();
   for (const [known, at] of incidentDispatchKeys) if (now - at > 10 * 60_000) incidentDispatchKeys.delete(known);
