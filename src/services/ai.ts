@@ -50,6 +50,7 @@ export async function askTambalaAI(agent: AgentName, input: string, context?: un
 
 /** Run a web search first, then give the returned evidence to the agent as explicit external research context. */
 export async function askTambalaAIWithWebResearch(agent: AgentName, input: string, context?: unknown, query?: string | string[], searchOptions?: import('./web-research.js').WebResearchOptions): Promise<{ response: string; research: ReturnType<typeof formatResearchContext> }> {
+  let prospectDiscoveryNotes = '';
   let research = Array.isArray(query)
     ? await webResearchMany(query, { ...searchOptions, maxResults: 4, includeRawContent: true })
     : await webResearch(query ?? input, searchOptions ?? 5);
@@ -104,6 +105,7 @@ export async function askTambalaAIWithWebResearch(agent: AgentName, input: strin
     }
 
     if (candidates.length) {
+      prospectDiscoveryNotes = candidates.map((candidate, index) => `${index + 1}. ${candidate.name} — discovery clue: ${candidate.reason} — discovery source: ${candidate.source_url}`).join('\n');
       // Stage 2: enrich each named candidate independently for official web,
       // leadership, role, published email and phone. Missing fields stay unknown.
       const enrichmentQueries = candidates.map(({ name }) =>
@@ -129,7 +131,7 @@ export async function askTambalaAIWithWebResearch(agent: AgentName, input: strin
   }
 
   const researchContext = formatResearchContext(research);
-  const response = await askTambalaAIInternal(agent, `${input}\n\n${researchContext}\n\nCITATION RULES: Cite the supplied source URLs next to factual claims that depend on them. If the supplied sources do not establish a claim, label it unknown rather than filling the gap.`, context);
+  const discoveryNotes = prospectDiscoveryNotes ? `\n\nDISCOVERED CANDIDATES AND THEIR ORIGINAL EVIDENCE:\n${prospectDiscoveryNotes}\nTreat these as candidates only; use the verification sources to qualify them and preserve both source URLs where relevant.` : '';\n  const response = await askTambalaAIInternal(agent, `${input}${discoveryNotes}\n\n${researchContext}\n\nCITATION RULES: Cite the supplied source URLs next to factual claims that depend on them. If the supplied sources do not establish a claim, label it unknown rather than filling the gap.`, context);
   return { response, research: researchContext };
 }
 
