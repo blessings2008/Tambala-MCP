@@ -139,13 +139,18 @@ test('an unavailable colleague leaves the work waiting without rewriting it ever
   assert.equal((await processHandoffs(deps))[0].status, 'waiting');
 });
 
-test('failed handoffs retry three times then stop', async () => {
+test('failed handoffs retry five total attempts and keep the room open until the final failure', async () => {
   const { deps, store } = handoffDeps({ askAgent: async () => { throw new Error('model down'); } });
   await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'marketing', request: 'Draft a one-page overview of our web services' });
   const statuses: string[] = [];
   for (let i = 0; i < 5; i += 1) for (const o of await processHandoffs(deps)) statuses.push(o.status);
-  assert.deepEqual(statuses, ['retry', 'retry', 'failed']);
+  assert.deepEqual(statuses, ['retry', 'retry', 'retry', 'retry', 'failed']);
+  assert.equal(store.rows[0].attempts, 5);
   assert.equal(store.rows[0].status, 'failed');
+  assert.equal(store.rooms[0].status, 'failed');
+  assert.ok(store.rooms[0].closed_at);
+  assert.equal(store.roomEvents.filter((event) => event.event_type === 'room_retry_scheduled').length, 4);
+  assert.equal(store.roomEvents.filter((event) => event.event_type === 'room_failed').length, 1);
 });
 
 test('handoff requests are validated and cannot target the CEO', async () => {
