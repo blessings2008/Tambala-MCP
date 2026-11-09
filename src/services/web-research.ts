@@ -159,7 +159,7 @@ export async function webResearch(
         const detail = error instanceof Error && error.name === 'TimeoutError' ? `timed out after ${timeoutMs}ms` : lastFailure;
         throw new Error(`Web research failed after ${maxAttempts} attempts: ${detail}.`);
       }
-      await new Promise((resolve) => setTimeout(resolve, Math.min(750 * attempt, 3_000)));
+      await new Promise((resolve) => setTimeout(resolve, Math.min(250 * attempt, 1_000)));
       continue;
     }
 
