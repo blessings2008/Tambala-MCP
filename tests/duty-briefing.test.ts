@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildBoardMeetingSnapshot } from '../src/organization/workforce/duty-service.ts';
+import { buildDutyPrompt } from '../src/organization/workforce/duty-runner.ts';
+import { localTime } from '../src/organization/workforce/schedule.ts';
 import type { DutyRun } from '../src/organization/workforce/duty-store.ts';
 import type { StandingDuty } from '../src/organization/workforce/duties.ts';
 
@@ -30,4 +32,11 @@ test('CEO board snapshot is complete only when all four reports have completed w
   assert.equal(snapshot.status, 'COMPLETE');
   assert.equal(snapshot.receivedDepartmentReports, 4);
   assert.deepEqual(snapshot.missingDepartments, []);
+});
+
+test('CEO minutes prompt makes the report matrix authoritative', () => {
+  const minutesDuty = { id: 'morning-board-minutes', agent: 'orchestrator', title: 'Morning board minutes', job: 'Compile minutes.', deliverable: 'Minutes.' } as unknown as StandingDuty;
+  const prompt = buildDutyPrompt(minutesDuty, localTime(new Date('2026-11-09T06:25:00Z')));
+  assert.match(prompt, /context\.boardMeeting/);
+  assert.match(prompt, /mark the minutes COMPLETE only when boardMeeting\.status is COMPLETE/);
 });
