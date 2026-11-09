@@ -140,14 +140,14 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
   const config = getAgentRuntimeConfig(agent);
   const releaseSlot = acquireAgentRequestSlot(agent);
   try {
-    const systemPrompt = boundText(AGENT_PROMPT_RULES[agent], agent === 'outreach' && input.includes('WEB RESEARCH RESULT') ? 5_500 : MAX_SYSTEM_PROMPT_CHARS);
+    const systemPrompt = boundText(AGENT_PROMPT_RULES[agent], agent === 'outreach' && input.includes('WEB RESEARCH RESULT') ? 4_200 : MAX_SYSTEM_PROMPT_CHARS);
     const researchHeavyOutreach = agent === 'outreach' && input.includes('WEB RESEARCH RESULT');
-    const userInputLimit = researchHeavyOutreach ? 7_000 : MAX_USER_INPUT_CHARS;
-    const contextLimit = researchHeavyOutreach ? 400 : MAX_CONTEXT_CHARS;
+    const userInputLimit = researchHeavyOutreach ? 5_500 : MAX_USER_INPUT_CHARS;
+    const contextLimit = researchHeavyOutreach ? 250 : MAX_CONTEXT_CHARS;
     const userInput = boundText(input, userInputLimit);
     const contextText = context === undefined ? '' : '\n\nTambala business context:\n' + serializeBoundedContext(context, contextLimit);
     const userMessage = boundText(userInput + contextText, userInputLimit + contextLimit + 40);
-    const completionBudget = agent === 'operations' ? 1_600 : researchHeavyOutreach ? 1_200 : MAX_COMPLETION_TOKENS;
+    const completionBudget = agent === 'operations' ? 1_600 : researchHeavyOutreach ? (input.includes('discovery pass') ? 700 : 1_400) : MAX_COMPLETION_TOKENS;
     const requestPayload = {
       model: config.model,
       messages: [
