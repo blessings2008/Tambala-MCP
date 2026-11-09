@@ -44,7 +44,7 @@ test('uses advanced search controls, deduplicates URLs and ranks useful sources'
       query: 'Malawi fintech',
       results: [
         { title: 'Lower score', url: 'https://example.com/a?utm_source=test', content: 'A', score: 0.4 },
-        { title: 'Higher score', url: 'https://example.com/b#section', content: 'B', score: 0.9, published_date: '2026-11-01' },
+        { title: 'Higher score', url: 'https://example.com/b#section', content: 'B', raw_content: 'Full page B', score: 0.9, published_date: '2026-11-01' },
         { title: 'Duplicate URL', url: 'https://example.com/a', content: 'duplicate', score: 0.8 },
         { title: 'Unsafe scheme', url: 'javascript:alert(1)', content: 'bad', score: 1 },
       ],
@@ -67,6 +67,7 @@ test('uses advanced search controls, deduplicates URLs and ranks useful sources'
   assert.deepEqual(sentPayload?.exclude_domains, ['blocked.example']);
   assert.equal(result.results.length, 2);
   assert.equal(result.results[0]?.title, 'Higher score');
+  assert.equal(result.results[0]?.content, 'Full page B');
   assert.equal(result.results[1]?.url, 'https://example.com/a');
   assert.equal(result.results[1]?.content, 'A');
 });
