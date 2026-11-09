@@ -128,6 +128,7 @@ function render(){
  const att=[];
  if(d.tasks.ok)d.tasks.data.filter(t=>t.status==='failed').slice(0,4).forEach(t=>att.push(row('Failed: '+t.objective.slice(0,70),(t.error_message||'').slice(0,100),badge('Failed','bad'))));
  if(d.audit.ok)d.audit.data.filter(a=>a.outcome==='denied').slice(0,4).forEach(a=>att.push(row('Denied: '+a.action,a.reason.slice(0,100),badge('Denied','bad'))));
+ if(d.workforce.ok)d.workforce.data.employees.forEach(e=>e.duties.filter(x=>x.state==='overdue'||x.state==='failed').forEach(x=>att.push(row(x.state.toUpperCase()+': '+x.title,e.title+' · '+x.schedule+(x.lastRun&&x.lastRun.error?' · '+String(x.lastRun.error).slice(0,80):''),badge(x.state==='failed'?'Failed':'Overdue','bad')))));
  if(d.automation.pendingActions.ok&&d.automation.pendingActions.data.length)att.push(row(d.automation.pendingActions.data.length+' automation action(s) awaiting review','See Automation',badge('Review','pending')));
  fill('ovAttention',att,'Nothing needs attention','No failed tasks, denied calls or pending reviews in the loaded window.');
 
