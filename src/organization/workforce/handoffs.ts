@@ -248,11 +248,22 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
           { status: 'needs_more_work', stage: 'ceo', eventType: decision === 'REVISION_REQUIRED' ? 'ceo_revision_requested' : 'ceo_review_waiting_for_founder', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, review: reason } },
         ]);
         const awaitingFounder = decision !== 'REVISION_REQUIRED';
+        const revisionExhausted = !awaitingFounder && attempt >= MAX_HANDOFF_ATTEMPTS;
         const contextSummary = [h.context_summary, `CEO REVIEW FEEDBACK: ${reason}`].filter(Boolean).join('\n\n').slice(0, 3000);
+        if (revisionExhausted) {
+          await deps.tasks.fail(taskId, `Maximum of ${MAX_HANDOFF_ATTEMPTS} attempts reached: ${reason}`);
+          await deps.store.update(h.id, { status: 'failed', context_summary: contextSummary, result: stamped.slice(0, 8000), error: reason, completed_at: deps.now().toISOString() });
+          if (h.room_id) {
+            await deps.store.updateRoom(h.room_id, { status: 'failed', deliverable: stamped.slice(0, 8000), blocker: reason, closed_at: deps.now().toISOString() });
+            await deps.store.roomEvent(h.room_id, 'room_failed', 'ceo', { reason, attempt, maxAttempts: MAX_HANDOFF_ATTEMPTS });
+          }
+          outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'failed', reason, taskId, roomId: h.room_id ?? undefined });
+          continue;
+        }
         await deps.store.update(h.id, { status: awaitingFounder ? 'awaiting_founder' : 'queued', context_summary: contextSummary, result: stamped.slice(0, 8000), error: reason, completed_at: null });
         if (h.room_id) {
           await deps.store.updateRoom(h.room_id, { status: awaitingFounder ? 'awaiting_founder' : 'revision_requested', deliverable: stamped.slice(0, 8000), blocker: reason });
-          await deps.store.roomEvent(h.room_id, awaitingFounder ? 'ceo_review_needs_founder' : 'ceo_revision_requested', 'ceo', { review: reason });
+          await deps.store.roomEvent(h.room_id, awaitingFounder ? 'ceo_review_needs_founder' : 'ceo_revision_requested', 'ceo', { review: reason, attempt, maxAttempts: MAX_HANDOFF_ATTEMPTS });
         }
         outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: awaitingFounder ? 'waiting' : 'retry', reason, taskId, roomId: h.room_id ?? undefined });
         continue;
