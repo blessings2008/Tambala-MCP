@@ -190,7 +190,7 @@ async function runActions(ctx: { agent: AgentName; roleId: string; taskId: strin
   await runOutbox().catch(() => undefined); // messages to the Founder go out straight away
   if (ctx.agent !== 'security') {
     for (const result of results.filter((item) => !item.ok)) {
-      await dispatchIncidentToIT({ source: `employee action: ${result.type}`, taskId: ctx.taskId, message: result.detail });
+      await dispatchIncidentToIT({ source: `employee action: ${result.type}`, taskId: ctx.taskId, message: result.detail }).catch((error) => console.error('[incident] Could not record action failure:', error instanceof Error ? error.message : error));
     }
   }
   return describeResults(results, rejected);
@@ -315,7 +315,7 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
       advance: (taskId, transitions) => advanceTrackedTask(taskId, transitions),
       async fail(taskId, message) {
         await failTrackedTask(taskId, message);
-        await dispatchIncidentToIT({ source: 'standing-duty/task execution', taskId: typeof taskId === 'string' ? taskId : null, message });
+        await dispatchIncidentToIT({ source: 'standing-duty/task execution', taskId: typeof taskId === 'string' ? taskId : null, message }).catch((error) => console.error('[incident] Could not dispatch task failure:', error instanceof Error ? error.message : error));
       },
     },
     approvals: { create: async (input) => { await createApprovalRequest(input); } },
