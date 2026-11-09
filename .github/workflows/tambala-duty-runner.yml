@@ -2,9 +2,8 @@ name: Tambala Duty Runner
 
 on:
   schedule:
-    # Africa/Blantyre is UTC+2. Run every five minutes across the working day,
-    # allowing the application to decide which local-time duties are due.
-    - cron: "*/5 5-15 * * 1-5"
+    # Africa/Blantyre is UTC+2. Includes 04:00 UTC for the 06:00 Malawi daily research duty, including weekends.
+    - cron: "*/5 4-15 * * *"
   workflow_dispatch:
     inputs:
       run_duties:
