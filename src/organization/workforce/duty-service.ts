@@ -38,14 +38,54 @@ async function recentRows(table: string, query: string): Promise<Row[]> {
   return supabaseSelect<Row>(table, query);
 }
 
+const BOARD_DEPARTMENT_DUTIES = [
+  'sales-board-update',
+  'operations-board-update',
+  'technology-board-update',
+  'finance-board-update',
+] as const;
+
+/** Build an explicit, evidence-backed attendance and report matrix for the CEO's board minutes. */
+export function buildBoardMeetingSnapshot(runs: DutyRun[], dutyList: StandingDuty[]) {
+  const departmentUpdates = BOARD_DEPARTMENT_DUTIES.map((dutyId) => {
+    const duty = dutyList.find((item) => item.id === dutyId);
+    const candidates = runs.filter((run) => run.duty_id === dutyId)
+      .sort((a, b) => b.started_at.localeCompare(a.started_at));
+    const report = candidates.find((run) =>
+      (run.status === 'completed' || run.status === 'awaiting_approval') &&
+      Boolean(run.summary?.trim()),
+    );
+    const latest = candidates[0] ?? null;
+    return {
+      dutyId,
+      department: duty?.title ?? dutyId,
+      ownerRoleId: duty ? roleIdFor(duty.agent) : null,
+      status: report ? report.status : latest?.status ?? 'missing',
+      completedAt: report?.completed_at ?? null,
+      report: report?.summary ?? null,
+    };
+  });
+  const missingDepartments = departmentUpdates
+    .filter((item) => !item.report)
+    .map((item) => item.department);
+  return {
+    status: missingDepartments.length ? 'PARTIAL' as const : 'COMPLETE' as const,
+    expectedDepartmentReports: departmentUpdates.length,
+    receivedDepartmentReports: departmentUpdates.length - missingDepartments.length,
+    missingDepartments,
+    departmentUpdates,
+  };
+}
+
 async function briefingContext(store: DutyStore, now: Date): Promise<Row> {
   const lt = localTime(now);
   const since = new Date(now.getTime() - 20 * 3_600_000).toISOString();
   const runs = await store.recent(since);
-  const todays = runs.filter((r) => r.period_key.startsWith(lt.date) || r.period_key.startsWith(lt.isoWeek));
+  const todays = runs.filter((r) => r.period_key.startsWith(lt.date));
   const owner = (r: DutyRun) => labelForRole(r.role_id);
   const dutyList = await loadDuties(configStore()).catch(() => [] as StandingDuty[]);
   const title = (r: DutyRun) => dutyList.find((d) => d.id === r.duty_id)?.title ?? r.duty_id;
+  const boardMeeting = buildBoardMeetingSnapshot(todays, dutyList);
   let pendingApprovals: Row[] = []; let failedTasks: Row[] = [];
   if (dbConfigured()) {
     pendingApprovals = await recentRows('organization_approval_requests', 'select=summary,requested_by_role_id,risk_level&status=eq.pending&order=created_at.asc&limit=20');
@@ -55,6 +95,7 @@ async function briefingContext(store: DutyStore, now: Date): Promise<Row> {
   const label = (roleId: string) => labelForRole(roleId);
   return {
     date: lt.date,
+    boardMeeting,
     handoffs: handoffRows.map((h) => ({ from: label(h.from_role_id), to: label(h.to_role_id), request: h.request, status: h.status, result: h.result ? h.result.slice(0, 220) : null })),
     duties: todays.filter((r) => r.duty_id !== 'ceo-daily-briefing').map((r) => ({ title: title(r), owner: owner(r), status: r.status, summary: r.summary, error: r.error })),
     pendingApprovals: pendingApprovals.map((a) => ({ summary: String(a.summary), requestedBy: String(a.requested_by_role_id), risk: String(a.risk_level) })),
