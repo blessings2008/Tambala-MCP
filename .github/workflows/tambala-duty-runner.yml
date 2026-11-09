@@ -1,4 +1,4 @@
-name: Tambala weekday duty runner
+name: Tambala duty runner
 
 on:
   schedule:
@@ -12,9 +12,15 @@ on:
       timezone: Africa/Blantyre
     - cron: '20 6 * * *'
       timezone: Africa/Blantyre
-    - cron: '30 7 * * 1-5'
+    - cron: '30 7 * * *'
       timezone: Africa/Blantyre
-    - cron: '50 7 * * 1-5'
+    - cron: '35 7 * * *'
+      timezone: Africa/Blantyre
+    - cron: '40 7 * * *'
+      timezone: Africa/Blantyre
+    - cron: '45 7 * * *'
+      timezone: Africa/Blantyre
+    - cron: '50 7 * * *'
       timezone: Africa/Blantyre
     - cron: '0 8 * * 1-5'
       timezone: Africa/Blantyre
