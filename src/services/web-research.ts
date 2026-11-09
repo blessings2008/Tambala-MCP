@@ -222,17 +222,19 @@ export async function webResearch(
  */
 export function buildProspectingSearchQueries(activeServiceNames: string[] = []): string[] {
   const services = [...new Set(activeServiceNames.map((name) => name.trim()).filter(Boolean))].slice(0, 8);
-  const serviceHint = services.length ? services.join(', ') : 'websites, custom software, digital products, social media management';
-  return [
-    `Malawi private schools colleges academies training institutions official website contact ${serviceHint}`,
-    `Malawi hotels lodges resorts restaurants tourism businesses official website contact ${serviceHint}`,
-    `Malawi clinics hospitals pharmacies medical centres official website contact ${serviceHint}`,
-    `Malawi construction companies property developers real estate firms official website contact ${serviceHint}`,
-    `Malawi retailers wholesalers manufacturers distributors companies official website contact ${serviceHint}`,
-    `Malawi NGOs non-profit organisations professional services firms official website contact ${serviceHint}`,
-    `Malawi businesses without a website outdated website weak online presence company names`,
-    `Malawi companies seeking website development software digital transformation social media management`,
-  ].map((query) => query.slice(0, 300));
+  const serviceHint = (services.length ? services.join(', ') : 'websites, custom software, digital products, social media management').slice(0, 110);
+  const bases = [
+    'Malawi private schools colleges academies training institutions official website contact',
+    'Malawi hotels lodges resorts restaurants tourism businesses official website contact',
+    'Malawi clinics hospitals pharmacies medical centres official website contact',
+    'Malawi construction companies property developers real estate firms official website contact',
+    'Malawi retailers wholesalers manufacturers distributors companies official website contact',
+    'Malawi NGOs non-profit organisations professional services firms official website contact',
+    'Malawi businesses without a website outdated website weak online presence company names',
+    'Malawi companies seeking website development software digital transformation social media management',
+  ];
+  const suffix = ` | service fit: ${serviceHint}`;
+  return bases.map((base) => `${base.slice(0, 300 - suffix.length)}${suffix}`);
 }
 
 /** Run focused searches in parallel and preserve source/domain diversity. */
