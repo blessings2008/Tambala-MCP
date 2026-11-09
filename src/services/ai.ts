@@ -60,7 +60,7 @@ export async function askTambalaAIWithWebResearch(agent: AgentName, input: strin
   if (agent === 'outreach' && Array.isArray(query) && research.results.length) {
     const discoveryEvidence = {
       ...research,
-      results: research.results.slice(0, 10).map((item) => ({ ...item, content: item.content.slice(0, 1_100) })),
+      results: research.results.slice(0, 8).map((item) => ({ ...item, content: item.content.slice(0, 500) })),
     };
     const discoveryPrompt = [
       'You are the discovery pass for a Malawi-wide prospecting task.',
@@ -140,14 +140,14 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
   const config = getAgentRuntimeConfig(agent);
   const releaseSlot = acquireAgentRequestSlot(agent);
   try {
-    const systemPrompt = boundText(AGENT_PROMPT_RULES[agent], MAX_SYSTEM_PROMPT_CHARS);
+    const systemPrompt = boundText(AGENT_PROMPT_RULES[agent], agent === 'outreach' && input.includes('WEB RESEARCH RESULT') ? 5_500 : MAX_SYSTEM_PROMPT_CHARS);
     const researchHeavyOutreach = agent === 'outreach' && input.includes('WEB RESEARCH RESULT');
-    const userInputLimit = researchHeavyOutreach ? 24_000 : MAX_USER_INPUT_CHARS;
-    const contextLimit = researchHeavyOutreach ? 1_800 : MAX_CONTEXT_CHARS;
+    const userInputLimit = researchHeavyOutreach ? 7_000 : MAX_USER_INPUT_CHARS;
+    const contextLimit = researchHeavyOutreach ? 400 : MAX_CONTEXT_CHARS;
     const userInput = boundText(input, userInputLimit);
     const contextText = context === undefined ? '' : '\n\nTambala business context:\n' + serializeBoundedContext(context, contextLimit);
     const userMessage = boundText(userInput + contextText, userInputLimit + contextLimit + 40);
-    const completionBudget = agent === 'operations' ? 1_600 : researchHeavyOutreach ? 3_200 : MAX_COMPLETION_TOKENS;
+    const completionBudget = agent === 'operations' ? 1_600 : researchHeavyOutreach ? 1_200 : MAX_COMPLETION_TOKENS;
     const requestPayload = {
       model: config.model,
       messages: [
