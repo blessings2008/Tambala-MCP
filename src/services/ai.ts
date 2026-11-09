@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { getAgentRuntimeConfig, getAgentRuntimeInfo, type AgentName } from './ai/models.js';
 import { acquireAgentRequestSlot, getAgentLimitInfo } from './ai/limits.js';
 import { AGENT_PROMPT_RULES } from './ai/rules.js';
+import { reportRuntimeIncident } from '../organization/workforce/incident-events.js';
 import { formatResearchContext, webResearch, webResearchMany } from './web-research.js';
 
 const clients = new Map<AgentName, OpenAI>();
@@ -183,6 +184,21 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
       const code = typeof providerError.code === 'string' ? providerError.code : undefined;
       const requestId = typeof providerError.request_id === 'string' ? providerError.request_id : undefined;
       const detail = providerError.message || 'Unknown provider error';
+      const detailLower = detail.toLowerCase();
+      const tpmFailure = /\\btpm\\b|tokens? per minute|token throughput|per-minute token|token rate limit|requested .* tokens?.* limit/i.test(detail);
+      const rateLimitFailure = status === 429 || code === 'rate_limit_exceeded' || /rate.?limit|too many requests/i.test(detailLower);
+      const category = tpmFailure ? 'tpm' as const : rateLimitFailure ? 'rate_limit' as const : status === 413 ? 'tpm' as const : 'provider' as const;
+      const headers = providerError.headers as Headers | Record<string, string> | undefined;
+      let retryAfterSeconds: number | undefined;
+      try {
+        const retryHeader = headers && typeof (headers as Headers).get === 'function'
+          ? (headers as Headers).get('retry-after')
+          : headers ? (headers as Record<string, string>)['retry-after'] ?? (headers as Record<string, string>)['Retry-After'] : undefined;
+        if (retryHeader) {
+          const seconds = Number(retryHeader);
+          retryAfterSeconds = Number.isFinite(seconds) ? Math.max(0, Math.ceil(seconds)) : Math.max(0, Math.ceil((Date.parse(retryHeader) - Date.now()) / 1000));
+        }
+      } catch { /* retry metadata is optional */ }
       console.error('AI provider request failed', JSON.stringify({
         agent,
         provider: config.provider,
@@ -195,6 +211,18 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
         requestId,
         message: detail,
       }));
+      await reportRuntimeIncident({
+        source: 'AI provider request',
+        message: detail.slice(0, 700),
+        agent,
+        provider: config.provider,
+        model: config.model,
+        category,
+        severity: tpmFailure || rateLimitFailure ? 'high' : status && status >= 500 ? 'high' : 'medium',
+        statusCode: status,
+        requestId,
+        retryAfterSeconds,
+      });
       throw new Error(`${agent} agent ${config.provider} request failed${status ? ` (HTTP ${status})` : ''}: ${detail}`);
     }
     let content = response.choices[0]?.message?.content;
