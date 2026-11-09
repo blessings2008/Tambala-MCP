@@ -1,7 +1,7 @@
 import type { AgentName } from '../../services/ai/models.js';
 import type { Cadence } from './schedule.js';
 
-export type ContextKind = 'crm' | 'company' | 'organization' | 'briefing' | 'catalog' | 'invoices';
+export type ContextKind = 'crm' | 'company' | 'organization' | 'briefing' | 'catalog' | 'invoices' | 'discovery';
 
 export interface StandingDuty {
   id: string;
@@ -25,7 +25,20 @@ export interface StandingDuty {
   edited?: boolean;
 }
 
-export const STANDING_DUTIES: readonly StandingDuty[] = [
+export const STANDING_DUTIES: readonly StandingDuty[] = [\n  {
+    id: 'daily-lead-discovery', agent: 'research', title: 'Daily Malawi prospect discovery',
+    cadence: { kind: 'daily' }, time: '06:00', contexts: ['crm', 'company', 'discovery'], needsWeb: true,
+    researchQuery: 'Find up to five new Malawian organisations that plausibly fit Tambala Technologies active services. Verify organisation identity, service-fit evidence, website and publicly listed contacts using official or authoritative sources. Exclude CRM clients/leads and the discovery queue.',
+    job: 'Research up to five new organisations in Malawi for Tambala Technologies. Search across sectors and regions. Use the supplied company services and excluded CRM/discovery names. Prefer official organisation websites, official social profiles, regulators, credible directories and recent sources. Do not invent facts, people, emails, phone numbers, websites or needs. A service-fit reason must point to a visible evidence-based opportunity, not a guess. Save only prospects with at least one valid source URL, a substantive fit reason and one or more active Tambala service-fit codes. Use exact codes: web_development, software_development, digital_product_development, social_media_management. Leave unknown contact fields null. If fewer than five meet the evidence bar, return fewer. Do not contact anyone or create CRM records.',
+    deliverable: 'A concise research summary and a DISCOVERED_PROSPECTS JSON block exactly as specified in the output format. Each item uses organisation_name, website, sector, service_fit (array of codes), reason_for_fit, decision_maker_name, decision_maker_title, public_email, public_phone, source_urls (array of URLs), verification_status (verified, partial, or unverified), and research_notes. Use null for unknown optional values. Include at most five items. End the JSON block with END_DISCOVERED_PROSPECTS.',
+  },
+  {
+    id: 'sales-discovery-queue-review', agent: 'outreach', title: 'Daily discovery queue review',
+    cadence: { kind: 'weekdays' }, time: '08:15', contexts: ['company', 'discovery'],
+    job: 'Review the new research prospects supplied in context.discovery. Assess whether the evidence supports the stated Tambala service fit, whether sources are credible, and whether contacts are actually public and attributable. Recommend which records Sales should qualify, reject or investigate further. Do not edit queue statuses, create CRM leads, or contact organisations. If the queue is empty, say so plainly.',
+    deliverable: 'A short queue review grouped into recommended qualify, investigate, and reject, with reasons and missing evidence. Clearly state that these are recommendations only; no records were changed.',
+  },
+
   {
     id: 'security-audit-review', agent: 'security', title: 'Daily security and audit review',
     cadence: { kind: 'weekdays' }, time: '07:30', contexts: ['organization'],
