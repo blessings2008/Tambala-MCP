@@ -33,8 +33,8 @@ export interface WebResearchOptions {
 const TAVILY_URL = 'https://api.tavily.com/search';
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_RESULTS = 20;
-const MAX_CONTEXT_SOURCES = 15;
-const MAX_SNIPPET_LENGTH = 900;
+const MAX_CONTEXT_SOURCES = 12;
+const MAX_SNIPPET_LENGTH = 500;
 const TRACKING_PARAMS = new Set([
   'fbclid', 'gclid', 'mc_cid', 'mc_eid', 'ref', 'ref_src',
 ]);
