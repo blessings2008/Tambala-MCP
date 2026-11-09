@@ -377,9 +377,11 @@ const server = createHttpServer(async (req, res) => {
         const routedResearchQuery = isProspecting
           ? buildProspectingSearchQueries(activeServices.map((service) => String(service.name ?? '')))
           : execution.researchQuery || await researchQueryFromObjective(founderMessage);
-        const researchQuery = entityContext.researchSubject
-          ? `${entityContext.researchSubject} Malawi official sources verified information`.slice(0, 500)
-          : routedResearchQuery;
+        const researchQuery = isProspecting
+          ? routedResearchQuery
+          : entityContext.researchSubject
+            ? `${entityContext.researchSubject} Malawi official sources verified information`.slice(0, 500)
+            : routedResearchQuery;
         const specialistTask = `CEO execution brief:\n\n${truncateForModel(body.delegation, 7000)}\n\nVERIFIED TAMBALA OPERATING CONTEXT:\n${JSON.stringify(companyContext).slice(0, 10000)}\n\nINTERNAL ENTITY CONTEXT (trusted CRM/project records; use this to disambiguate the subject before searching):\n${entityContext.context}\n\n${isProspecting ? 'PROSPECTING RULES: Return up to 20 individual, named Malawi-wide organisations across relevant sectors. Use active Tambala services to establish fit. Do not list generic directories, competitor websites, or industry summaries as prospects; directories may only be discovery clues. A prospect qualifies when its existence and at least one plausible service-fit signal are evidenced. Do not require a URL for every field: cite the source(s) supporting each material claim and mark unavailable fields unknown. Public contact and decision-maker details are optional; never invent them. Exclude existing CRM leads/clients. Rank prospects by evidence strength and include business name, location, sector, fit signal, current website if found, public contact if found, and source URLs. Do not stop because contact details are unavailable.' : ''}\n\nExecute this task now. Produce the requested deliverable itself. Do not merely describe what should be done, do not delegate it back, and do not stop at process recommendations. Respect every constraint, but verify factual assumptions against research evidence rather than blindly trusting the brief. If research is required, use the web research evidence and preserve source URLs. Return completed work to the CEO, including genuine blockers only if they prevent completion.`;
         if (isProspecting || taskNeedsWebResearch(`${founderMessage}\n${body.delegation}`)) {
           const researched = await askTambalaAIWithWebResearch(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: body.delegation, companyContext }, researchQuery, isProspecting ? { maxResults: 4, searchDepth: 'advanced', country: 'Malawi' } : { maxResults: 8, searchDepth: 'advanced' });
