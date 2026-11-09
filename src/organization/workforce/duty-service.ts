@@ -212,7 +212,7 @@ async function dispatchIncidentToIT(input: {
     return;
   }
   const message = input.message.slice(0, 1200);
-  const key = `${input.taskId ?? 'no-task'}|${input.source}|${message.toLowerCase().replace(/\\s+/g, ' ').slice(0, 240)}`;
+  const key = `${input.taskId ?? 'no-task'}|${input.source}|${message.toLowerCase().replace(/\s+/g, ' ').slice(0, 240)}`;
   const now = Date.now();
   for (const [known, at] of incidentDispatchKeys) if (now - at > 10 * 60_000) incidentDispatchKeys.delete(known);
   if (incidentDispatchKeys.has(key)) return;
