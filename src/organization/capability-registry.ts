@@ -35,7 +35,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
     unitTags: ['sales', 'business-development', 'outreach'],
     roleTags: ['sales', 'business development', 'outreach'],
     description: 'Find, qualify, prioritize and pursue new business opportunities.',
-    objectiveKeywords: ['client', 'customer', 'prospect', 'prospects', 'lead', 'leads', 'sales', 'outreach', 'business development', 'deal', 'hotel', 'hotels', 'lodge', 'lodges', 'tourism', 'website', 'websites', 'businesses', 'target businesses', 'pitch'],
+    objectiveKeywords: ['client', 'clients', 'customer', 'customers', 'potential client', 'potential clients', 'potential customer', 'potential customers', 'new client', 'new clients', 'new customer', 'new customers', 'client acquisition', 'customer acquisition', 'identify clients', 'find clients', 'prospecting', 'prospect research', 'prospect', 'prospects', 'business prospect', 'business prospects', 'lead', 'leads', 'lead generation', 'generate leads', 'sales', 'outreach', 'business development', 'new business opportunities', 'businesses to approach', 'deal', 'hotel', 'hotels', 'lodge', 'lodges', 'tourism', 'website', 'websites', 'businesses', 'target businesses', 'pitch'],
     researchKeywords: ['prospective client', 'business lead', 'decision maker', 'company contact'],
     deliverableHints: ['qualified prospect', 'lead shortlist', 'outreach target'],
   },
@@ -215,14 +215,28 @@ function normalize(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+function keywordVariants(keyword: string): string[] {
+  const normalized = normalize(keyword);
+  if (!normalized) return [];
+  const words = normalized.split(' ');
+  const last = words[words.length - 1];
+  const prefix = words.slice(0, -1);
+  const plural = /[^aeiou]y$/.test(last)
+    ? last.slice(0, -1) + 'ies'
+    : /(?:s|x|z|ch|sh)$/.test(last)
+      ? last + 'es'
+      : last + 's';
+  return [...new Set([normalized, [...prefix, plural].join(' ')])];
+}
+
 function countMatches(text: string, keywords: string[]): number {
-  // Match complete normalized words/phrases. Substring matching makes short
-  // terms such as "IT" fire inside unrelated words such as "website".
+  // Match complete normalized words/phrases, including ordinary plural forms.
+  // Substring matching makes short terms such as "IT" fire inside "website".
   const normalized = ` ${normalize(text)} `;
   return keywords.reduce((score, keyword) => {
-    const normalizedKeyword = normalize(keyword);
-    if (!normalizedKeyword) return score;
-    return score + (normalized.includes(` ${normalizedKeyword} `) ? 1 : 0);
+    const variants = keywordVariants(keyword);
+    if (!variants.length) return score;
+    return score + (variants.some((variant) => normalized.includes(` ${variant} `)) ? 1 : 0);
   }, 0);
 }
 
