@@ -48,6 +48,31 @@ test('routes natural-language new potential client requests to Sales & Business 
   }
 });
 
+test('sales prospecting research defaults to Malawi and Tambala service fit', () => {
+  const match = routeObjective(initialOrganization, 'Identify new potential clients for Tambala Technologies')
+    .find((candidate) => candidate.capability.id === 'sales_prospecting');
+  assert.ok(match);
+  const query = buildResearchQuery('Identify new potential clients for Tambala Technologies', match);
+  assert.match(query, /Malawi/i);
+  assert.match(query, /website development/i);
+  assert.match(query, /custom software/i);
+  assert.match(query, /social media management/i);
+});
+
+test('prospecting intent remains routed when the wording is conversational', () => {
+  const objectives = [
+    'Can you find potential clients for us?',
+    'Build a list of new customers we could approach',
+    'I need a prospect list for Tambala',
+    'Please identify new potential clients for Tambala Technologies!!!',
+  ];
+  for (const objective of objectives) {
+    const matches = routeObjective(initialOrganization, objective);
+    assert.equal(matches[0]?.capability.id, 'sales_prospecting', objective);
+    assert.equal(matches[0]?.unit?.id, 'sales-business-development', objective);
+  }
+});
+
 test('research query stays short and keyword based', () => {
   const matches = routeObjective(definition, 'Research hotels in Malawi that need websites');
   const research = matches.find((match) => match.capability.id === 'web_research');
