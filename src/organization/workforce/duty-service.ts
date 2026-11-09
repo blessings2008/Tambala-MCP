@@ -136,14 +136,18 @@ async function invoicesContext(now: Date): Promise<Row> {
 async function organizationContext(store: DutyStore, now: Date): Promise<Row> {
   const day = new Date(now.getTime() - 24 * 3_600_000).toISOString();
   const week = new Date(now.getTime() - 7 * 24 * 3_600_000).toISOString();
-  const [audit, tasks, bindings, runs] = await Promise.all([
+  const [audit, tasks, failedEvents, bindings, runs] = await Promise.all([
     recentRows('organization_audit_events', `select=action,outcome,reason,created_at&created_at=gte.${encodeURIComponent(day)}&order=created_at.desc&limit=100`),
     recentRows('organization_tasks', `select=objective,status,assigned_role_id,error_message,created_at&created_at=gte.${encodeURIComponent(week)}&order=created_at.desc&limit=100`),
+    recentRows('organization_task_events', `select=task_id,event_type,stage,actor_role_id,department_id,payload,created_at&event_type=eq.stage_failed&created_at=gte.${encodeURIComponent(week)}&order=created_at.desc&limit=100`),
     recentRows('organization_actor_bindings', 'select=role_id,active&active=eq.true'),
     store.recent(week),
   ]);
   return {
-    audit_last_24h: audit, tasks_last_7d: tasks, active_role_bindings: bindings.length,
+    audit_last_24h: audit,
+    tasks_last_7d: tasks,
+    failed_task_events_last_7d: failedEvents,
+    active_role_bindings: bindings.length,
     duty_runs_last_7d: runs.map((r) => ({ duty: r.duty_id, role: r.role_id, status: r.status, attempts: r.attempts, error: r.error, when: r.started_at })),
     office_hours_note: 'Office hours are Mon-Fri 08:00-17:00 Africa/Blantyre. Activity outside them is unusual.',
   };
