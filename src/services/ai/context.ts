@@ -75,7 +75,7 @@ export async function getVerifiedCompanyContext(): Promise<DbRow> {
     .filter((row) => !isExcluded(row))
     .flatMap((row) => candidateNames(row))
     .map((name) => name.trim())
-    .filter(Boolean))].slice(0, 100);
+    .filter(Boolean))].slice(0, 60);
   const country = String(profile.country ?? 'Malawi');
   const base = String(profile.base_location ?? 'Lilongwe, Malawi');
   return {
