@@ -60,6 +60,7 @@ function extractActionValues(source: string): { values: unknown[]; rejected: str
     .trim();
   const values: unknown[] = [];
   const rejected: string[] = [];
+  const spans: Array<[number, number]> = [];
   let cursor = 0;
   while (cursor < text.length) {
     while (cursor < text.length && !'{['.includes(text[cursor])) cursor += 1;
@@ -83,6 +84,7 @@ function extractActionValues(source: string): { values: unknown[]; rejected: str
         if ((open === '{' && ch !== '}') || (open === '[' && ch !== ']')) break;
         if (stack.length === 0) {
           const raw = text.slice(start, cursor + 1);
+          spans.push([start, cursor + 1]);
           try {
             const parsed: unknown = JSON.parse(raw);
             if (Array.isArray(parsed)) values.push(...parsed);
@@ -96,17 +98,19 @@ function extractActionValues(source: string): { values: unknown[]; rejected: str
       }
     }
     if (cursor >= text.length && stack.length > 0) {
+      spans.push([start, text.length]);
       rejected.push(`Invalid JSON: ${text.slice(start, start + 60)}`);
       break;
     }
   }
-  const residue = text.replace(/\{[\s\S]*?\}/g, '').replace(/\[[\s\S]*?\]/g, '')
-    .replace(/^[\s,;\-_*\u0060]+|[\s,;\-_*\u0060]+$/g, '').trim();
-  if (residue && values.length === 0 && rejected.length === 0) {
-    rejected.push(`Not JSON: ${residue.slice(0, 60)}`);
-  } else if (values.length === 0 && rejected.length === 0 && residue && !/^(?:none|no actions?)(?:\.|!)?$/i.test(residue)) {
-    rejected.push(`Not JSON: ${residue.slice(0, 60)}`);
+  let residueText = text;
+  for (const [start, end] of spans.sort((a, b) => b[0] - a[0])) {
+    residueText = residueText.slice(0, start) + residueText.slice(end);
   }
+  const residueLines = residueText.split('\n')
+    .map((line) => line.replace(/^[\\s,;:_*\\-\\u0060]+|[\\s,;:_*\\-\\u0060]+$/g, '').trim())
+    .filter((line) => line && !/^(?:none|no actions?)(?:\\.|!)?$/i.test(line));
+  for (const line of residueLines) rejected.push(`Not JSON: ${line.slice(0, 60)}`);
   return { values, rejected };
 }
 
