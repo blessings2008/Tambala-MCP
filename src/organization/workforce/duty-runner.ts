@@ -51,6 +51,9 @@ export function buildDutyPrompt(duty: StandingDuty, lt: LocalTime, who?: { emplo
     `DELIVERABLE: ${duty.deliverable}`,
     'Keep it under 350 words, plain and scannable.',
   ];
+  if (duty.id === 'daily-lead-discovery') {
+    parts.push('STRUCTURED OUTPUT CONTROL: The DISCOVERED_PROSPECTS block is machine-parsed and must be complete valid JSON inside the exact fenced wrapper. The JSON block is excluded from the 350-word narrative limit. Do not truncate fields, add comments, or place prose inside the JSON array. Use [] when no prospects meet the evidence standard.');
+  }
   if (duty.id === 'morning-board-minutes') {
     parts.push('BOARD MINUTES CONTROL: The supplied context.boardMeeting object is the authoritative attendance and department-report matrix. Include the Chair opening and all four departmentUpdates. Use its status exactly: mark the minutes COMPLETE only when boardMeeting.status is COMPLETE; otherwise mark PARTIAL and name every entry in missingItems. Quote findings only from boardMeeting.opening.report and each departmentUpdates.report. Do not infer a missing report from another department’s summary.');
   }
