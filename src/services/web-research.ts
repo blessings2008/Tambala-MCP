@@ -300,7 +300,7 @@ export function formatResearchContext(research: WebResearchResult): string {
     `URL: ${item.url}`,
     item.publishedDate ? `Published: ${item.publishedDate}` : '',
     typeof item.score === 'number' ? `Relevance score: ${item.score.toFixed(3)}` : '',
-    `Page evidence: ${item.content.slice(0, 900)}`,
+    `Page evidence: ${item.content.slice(0, 250)}`,
   ].filter(Boolean).join('\n')).join('\n\n');
   return [
     'WEB RESEARCH RESULT',
