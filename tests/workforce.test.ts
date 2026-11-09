@@ -65,8 +65,7 @@ function fakeDeps(input: Partial<DutyDeps> & { now?: string } = {}) {
     store, now: () => at(nowIso ?? '2026-11-09T07:00:00Z'), // Monday 09:00 office time
     duties: async () => resolveDuties([], []),
     employee: async () => ({ employeeNumber: 'TT-002', title: 'Head of Sales' }),
-    sign: async () => ({ block: '— TT-002 · Head of Sales
-  ✍ TEST' }),
+    sign: async () => ({ block: '— TT-002 · Head of Sales\n  ✍ TEST' }),
     actions: { run: async () => '' },
     handoffs: { queue: async (input) => { calls.handoffs.push(input); } },
     unavailableReason: async () => null,
