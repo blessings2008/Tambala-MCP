@@ -372,7 +372,6 @@ const server = createHttpServer(async (req, res) => {
         const entityContext = await resolveInternalEntityContext(founderMessage);
         const companyContext = await getCompactCompanyContext().catch(() => ({ company: { name: 'Tambala Technologies', country: 'Malawi', base: 'Lilongwe, Malawi', description: 'Software, websites, and digital products' }, services: [], prospecting_defaults: { geographic_scope: 'Malawi-wide', first_batch_target: 20, market_approach: 'Cross-sector; qualify prospects against active Tambala services.' } }));
         const activeServices = Array.isArray(companyContext.services) ? companyContext.services as Array<Record<string, unknown>> : [];
-        const serviceSearchTerms = activeServices.filter((service) => service.active === true).map((service) => String(service.name ?? '').trim()).filter(Boolean).join('; ');
         const isProspecting = execution.capabilityId === 'sales_prospecting';
         const routedResearchQuery = isProspecting
           ? buildProspectingSearchQueries(activeServices.map((service) => String(service.name ?? '')))
