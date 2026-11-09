@@ -66,7 +66,10 @@ export function registerWorkforceTools(server: McpServer): void {
   }, async ({ employee, request }) => {
     try {
       const h = await assignWork(employee as keyof typeof AGENT_DIRECTORY, request);
-      return text({ queued: true, handoffId: h.id, to: employee, request: h.request });
+      return text({
+        handoffId: h.id, roomId: h.room_id, to: employee, request: h.request,
+        status: h.status, queued: h.status === 'queued', result: h.result, blocker: h.error,
+      });
     } catch (error) {
       if (error instanceof HandoffError) return text({ error: error.message }, true);
       throw error;
