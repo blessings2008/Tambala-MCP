@@ -262,7 +262,7 @@ function findRole(definition: OrganizationDefinition, tags: string[], unitId: st
 }
 
 export function routeObjective(definition: OrganizationDefinition, objective: string): CapabilityMatch[] {
-  return DEPARTMENT_CAPABILITIES
+  const matches = DEPARTMENT_CAPABILITIES
     .map((capability) => {
       const keywordScore = countMatches(objective, [
         ...capability.objectiveKeywords,
@@ -282,6 +282,32 @@ export function routeObjective(definition: OrganizationDefinition, objective: st
     })
     .filter((match) => match.keywordScore > 0)
     .sort((a, b) => b.score - a.score);
+
+  if (matches.length) return matches;
+
+  // A final intent-level fallback protects natural Founder language from a
+  // brittle keyword-list miss. It only maps unmistakable prospecting intent;
+  // it never assigns an unrelated department just because one exists.
+  const normalized = normalize(objective);
+  const clearProspectingIntent =
+    /\b(?:potential|prospective|new)\s+(?:business\s+)?(?:clients?|customers?)\b/.test(normalized)
+    || /\b(?:lead generation|prospect(?:ing| research)?|client acquisition|customer acquisition)\b/.test(normalized)
+    || /\b(?:identify|find|discover|source|generate|build|list)\b(?: [a-z0-9]+){0,8}\b(?:clients?|customers?|leads?|prospects?)\b/.test(normalized);
+  if (!clearProspectingIntent) return [];
+
+  const capability = DEPARTMENT_CAPABILITIES.find((item) => item.id === 'sales_prospecting');
+  if (!capability) return [];
+  const unit = findUnit(definition, capability.unitTags, capability.unitId);
+  const role = findRole(definition, capability.roleTags, unit?.id ?? null);
+  const keywordScore = 3;
+  return [{
+    capability,
+    unit,
+    role,
+    keywordScore,
+    score: keywordScore + (unit ? 1 : 0) + (role ? 1 : 0),
+    researchQuery: capability.researchKeywords.slice(0, 4).join(', '),
+  }];
 }
 
 /**
@@ -289,6 +315,10 @@ export function routeObjective(definition: OrganizationDefinition, objective: st
  * Never pass the Founder/CEO prompt through as the search query.
  */
 export function buildResearchQuery(objective: string, match: CapabilityMatch): string {
+  if (match.capability.id === 'sales_prospecting') {
+    return 'Malawi businesses and organizations likely to need website development, web applications, custom software, digital products, or social media management; official business websites, public contact details, and decision makers'.slice(0, 500);
+  }
+
   if (match.capability.id === 'web_research') {
     // Keep the subject being researched; do not replace it with generic keywords.
     const subject = objective
