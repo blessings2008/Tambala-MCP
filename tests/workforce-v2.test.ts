@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { STANDING_DUTIES } from '../src/organization/workforce/duties.ts';
 import { resolveDuties, validateCustomDuty, validateOverride, DutyConfigError, saveCustomDuty, InMemoryDutyConfigStore } from '../src/organization/workforce/duty-config.ts';
-import { extractHandoffs, queueHandoff, processHandoffs, InMemoryHandoffStore, HandoffError, colleagueList, isFounderClarificationRequest, resumeFounderHandoff, type HandoffDeps } from '../src/organization/workforce/handoffs.ts';
+import { extractHandoffs, queueHandoff, processHandoffs, InMemoryHandoffStore, HandoffError, colleagueList, isFounderClarificationRequest, resumeFounderHandoff, resumeFounderTaskRoom, type HandoffDeps } from '../src/organization/workforce/handoffs.ts';
 import { buildDutyPrompt, runDuty, type DutyDeps } from '../src/organization/workforce/duty-runner.ts';
 import { InMemoryDutyStore } from '../src/organization/workforce/duty-store.ts';
 import { EMPLOYEE_NUMBERS, getEmployeeProfiles } from '../src/organization/workforce/profiles.ts';
@@ -131,6 +131,20 @@ test('Founder clarification reopens the same room and resumes its original task'
   assert.equal(store.rooms[0].status, 'archived');
   assert.ok(store.roomEvents.some((event) => event.event_type === 'founder_clarification_received'));
 });
+
+test('Founder room reply resolves the room id rather than confusing it with the handoff id', async () => {
+  const store = new InMemoryHandoffStore();
+  const handoff = await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'research', request: 'Research Malabi and verify the correct entity' });
+  await store.update(handoff.id, { status: 'awaiting_founder' });
+  await store.updateRoom(handoff.room_id!, { status: 'awaiting_founder' });
+  assert.notEqual(handoff.id, handoff.room_id);
+  const resumed = await resumeFounderTaskRoom(store, handoff.room_id!, 'I mean Malabi Exclusive Lodges in Lilongwe.');
+  assert.equal(resumed.id, handoff.id);
+  assert.equal(resumed.status, 'queued');
+  assert.equal(store.rooms[0].status, 'active');
+  assert.ok(store.roomEvents.some((event) => event.event_type === 'founder_clarification_received'));
+});
+
 test('an unavailable colleague leaves the work waiting without rewriting it every tick', async () => {
   const { deps, store } = handoffDeps({ agentUnavailableReason: async () => 'Role is not active.' });
   await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'marketing', request: 'Draft a one-page overview of our web services' });
