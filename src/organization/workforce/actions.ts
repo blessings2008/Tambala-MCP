@@ -104,7 +104,7 @@ function extractActionValues(source: string): { values: unknown[]; rejected: str
     .replace(/^[\s,;\-_*\u0060]+|[\s,;\-_*\u0060]+$/g, '').trim();
   if (residue && values.length === 0 && rejected.length === 0) {
     rejected.push(`Not JSON: ${residue.slice(0, 60)}`);
-  } else if (residue && !/^(?:none|no actions?)(?:\.|!)?$/i.test(residue)) {
+  } else if (values.length === 0 && rejected.length === 0 && residue && !/^(?:none|no actions?)(?:\.|!)?$/i.test(residue)) {
     rejected.push(`Not JSON: ${residue.slice(0, 60)}`);
   }
   return { values, rejected };
@@ -140,7 +140,7 @@ export function parseActions(body: string): ParsedActions {
 export function actionHelp(agent: string): string {
   const allowed = allowedActionTypes(agent);
   const lines = [
-    'You can request real actions by ending your answer with a heading line ACTIONS: followed by one JSON object per line (no code fences). First-contact outreach may be sent autonomously only for the Sales & Business Development director and only after the shared outbox verifies the destination as a CRM lead. All follow-ups, replies, invoice reminders and other customer-facing messages remain subject to Founder approval.',
+    'You can request real actions by ending your answer with a heading line ACTIONS: followed by one JSON object per line; fenced JSON and a JSON array are also accepted. First-contact outreach may be sent autonomously only for the Sales & Business Development director and only after the shared outbox verifies the destination as a CRM lead. All follow-ups, replies, invoice reminders and other customer-facing messages remain subject to Founder approval.',
     'Use only phone numbers, names, prices and links that appear in the supplied data. Never invent them. If something you need is missing, say so in your answer instead of guessing.',
   ];
   if (allowed.includes('notify_founder')) lines.push('- Message the Founder: {"type":"notify_founder","text":"..."}  (only when he genuinely needs to know or decide something).');
