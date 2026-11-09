@@ -106,11 +106,22 @@ export async function webResearch(
   maxResultsOrOptions: number | WebResearchOptions = 5,
   extraOptions: WebResearchOptions = {},
 ): Promise<WebResearchResult> {
-  const apiKey = process.env.TAMBALA_WEB_SEARCH_API_KEY?.trim();
-  if (!apiKey) throw new Error('Web research is not configured. Set TAMBALA_WEB_SEARCH_API_KEY.');
+  const configuredKey = [
+    ['TAMBALA_WEB_SEARCH_API_KEY', process.env.TAMBALA_WEB_SEARCH_API_KEY],
+    ['TAVILY_API_KEY', process.env.TAVILY_API_KEY],
+    ['TAMBALA_TAVILY_API_KEY', process.env.TAMBALA_TAVILY_API_KEY],
+    ['WEB_SEARCH_API_KEY', process.env.WEB_SEARCH_API_KEY],
+  ].find(([, value]) => typeof value === 'string' && value.trim().length > 0);
+  const apiKey = configuredKey?.[1]?.trim();
+  const apiKeySource = configuredKey?.[0] ?? null;
+  if (!apiKey) {
+    console.error('Web research is unavailable: no supported Tavily API key environment variable is configured.');
+    throw new Error('Web research is not configured. Set TAMBALA_WEB_SEARCH_API_KEY (or TAVILY_API_KEY) in the Render service environment.');
+  }
 
   const searchQuery = normalizeResearchQuery(query);
   if (!searchQuery) throw new Error('A web research query is required.');
+  console.info('Web research request started', JSON.stringify({ provider: 'tavily', apiKeyConfigured: Boolean(apiKey), apiKeySource, query: searchQuery.slice(0, 180) }));
 
   const options = typeof maxResultsOrOptions === 'number'
     ? { ...extraOptions, maxResults: maxResultsOrOptions }
@@ -168,6 +179,7 @@ export async function webResearch(
     if (response.ok) break;
     const detail = await response.text().catch(() => '');
     lastFailure = `HTTP ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ''}`;
+    console.warn('Web research provider returned an error', JSON.stringify({ provider: 'tavily', status: response.status, attempt, detail: detail.slice(0, 240) }));
     const retryable = response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500;
     if (!retryable || attempt === maxAttempts) {
       throw new Error(`Web research provider returned ${lastFailure}${retryable ? ` after ${maxAttempts} attempts` : ''}.`);
@@ -210,6 +222,7 @@ export async function webResearch(
     .sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
     .slice(0, maxResults);
 
+  console.info('Web research request completed', JSON.stringify({ provider: 'tavily', query: searchQuery.slice(0, 180), resultCount: results.length, includeRawContent: Boolean(options.includeRawContent) }));
   return {
     query: data.query?.trim() || searchQuery,
     answer: typeof data.answer === 'string' ? data.answer : undefined,
