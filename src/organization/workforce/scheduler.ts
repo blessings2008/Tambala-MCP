@@ -11,7 +11,7 @@ export function startDutyScheduler(): void {
     try {
       const discoveryClaims = await dispatchNewDiscoveryQueue();
       if (discoveryClaims) console.log('Discovery queue claimed for Sales:', discoveryClaims);
-      const { outcomes, handoffs } = await runDutiesOnce();
+      const { outcomes, handoffs } = await runDutiesOnce({ skipDiscoveryQueue: true });
       const worked = [...outcomes.filter((o) => o.status !== 'skipped').map((o) => `${o.dutyId}:${o.status}`), ...handoffs.filter((h) => h.status !== 'waiting').map((h) => `handoff-${h.toAgent}:${h.status}`)];
       if (worked.length) console.log('Duty cycle:', JSON.stringify(worked));
     } catch (error) {

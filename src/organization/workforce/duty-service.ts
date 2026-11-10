@@ -477,12 +477,12 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
 
 let running = false;
 /** One duty cycle at a time per process; the database claim protects across processes. */
-export async function runDutiesOnce(opts: { dutyId?: string; force?: boolean; handoffsOnly?: boolean } = {}): Promise<{ outcomes: DutyOutcome[]; handoffs: HandoffOutcome[]; messages: SendOutcome[] }> {
+export async function runDutiesOnce(opts: { dutyId?: string; force?: boolean; handoffsOnly?: boolean; skipDiscoveryQueue?: boolean } = {}): Promise<{ outcomes: DutyOutcome[]; handoffs: HandoffOutcome[]; messages: SendOutcome[] }> {
   if (running) throw new Error('A duty cycle is already running.');
   running = true;
   try {
     const outcomes = opts.handoffsOnly ? [] : await runDueDuties(productionDeps(), opts);
-    await dispatchNewDiscoveryQueue();
+    if (!opts.skipDiscoveryQueue) await dispatchNewDiscoveryQueue();
     const handoffs = await processHandoffs(productionHandoffDeps());
     const messages = await runOutbox().catch(() => [] as SendOutcome[]);
     return { outcomes, handoffs, messages };
