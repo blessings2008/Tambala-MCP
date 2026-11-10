@@ -241,7 +241,7 @@ export async function dispatchNewDiscoveryQueue(): Promise<number> {
           request: [
             'Review this single researched Tambala prospect using the attached record.',
             'Return its organisation name, service fit, source evidence, available public contact, and a qualify / investigate / reject recommendation.',
-            'Do not repeat research. A published organisation email or phone is acceptable; a missing named decision-maker alone is not a reason to reject. Never invent contacts. Do not contact the prospect in this review assignment.',
+            'Do not repeat research. If the service fit is supported and at least one verified public organisation email or phone is supplied, the recommendation MUST be QUALIFY. A named decision-maker is optional enrichment: do not treat its absence as a blocker, do not downgrade the prospect to investigate for that reason, and do not request more research solely to find a personal contact. Never invent contacts. Do not contact the prospect in this review assignment.',
             `Queue record ID: ${prospect.id}.`,
           ].join(' '),
           contextSummary,
