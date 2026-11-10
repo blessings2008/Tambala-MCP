@@ -290,7 +290,7 @@ function salesResultQualifies(result: string, organisationName: string): boolean
 const approvedProspectDispatching = new Set<string>();
 
 async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId: string): Promise<boolean> {
-  if (prospect.verification_status !== 'verified' || !prospect.service_fit.length || !prospect.public_phone || !prospect.reason_for_fit?.trim() || !prospect.source_urls?.length) return false;
+  if (prospect.verification_status !== 'verified' || !prospect.service_fit.length || !prospect.public_phone || !prospect.reason_for_fit?.trim() || !Array.isArray(prospect.source_urls) || prospect.source_urls.length === 0) return false;
   if (approvedProspectDispatching.has(leadId)) return false;
   approvedProspectDispatching.add(leadId);
   try {
