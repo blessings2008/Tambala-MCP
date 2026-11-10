@@ -120,6 +120,53 @@ test('Founder-approved first-contact handoffs may execute WhatsApp and accept a 
   assert.match(store.rows[0].result ?? '', /queued for sending/);
 });
 
+test('approved first-contact handoffs convert the legacy WhatsApp action shape and require a queued result', async () => {
+  const prompts: string[] = [];
+  const contextSummary = JSON.stringify({
+    prospect: { organisation_name: 'AgriTrust' },
+    crm_lead: { phone: '+265 994 136 898', business_name: 'AgriTrust' },
+  });
+  const { deps, store } = handoffDeps({
+    askAgent: async (agent, prompt) => {
+      prompts.push(`${agent}: ${prompt}`);
+      if (agent === 'orchestrator') return `DECISION: ACCEPT\nThe WhatsApp action was queued.`;
+      return `**WhatsApp Outreach Action**\n\n\`\`\`json\n{\"action\":\"whatsapp\",\"purpose\":\"outreach\",\"destination\":\"+265 994 136 898\",\"message\":\"Hello AgriTrust team.\"}\n\`\`\`\n\nWhat I did: prepared the message.`;
+    },
+    actions: { run: async () => 'WhatsApp message to AgriTrust was queued for sending; delivery is not confirmed yet.' },
+  });
+  await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'outreach',
+    sourceDutyId: 'approved-prospect-first-contact',
+    request: 'Founder-approved first contact for AgriTrust',
+    contextSummary,
+  });
+  const out = await processHandoffs(deps);
+  assert.equal(out[0].status, 'completed');
+  assert.match(prompts[0], /MANDATORY FIRST-CONTACT ACTION/);
+  assert.match(prompts[0], /\+265 994 136 898/);
+  assert.match(store.rows[0].result ?? '', /queued for sending/);
+});
+
+test('approved first-contact handoffs cannot complete on a draft without an action', async () => {
+  const { deps, store } = handoffDeps({
+    askAgent: async (agent) => agent === 'orchestrator'
+      ? 'DECISION: ACCEPT\nThe draft looks good.'
+      : 'Here is a draft for AgriTrust. No message has been sent.',
+    actions: { run: async () => 'This should not be called.' },
+  });
+  await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'outreach',
+    sourceDutyId: 'approved-prospect-first-contact',
+    request: 'Founder-approved first contact for AgriTrust',
+    contextSummary: JSON.stringify({ prospect: { organisation_name: 'AgriTrust' }, crm_lead: { phone: '+265 994 136 898' } }),
+  });
+  const out = await processHandoffs(deps);
+  assert.equal(out[0].status, 'retry');
+  assert.match(store.rows[0].error ?? '', /exactly one executable WhatsApp outreach action/i);
+});
+
 test('task rooms pause on clarification and retain their history instead of completing', async () => {
   assert.equal(isFounderClarificationRequest('Clarification Required — do you mean Malabi Exclusive Lodges or the dessert?'), true);
   assert.equal(isFounderClarificationRequest('The lodge is in Lilongwe. Would you like a summary?'), false);
