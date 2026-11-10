@@ -62,7 +62,7 @@ concurrency:
 jobs:
   run-due-duties:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
       - name: Verify scheduler secret and service health
         env:
@@ -85,21 +85,17 @@ jobs:
           set -euo pipefail
           response_file="$(mktemp)"
           trap 'rm -f "$response_file"' EXIT
-          for attempt in 1 2 3; do
-            echo "Calling Tambala duty runner (attempt ${attempt}/3)."
-            http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' --max-time 75 \
-              --request POST \
-              --header "Authorization: Bearer ${TAMBALA_SCHEDULER_TOKEN}" \
-              --header "Content-Type: application/json" \
-              --data '{}' \
-              https://tambala-org.onrender.com/api/duties/run || true)"
-            cat "$response_file" || true
-            if [[ "${http_code}" =~ ^2[0-9][0-9]$ ]]; then
-              echo "Duty runner accepted the scheduled request."
-              exit 0
-            fi
-            echo "Duty runner returned HTTP ${http_code:-000}."
-            sleep 15
-          done
-          echo "::error::Tambala duty runner did not accept the scheduled request after three attempts."
+          echo "Calling Tambala duty runner and waiting for the full duty cycle."
+          http_code="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' --max-time 300 \
+            --request POST \
+            --header "Authorization: Bearer ${TAMBALA_SCHEDULER_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data '{}' \
+            https://tambala-org.onrender.com/api/duties/run || true)"
+          cat "$response_file" || true
+          if [[ "${http_code}" =~ ^2[0-9][0-9]$ ]]; then
+            echo "Duty cycle completed and the service returned HTTP ${http_code}."
+            exit 0
+          fi
+          echo "::error::Tambala duty runner returned HTTP ${http_code:-000} or exceeded the 300-second request limit."
           exit 1
