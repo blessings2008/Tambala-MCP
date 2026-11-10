@@ -182,6 +182,45 @@ export interface HandoffOutcome { handoffId: string; toAgent: string; status: 'c
 
 const RULES = 'Use ONLY the supplied data. If something is missing, say so plainly. Do not sign or add a sign-off: the system signs your work with your employee number. Never invent leads, clients, amounts, dates or results. Anything addressed to a customer is a DRAFT; never claim it was sent. Do not hand work on to anyone else. If the assignment is ambiguous, explicitly label your response "Clarification Required", ask the Founder one precise question, and do not present a guessed answer as completed work.';
 
+function approvedFirstContactTarget(contextSummary: string | null): { phone: string; contact: string } | null {
+  if (!contextSummary) return null;
+  try {
+    const root = JSON.parse(contextSummary) as Record<string, unknown>;
+    const lead = root.crm_lead && typeof root.crm_lead === 'object' ? root.crm_lead as Record<string, unknown> : {};
+    const prospect = root.prospect && typeof root.prospect === 'object' ? root.prospect as Record<string, unknown> : {};
+    const phone = [lead.whatsapp, lead.phone].find((value) => typeof value === 'string' && value.trim()) as string | undefined;
+    const contact = [prospect.organisation_name, lead.business_name, lead.name].find((value) => typeof value === 'string' && value.trim()) as string | undefined;
+    return phone && contact ? { phone, contact } : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseLegacyFirstContactAction(raw: string, target: { phone: string; contact: string }): { action: Action; clean: string } | null {
+  const fence = String.fromCharCode(96).repeat(3);
+  const blocks = [...raw.matchAll(new RegExp(fence + '(?:json)?\\s*([\\s\\S]*?)' + fence, 'gi'))];
+  const expected = target.phone.replace(/\D/g, '');
+  for (const block of blocks) {
+    try {
+      const value = JSON.parse(block[1]) as Record<string, unknown>;
+      const destination = String(value.destination ?? '').trim();
+      const message = String(value.message ?? '').trim();
+      if (value.action !== 'whatsapp' || value.purpose !== 'outreach' || !destination || !message) continue;
+      if (destination.replace(/\D/g, '') !== expected) continue;
+      const action: Action = { type: 'whatsapp', to: destination, purpose: 'outreach', contact: target.contact, text: message };
+      const clean = raw.replace(/\*\*WhatsApp Outreach Action\*\*/i, '').replace(new RegExp(fence + '(?:json)?\\s*[\\s\\S]*?' + fence, 'i'), '').trim();
+      return { action, clean };
+    } catch {
+      // Ignore unrelated or malformed JSON blocks; only the exact legacy WhatsApp shape is accepted.
+    }
+  }
+  return null;
+}
+
+function confirmsQueuedOrSentAction(value: string): boolean {
+  return /\b(?:queued|sent)\b/i.test(value) && !/\b(?:not queued|not sent|blocked|failed|rejected|requires founder approval)\b/i.test(value);
+}
+
 /** Each delegation runs in an isolated, durable room. A room closes only after its deliverable is accepted. */
 export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<HandoffOutcome[]> {
   const outcomes: HandoffOutcome[] = [];
@@ -202,7 +241,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
     const taskRules = autonomousFirstContact
       ? RULES.replace(
           'Anything addressed to a customer is a DRAFT; never claim it was sent.',
-          'Exception: this exact Founder-approved first-contact may execute one WhatsApp outreach action using ACTIONS. The shared outbox verifies the CRM lead and WhatsApp registration and enforces sending safeguards. Never claim sent unless the action result confirms sent; if the result says queued, call it queued and not delivered. All other customer-facing messages remain drafts.',
+          'Exception: this exact Founder-approved first-contact may execute one WhatsApp outreach action using ACTIONS. The shared outbox verifies the CRM lead and WhatsApp registration and enforces sending safeguards. Do not claim prior client work, similar customers served, testimonials or results unless approved portfolio evidence supports the exact claim. Never claim sent unless the action result confirms sent; if the result says queued, call it queued and not delivered. All other customer-facing messages remain drafts.',
         )
       : RULES;
     const reviewRule = autonomousFirstContact
@@ -220,9 +259,15 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         { status: 'delegated', stage: 'ceo', eventType: 'handoff_assigned', departmentId: AGENT_DIRECTORY[agent].unitId, roleId: h.to_role_id },
         { status: 'executing', stage: 'department', eventType: 'department_execution_started', roleId: h.to_role_id },
       ]);
+      const firstContactTarget = autonomousFirstContact ? approvedFirstContactTarget(h.context_summary) : null;
+      if (autonomousFirstContact && !firstContactTarget) throw new Error('Approved first-contact is missing its CRM destination or verified organisation name.');
       const prompt = [
         'TASK ROOM ASSIGNMENT', `You are ${recipient}. ${sender} has assigned this work to your room.`, taskRules,
         `ROOM ID: ${h.room_id ?? 'not recorded'}`, `REQUEST: ${h.request}`,
+        h.error ? `PREVIOUS ATTEMPT FEEDBACK: ${h.error}` : '',
+        autonomousFirstContact && firstContactTarget
+          ? `MANDATORY FIRST-CONTACT ACTION: send exactly one WhatsApp outreach action to ${firstContactTarget.phone}; use ${firstContactTarget.contact} as the contact label. Do not use another number. A draft-only answer is invalid. Do not claim prior client work, similar customers served, testimonials or results unless approved portfolio evidence supports the exact claim.`
+          : '',
         h.context_summary ? `CONTEXT FROM ${sender.toUpperCase()}:\n${h.context_summary}` : '',
         actionHelp(agent),
         'Keep it under 300 words, plain and scannable. Say what you did, what you found, and anything blocked.',
@@ -230,10 +275,23 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       const contextPacket = await deps.buildContext();
       if (h.room_id) await deps.store.updateRoom(h.room_id, { context_packet: { context_summary: h.context_summary, source_duty_id: h.source_duty_id, organization_context: contextPacket } });
       const raw = (await deps.askAgent(agent, prompt, contextPacket)).trim();
-      const acted = parseActions(raw);
+      let acted = parseActions(raw);
+      if (autonomousFirstContact && firstContactTarget) {
+        if (acted.actions.length === 0) {
+          const legacy = parseLegacyFirstContactAction(raw, firstContactTarget);
+          if (legacy) acted = { ...acted, clean: legacy.clean, actions: [legacy.action], rejected: [] };
+        }
+        const outreachActions = acted.actions.filter((action) => action.type === 'whatsapp' && action.purpose === 'outreach');
+        if (acted.actions.length !== 1 || outreachActions.length !== 1) {
+          throw new Error('Approved first-contact requires exactly one executable WhatsApp outreach action; a draft alone is not accepted.');
+        }
+      }
       const result = acted.clean.trim();
       if (!result) throw new Error('The employee returned no work product.');
       const actionsText = await deps.actions.run({ agent, roleId: h.to_role_id, taskId }, acted.actions, acted.rejected);
+      if (autonomousFirstContact && !confirmsQueuedOrSentAction(actionsText)) {
+        throw new Error('The WhatsApp action did not confirm a queued or sent result; no first-contact message is recorded as complete.');
+      }
       const stamp = await deps.sign({ roleId: h.to_role_id, kind: 'handoff_result', subjectId: h.id, content: result });
       const stamped = `${result}${actionsText ? `\n\n${actionsText}` : ''}\n\n${stamp.block}`;
       if (h.room_id) await deps.store.roomEvent(h.room_id, 'employee_deliverable_submitted', h.to_role_id, { response: result.slice(0, 8000), actions: actionsText || null });

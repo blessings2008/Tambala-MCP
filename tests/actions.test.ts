@@ -78,6 +78,7 @@ test('outreach action help forbids placeholders and requires an executable ACTIO
   assert.match(help, /ACTIONS:/);
   assert.match(help, /unresolved placeholders/i);
   assert.match(help, /exact verified business name/i);
+  assert.match(help, /Do not claim Tambala has served similar businesses/i);
 });
 
 test('permissions: only the right roles may message customers, make documents and create payment links', () => {
