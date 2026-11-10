@@ -24,6 +24,7 @@ import { InMemoryDutyStore, SupabaseDutyStore, type DutyRun, type DutyStore } fr
 import { runDueDuties, type DutyDeps, type DutyOutcome } from './duty-runner.js';
 import { getEmployeeProfiles, identityForRole, labelForRole, roleIdFor } from './profiles.js';
 import { cadenceLabel, isWorkingHours, localTime, periodKey, runsToday, timeReached } from './schedule.js';
+import { syncCompletedDiscoveryReviews } from './discovery-crm.js';
 
 type Row = Record<string, unknown>;
 const dbConfigured = dbOn;
@@ -439,7 +440,7 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
         if (kind === 'briefing') out.briefing = await briefingContext(store, at);
         if (kind === 'catalog') out.catalog = await catalogContext();
         if (kind === 'invoices') out.invoices = await invoicesContext(at);
-        if (kind === 'discovery') out.discovery = { note: 'Research-only queue. New entries await Sales review; do not create CRM leads or contact prospects.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status&processing_status=in.(new,reviewing)&order=research_date.desc,created_at.desc&limit=50') };
+        if (kind === 'discovery') out.discovery = { note: 'Research records await Sales review. The system promotes only completed, verified QUALIFY decisions into the CRM; do not repeat research or contact prospects from this context.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status&processing_status=in.(new,reviewing)&order=research_date.desc,created_at.desc&limit=50') };
       }
       return out;
     },
@@ -484,6 +485,7 @@ export async function runDutiesOnce(opts: { dutyId?: string; force?: boolean; ha
     const outcomes = opts.handoffsOnly ? [] : await runDueDuties(productionDeps(), opts);
     if (!opts.skipDiscoveryQueue) await dispatchNewDiscoveryQueue();
     const handoffs = await processHandoffs(productionHandoffDeps());
+    await syncCompletedDiscoveryReviews().catch((error) => console.error('[discovery-crm] Review sync failed; the next scheduler cycle will retry:', error instanceof Error ? error.message : error));
     const messages = await runOutbox().catch(() => [] as SendOutcome[]);
     return { outcomes, handoffs, messages };
   } finally { running = false; }
