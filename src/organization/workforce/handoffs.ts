@@ -250,6 +250,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
     }
     if (!(await deps.store.claim(h.id))) { outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'already_taken', roomId: h.room_id ?? undefined }); continue; }
     const attempt = h.attempts + 1;
+    const previousError = h.error;
     const [sender, recipient] = await Promise.all([deps.senderLabel(h.from_role_id), deps.recipientLabel(agent)]);
     const autonomousFirstContact = agent === 'outreach' && h.source_duty_id === 'approved-prospect-first-contact';
     const taskRules = autonomousFirstContact
@@ -278,7 +279,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       const prompt = [
         'TASK ROOM ASSIGNMENT', `You are ${recipient}. ${sender} has assigned this work to your room.`, taskRules,
         `ROOM ID: ${h.room_id ?? 'not recorded'}`, `REQUEST: ${h.request}`,
-        h.error ? `PREVIOUS ATTEMPT FEEDBACK: ${h.error}` : '',
+        previousError ? `PREVIOUS ATTEMPT FEEDBACK: ${previousError}` : '',
         autonomousFirstContact && firstContactTarget
           ? `MANDATORY FIRST-CONTACT ACTION: send exactly one WhatsApp outreach action to ${firstContactTarget.phone}; use ${firstContactTarget.contact} as the contact label. Do not use another number. A draft-only answer is invalid. Do not claim prior client work, similar customers served, testimonials or results unless approved portfolio evidence supports the exact claim.`
           : '',
