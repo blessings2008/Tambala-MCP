@@ -277,14 +277,14 @@ export async function dispatchNewDiscoveryQueue(): Promise<number> {
 let discoveryApprovalDispatchRunning = false;
 
 function normaliseDiscoveryName(value: string): string {
-  return value.toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\\s+/g, ' ');
+  return value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
 }
 
 function salesResultQualifies(result: string, organisationName: string): boolean {
   const name = normaliseDiscoveryName(organisationName);
   const output = normaliseDiscoveryName(result);
-  return output.includes(name) && /\\brecommendation\\b[\\s\\S]{0,240}\\bqualif(?:y|ied)\\b/i.test(result);
+  return output.includes(name) && /\brecommendation\b[\s\S]{0,240}\bqualif(?:y|ied)\b/i.test(result);
 }
 
 async function applyDiscoveryCrmApproval(approval: ApprovalRow, decision: 'approved' | 'rejected', note: string): Promise<void> {
@@ -355,7 +355,7 @@ async function applyDiscoveryCrmApproval(approval: ApprovalRow, decision: 'appro
     `Public email: ${prospect.public_email ?? 'Not supplied'}`,
     `Public phone(s): ${prospect.public_phone ?? 'Not supplied'}`,
     `Evidence: ${sources.join(' | ')}`,
-  ].join('\\n');
+  ].join('\n');
 
   const lead = await supabaseInsert<{ id: string }>('leads', {
     name: prospect.decision_maker_name ?? prospect.organisation_name,
