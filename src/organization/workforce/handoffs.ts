@@ -249,9 +249,10 @@ function parseLegacyFirstContactAction(raw: string, target: { phone: string; con
 }
 
 function confirmsQueuedOrSentAction(value: string): boolean {
-  return /\b(?:queued|sent)\b/i.test(value) && !/\b(?:not queued|not sent|blocked|failed|rejected|requires founder approval)\b/i.test(value);
+  // Only a positively successful WhatsApp action line counts. A failure explanation may
+  // contain the word 'queued' (for example, 'No customer message was queued').
+  return /^\s*Actions:\s*\r?\n\s*✔\s*whatsapp:\s*[^\r\n]*\b(?:queued|sent)\b/i.test(value);
 }
-
 /** Each delegation runs in an isolated, durable room. A room closes only after its deliverable is accepted. */
 export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<HandoffOutcome[]> {
   const outcomes: HandoffOutcome[] = [];
@@ -344,6 +345,18 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       if (!result) throw new Error('The employee returned no work product.');
       if (autonomousFirstContact && isFounderClarificationRequest(result)) throw new Error('Do not ask the Founder to confirm WhatsApp registration or first-contact permission; the approved destination is supplied and the shared outbox performs verification.');
       const actionsText = await deps.actions.run({ agent, roleId: h.to_role_id, taskId }, acted.actions, acted.rejected);
+      if (autonomousFirstContact && /✘\s*whatsapp:.*Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number/i.test(actionsText)) {
+        const reason = 'The supplied CRM number could not be verified as a WhatsApp-registered lead. No message was queued. Correct the CRM number or verify its WhatsApp registration before retrying.';
+        const blockedResult = result + '\n\n' + actionsText;
+        await deps.tasks.fail(taskId, reason, agent);
+        await deps.store.update(h.id, { status: 'failed', result: blockedResult.slice(0, 8000), error: reason, completed_at: deps.now().toISOString() });
+        if (h.room_id) {
+          await deps.store.updateRoom(h.room_id, { status: 'blocked', deliverable: blockedResult.slice(0, 8000), blocker: reason, closed_at: null });
+          await deps.store.roomEvent(h.room_id, 'room_blocked', 'ceo', { reason, attempt, manualCorrectionRequired: true });
+        }
+        outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'failed', reason, taskId, roomId: h.room_id ?? undefined });
+        continue;
+      }
       if (autonomousFirstContact && !confirmsQueuedOrSentAction(actionsText)) {
         throw new Error('The WhatsApp action did not confirm a queued or sent result; no first-contact message is recorded as complete.');
       }
