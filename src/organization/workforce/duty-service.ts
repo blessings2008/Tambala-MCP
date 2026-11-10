@@ -303,7 +303,7 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
     'organization_handoffs',
     'select=request,status&source_duty_id=eq.approved-prospect-first-contact&order=created_at.desc&limit=500',
   );
-  if (previous.some((item) => item.request.includes(`CRM lead ID: ${leadId}.`))) return false;
+  if (previous.some((item) => item.request.includes(`CRM lead ID: ${leadId}.`) && ['queued', 'running', 'awaiting_founder', 'failed'].includes(item.status))) return false;
 
   const leads = await supabaseSelect<Row>('leads',
     `select=id,name,business_name,phone,whatsapp,status,notes&id=eq.${encodeURIComponent(leadId)}&limit=1`,
@@ -317,9 +317,9 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
   if (!publishedPhone || phone.replace(/\D/g, '') !== publishedPhone) return false;
 
   const phoneDigits = phone.replace(/\D/g, '');
-  const sentMessages = await supabaseSelect<{ number: string }>(
+  const sentMessages = await supabaseSelect<{ number: string; status: string }>(
     'organization_messages',
-    'select=number&direction=eq.out&audience=eq.client&status=eq.sent&limit=1000',
+    'select=number,status&direction=eq.out&audience=eq.client&status=in.(queued,sending,sent,blocked)&limit=1000',
   );
   if (sentMessages.some((message) => message.number.replace(/\D/g, '') === phoneDigits)) return false;
 
