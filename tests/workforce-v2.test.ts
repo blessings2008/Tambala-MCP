@@ -102,8 +102,8 @@ test('Founder-approved first-contact handoffs may execute WhatsApp and accept a 
   const { deps, store } = handoffDeps({
     askAgent: async (agent, prompt) => {
       prompts.push(`${agent}: ${prompt}`);
-      if (agent === 'orchestrator') return 'DECISION: ACCEPT\\nThe verified WhatsApp action was queued.';
-      return 'Prepared a personalised introduction.\\n\\nACTIONS:\\n{"type":"whatsapp","to":"+265888123456","purpose":"outreach","text":"Hello AgriTrust team."}';
+      if (agent === 'orchestrator') return `DECISION: ACCEPT\nThe verified WhatsApp action was queued.`;
+      return `Prepared a personalised introduction.\n\nACTIONS:\n{"type":"whatsapp","to":"+265888123456","purpose":"outreach","text":"Hello AgriTrust team."}`;
     },
     actions: { run: async () => 'WhatsApp message was queued for sending; delivery is not confirmed yet.' },
   });
