@@ -1,4 +1,4 @@
-import { supabaseInsert, supabaseSelect } from '../../lib/supabase.js';
+import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../../lib/supabase.js';
 import { getBusinessSummary, getVerifiedCompanyContext } from '../../services/ai/context.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../../services/ai.js';
 import { getOrganizationSnapshot } from '../service.js';
@@ -158,6 +158,102 @@ let memoryHandoffs: InMemoryHandoffStore | null = null;
 export function handoffStore(): HandoffStore {
   if (dbConfigured()) return new SupabaseHandoffStore();
   return (memoryHandoffs ??= new InMemoryHandoffStore());
+}
+
+type DiscoveryQueueRow = {
+  id: string;
+  organisation_name: string;
+  website: string | null;
+  sector: string | null;
+  service_fit: string[];
+  reason_for_fit: string | null;
+  decision_maker_name: string | null;
+  decision_maker_title: string | null;
+  public_email: string | null;
+  public_phone: string | null;
+  source_urls: unknown;
+  research_date: string;
+  verification_status: string;
+  processing_status: string;
+  first_contact_message: string | null;
+};
+
+let discoveryQueueDispatchRunning = false;
+
+/**
+ * Claim newly researched prospects and create one durable Sales room for the batch.
+ * The queue status transition is conditional (new -> reviewing), so concurrent
+ * scheduler instances cannot claim the same record. If handoff creation fails,
+ * claims are released back to new for the next five-minute pass.
+ */
+export async function dispatchNewDiscoveryQueue(): Promise<number> {
+  if (!dbConfigured() || discoveryQueueDispatchRunning) return 0;
+  discoveryQueueDispatchRunning = true;
+  let claimed: DiscoveryQueueRow[] = [];
+  try {
+    const pending = await supabaseSelect<DiscoveryQueueRow>(
+      'lead_discovery_queue',
+      'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message&processing_status=eq.new&order=created_at.asc&limit=10',
+    );
+    if (!pending.length) return 0;
+
+    for (const prospect of pending) {
+      try {
+        const updated = await supabaseUpdate<DiscoveryQueueRow>(
+          'lead_discovery_queue',
+          { processing_status: 'reviewing', updated_at: new Date().toISOString() },
+          `id=eq.${encodeURIComponent(prospect.id)}&processing_status=eq.new`,
+        );
+        claimed.push(updated);
+      } catch (error) {
+        if (error instanceof Error && /returned no record/.test(error.message)) continue;
+        throw error;
+      }
+    }
+    if (!claimed.length) return 0;
+
+    const contextSummary = JSON.stringify({
+      source: 'public.lead_discovery_queue',
+      instruction: 'These records were researched by Central Research & Intelligence. Sales should use the supplied evidence and must not repeat prospect discovery.',
+      records: claimed,
+    }).slice(0, 7800);
+
+    try {
+      await queueHandoff(handoffStore(), {
+        fromRoleId: 'ceo',
+        toAgent: 'outreach',
+        sourceDutyId: 'lead-discovery-queue-watcher',
+        request: [
+          'Review the newly claimed Tambala prospect research batch in the attached context.',
+          'Assess evidence and service fit, identify any records needing clarification, and return clear qualify / investigate / reject recommendations.',
+          'Do not repeat web research or invent missing contacts. Do not contact prospects in this review assignment.',
+          `Queue record IDs: ${claimed.map((row) => row.id).join(', ')}.`,
+        ].join(' '),
+        contextSummary,
+        sign: signWork,
+      });
+      console.log('Discovery queue handoff created:', JSON.stringify({
+        count: claimed.length,
+        ids: claimed.map((row) => row.id),
+      }));
+      return claimed.length;
+    } catch (error) {
+      for (const prospect of claimed) {
+        await supabaseUpdate(
+          'lead_discovery_queue',
+          { processing_status: 'new', updated_at: new Date().toISOString() },
+          `id=eq.${encodeURIComponent(prospect.id)}&processing_status=eq.reviewing`,
+        ).catch((releaseError) => console.error(
+          'Could not release discovery queue claim:',
+          prospect.id,
+          releaseError instanceof Error ? releaseError.message : releaseError,
+        ));
+      }
+      throw error;
+    }
+  } finally {
+    discoveryQueueDispatchRunning = false;
+  }
 }
 /** Built-in duties only when there is no database: nothing can be saved, so nothing is pretended. */
 export function configStore(): DutyConfigStore | null { return dbConfigured() ? new SupabaseDutyConfigStore() : null; }
@@ -326,7 +422,7 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
         if (kind === 'briefing') out.briefing = await briefingContext(store, at);
         if (kind === 'catalog') out.catalog = await catalogContext();
         if (kind === 'invoices') out.invoices = await invoicesContext(at);
-        if (kind === 'discovery') out.discovery = { note: 'Research-only queue. New entries await Sales review; do not create CRM leads or contact prospects.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status&processing_status=eq.new&order=research_date.desc,created_at.desc&limit=50') };
+        if (kind === 'discovery') out.discovery = { note: 'Research-only queue. New entries await Sales review; do not create CRM leads or contact prospects.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status&processing_status=in.(new,reviewing)&order=research_date.desc,created_at.desc&limit=50') };
       }
       return out;
     },
@@ -369,6 +465,7 @@ export async function runDutiesOnce(opts: { dutyId?: string; force?: boolean; ha
   running = true;
   try {
     const outcomes = opts.handoffsOnly ? [] : await runDueDuties(productionDeps(), opts);
+    await dispatchNewDiscoveryQueue();
     const handoffs = await processHandoffs(productionHandoffDeps());
     const messages = await runOutbox().catch(() => [] as SendOutcome[]);
     return { outcomes, handoffs, messages };
