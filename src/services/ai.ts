@@ -42,7 +42,7 @@ function isRateLimitError(error: unknown): boolean {
   const code = typeof value.code === 'string' ? value.code : '';
   const message = typeof value.message === 'string' ? value.message.toLowerCase() : '';
   return status === 429 || code === 'rate_limit_exceeded'
-    || /rate.?limit|too many requests|\\btpm\\b|tokens? per minute|token throughput|per-minute token|token rate limit|requested .* tokens?.* limit/i.test(message);
+    || /rate.?limit|too many requests|\btpm\b|tokens? per minute|token throughput|per-minute token|token rate limit|requested .* tokens?.* limit/i.test(message);
 }
 
 async function requestWithRateLimitRetry<T>(request: () => Promise<T>, agent: AgentName, model: string): Promise<T> {
