@@ -320,7 +320,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       ].filter(Boolean).join('\n\n');
       const contextPacket = await deps.buildContext();
       if (h.room_id) await deps.store.updateRoom(h.room_id, { context_packet: { context_summary: h.context_summary, source_duty_id: h.source_duty_id, organization_context: contextPacket } });
-      let acted;
+      let acted: ReturnType<typeof parseActions>;
       let result: string;
       if (autonomousFirstContact && firstContactTarget) {
         // Founder-approved prospect records already contain verified contact and service-fit data.
