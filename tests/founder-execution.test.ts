@@ -77,3 +77,26 @@ test('zero-data report is valid when it clearly identifies the department and da
     'Technology & Engineering — No deployment inventory, monitoring feed, or incident log is currently recorded. Service health and infrastructure capacity therefore remain unverified.',
   ), true);
 });
+
+
+test('Founder factual questions are answered from company records rather than routed as department work', async () => {
+  const { isFounderKnowledgeQuestion } = await import('../src/channels/founder-execution.ts');
+  const questions = [
+    'How many clients have we messaged?',
+    'What are our active services?',
+    'Did we send any WhatsApp messages to clients?',
+    'Who is responsible for sales?',
+    'Tell me how many qualified prospects are in the queue',
+  ];
+  for (const question of questions) assert.equal(isFounderKnowledgeQuestion(question), true, question);
+});
+
+test('question-shaped Founder action requests still enter department execution', async () => {
+  const { isFounderKnowledgeQuestion } = await import('../src/channels/founder-execution.ts');
+  const requests = [
+    'Can you find 20 new clients?',
+    'Could you prepare a sales report?',
+    'Will you send the approved follow-up messages?',
+  ];
+  for (const request of requests) assert.equal(isFounderKnowledgeQuestion(request), false, request);
+});
