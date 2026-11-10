@@ -68,6 +68,9 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
     }
     verifiedContactLabel = crmLabel;
   }
+  if (input.purpose === 'outreach' && /\[(?:name|company|business(?: name)?|contact(?: name)?|recipient)\]|\{\{\s*(?:name|company|business(?:_name)?|contact(?:_name)?)\s*\}\}|(?:^|[\s,])(?:hi|hello)\s+name\b/i.test(input.text)) {
+    throw new OutboxError('First-contact message contains an unresolved placeholder. No customer message was queued.');
+  }
   const customerCopy = base.audience === 'client' ? sanitizeCustomerMessage(input.text.trim()) : input.text.trim();
   if (base.audience === 'client' && customerCopy.length < 2) throw new OutboxError('The customer message contains no usable business content after internal notes were removed.');
   const text = base.audience === 'client' ? withOptOut(customerCopy, input.purpose) : customerCopy;
