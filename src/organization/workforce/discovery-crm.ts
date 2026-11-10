@@ -103,7 +103,7 @@ export async function syncCompletedDiscoveryReviews(): Promise<DiscoveryReviewSy
         await supabaseUpdate(
           'lead_discovery_queue',
           { processing_status: 'qualified', updated_at: new Date().toISOString() },
-          'id=eq.' + encodeURIComponent(queueId) + '&processing_status=eq.reviewing',
+          'id=eq.' + encodeURIComponent(queue.id) + '&processing_status=eq.reviewing',
         );
       }
 
