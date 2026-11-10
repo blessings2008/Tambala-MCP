@@ -212,46 +212,50 @@ export async function dispatchNewDiscoveryQueue(): Promise<number> {
     }
     if (!claimed.length) return 0;
 
-    const contextSummary = JSON.stringify({
-      source: 'public.lead_discovery_queue',
-      instruction: 'Research is complete. Use only these supplied records; do not repeat web research.',
-      records: claimed.map((row) => ({
-        id: row.id,
-        organisation_name: row.organisation_name,
-        website: row.website,
-        sector: row.sector,
-        service_fit: row.service_fit,
-        reason_for_fit: row.reason_for_fit?.slice(0, 120) ?? null,
-        decision_maker_name: row.decision_maker_name,
-        decision_maker_title: row.decision_maker_title,
-        public_email: row.public_email,
-        public_phone: row.public_phone,
-        source_urls: Array.isArray(row.source_urls) ? row.source_urls.slice(0, 1) : row.source_urls,
-        verification_status: row.verification_status,
-      })),
-    });
-
+    const dispatched = new Set<string>();
     try {
-      await queueHandoff(handoffStore(), {
-        fromRoleId: 'ceo',
-        toAgent: 'outreach',
-        sourceDutyId: 'lead-discovery-queue-watcher',
-        request: [
-          'Review the newly claimed Tambala prospect research batch in the attached context.',
-          'For each record, return its organisation name, supplied service fit, source evidence, available public contact, and a qualify / investigate / reject recommendation.',
-          'Research is complete: do not repeat web research. A published organisation email or phone is an acceptable contact; do not require a personal decision-maker email/phone, and do not reject a record only because a named decision-maker is missing. Never invent contacts. Do not contact prospects in this review assignment.',
-          `Queue record IDs: ${claimed.map((row) => row.id).join(', ')}.`,
-        ].join(' '),
-        contextSummary,
-        sign: signWork,
-      });
-      console.log('Discovery queue handoff created:', JSON.stringify({
-        count: claimed.length,
-        ids: claimed.map((row) => row.id),
-      }));
-      return claimed.length;
-    } catch (error) {
       for (const prospect of claimed) {
+        const contextSummary = JSON.stringify({
+          source: 'public.lead_discovery_queue',
+          instruction: 'Research is complete. Use only this supplied record; do not repeat web research.',
+          prospect: {
+            id: prospect.id,
+            organisation_name: prospect.organisation_name,
+            website: prospect.website,
+            sector: prospect.sector,
+            service_fit: prospect.service_fit,
+            reason_for_fit: prospect.reason_for_fit?.slice(0, 120) ?? null,
+            decision_maker_name: prospect.decision_maker_name,
+            decision_maker_title: prospect.decision_maker_title,
+            public_email: prospect.public_email,
+            public_phone: prospect.public_phone,
+            source_url: Array.isArray(prospect.source_urls) ? prospect.source_urls[0] ?? null : null,
+            verification_status: prospect.verification_status,
+          },
+        });
+
+        await queueHandoff(handoffStore(), {
+          fromRoleId: 'ceo',
+          toAgent: 'outreach',
+          sourceDutyId: 'lead-discovery-queue-watcher',
+          request: [
+            'Review this single researched Tambala prospect using the attached record.',
+            'Return its organisation name, service fit, source evidence, available public contact, and a qualify / investigate / reject recommendation.',
+            'Do not repeat research. A published organisation email or phone is acceptable; a missing named decision-maker alone is not a reason to reject. Never invent contacts. Do not contact the prospect in this review assignment.',
+            `Queue record ID: ${prospect.id}.`,
+          ].join(' '),
+          contextSummary,
+          sign: signWork,
+        });
+        dispatched.add(prospect.id);
+      }
+      console.log('Discovery queue Sales handoffs created:', JSON.stringify({
+        count: dispatched.size,
+        ids: [...dispatched],
+      }));
+      return dispatched.size;
+    } catch (error) {
+      for (const prospect of claimed.filter((row) => !dispatched.has(row.id))) {
         await supabaseUpdate(
           'lead_discovery_queue',
           { processing_status: 'new', updated_at: new Date().toISOString() },
