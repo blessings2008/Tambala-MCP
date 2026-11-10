@@ -24,16 +24,16 @@ export type DiscoveryReviewSyncSummary = {
   skipped: number;
   failed: number;
 };
-  const match = /recommendation[\s\S]{0,180}?\b(qualify|investigate|reject)\b/i.exec(result);
-/** Extract only the recommendation attached to the review's Recommendation heading. */
+
+/** Extract the decision attached to the review's Recommendation heading. */
 export function discoveryReviewRecommendation(result: string | null): 'qualify' | 'investigate' | 'reject' | null {
   if (!result) return null;
-  const match = /recommendation[\\s\\S]{0,180}?\\b(qualify|investigate|reject)\\b/i.exec(result);
-  return /queue record id:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(request)?.[1] ?? null;
+  const match = /recommendation[\s\S]{0,180}?\b(qualify|investigate|reject)\b/i.exec(result);
+  return match ? match[1].toLowerCase() as 'qualify' | 'investigate' | 'reject' : null;
 }
 
 export function discoveryQueueIdFromReviewRequest(request: string): string | null {
-  return /queue record id:\\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(request)?.[1] ?? null;
+  return /queue record id:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(request)?.[1] ?? null;
 }
 
 /**
@@ -63,7 +63,7 @@ export async function syncCompletedDiscoveryReviews(): Promise<DiscoveryReviewSy
     try {
       const rows = await supabaseSelect<DiscoveryQueueReviewState>(
         'lead_discovery_queue',
-        `select=id,processing_status,verification_status,public_email,public_phone&id=eq.${encodeURIComponent(queueId)}`,
+        'select=id,processing_status,verification_status,public_email,public_phone&id=eq.' + encodeURIComponent(queueId),
       );
       const queue = rows[0];
       if (!queue || ['promoted', 'duplicate', 'rejected'].includes(queue.processing_status)) {
@@ -81,7 +81,7 @@ export async function syncCompletedDiscoveryReviews(): Promise<DiscoveryReviewSy
           await supabaseUpdate(
             'lead_discovery_queue',
             { processing_status: 'rejected', updated_at: new Date().toISOString() },
-            `id=eq.${encodeURIComponent(queueId)}&processing_status=eq.reviewing`,
+            'id=eq.' + encodeURIComponent(queueId) + '&processing_status=eq.reviewing',
           );
           summary.rejected += 1;
         } else {
@@ -101,7 +101,7 @@ export async function syncCompletedDiscoveryReviews(): Promise<DiscoveryReviewSy
         await supabaseUpdate(
           'lead_discovery_queue',
           { processing_status: 'qualified', updated_at: new Date().toISOString() },
-          `id=eq.${encodeURIComponent(queueId)}&processing_status=eq.reviewing`,
+          'id=eq.' + encodeURIComponent(queueId) + '&processing_status=eq.reviewing',
         );
       }
 
