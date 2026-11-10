@@ -208,7 +208,6 @@ function approvedFirstContactMessage(contextSummary: string | null, target: { ph
     const fit = Array.isArray(prospect.service_fit) ? prospect.service_fit.filter((v): v is string => typeof v === 'string') : [];
     const labels: Record<string, string> = {
       web_development: 'website design and development',
-      software_development: 'custom software development',
       digital_product_development: 'digital product development',
       software_development: 'custom software development',
       social_media_management: 'social media management and content planning',
