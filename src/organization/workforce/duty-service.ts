@@ -400,14 +400,14 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
 
     let created = 0;
     for (const prospect of prospects) {
-      if (prospect.processing_status === 'reviewing') {
-        const handoff = completedHandoffs.find((item) =>
-          item.request.includes(`Queue record ID: ${prospect.id}.`) &&
-          typeof item.result === 'string' &&
-          salesResultQualifies(item.result, prospect.organisation_name),
-        );
-        if (!handoff) continue;
-      }
+      const handoff = completedHandoffs.find((item) =>
+        item.request.includes(`Queue record ID: ${prospect.id}.`) &&
+        typeof item.result === 'string' &&
+        salesResultQualifies(item.result, prospect.organisation_name),
+      );
+      if (!handoff && !approvals.some((item) =>
+        item.action_type === 'crm_lead_promotion' && item.subject_id === prospect.id,
+      )) continue;
 
       if (prospect.verification_status !== 'verified' || !prospect.service_fit.length || (!prospect.public_email && !prospect.public_phone)) {
         continue;
