@@ -74,16 +74,23 @@ export async function syncCompletedDiscoveryReviews(): Promise<DiscoveryReviewSy
       }
 
       if (recommendation === 'investigate') {
+        if (queue.processing_status === 'qualified') {
+          await supabaseUpdate(
+            'lead_discovery_queue',
+            { processing_status: 'reviewing', updated_at: new Date().toISOString() },
+            'id=eq.' + encodeURIComponent(queue.id) + '&processing_status=eq.qualified',
+          );
+        }
         summary.investigating += 1;
         continue;
       }
 
       if (recommendation === 'reject') {
-        if (queue.processing_status === 'reviewing') {
+        if (['reviewing', 'qualified'].includes(queue.processing_status)) {
           await supabaseUpdate(
             'lead_discovery_queue',
             { processing_status: 'rejected', updated_at: new Date().toISOString() },
-            'id=eq.' + encodeURIComponent(queue.id) + '&processing_status=eq.reviewing',
+            'id=eq.' + encodeURIComponent(queue.id) + '&processing_status=in.(reviewing,qualified)',
           );
           summary.rejected += 1;
         } else {
