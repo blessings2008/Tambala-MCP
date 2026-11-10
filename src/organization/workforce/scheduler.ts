@@ -1,4 +1,4 @@
-import { runDutiesOnce } from './duty-service.js';
+import { dispatchNewDiscoveryQueue, runDutiesOnce } from './duty-service.js';
 
 /**
  * Optional in-process clock. Each tick runs whatever duties are due; duties are idempotent per period,
@@ -9,6 +9,8 @@ export function startDutyScheduler(): void {
   const minutes = Math.max(1, Number(process.env.TAMBALA_DUTY_INTERVAL_MINUTES) || 5);
   const tick = async () => {
     try {
+      const discoveryClaims = await dispatchNewDiscoveryQueue();
+      if (discoveryClaims) console.log('Discovery queue claimed for Sales:', discoveryClaims);
       const { outcomes, handoffs } = await runDutiesOnce();
       const worked = [...outcomes.filter((o) => o.status !== 'skipped').map((o) => `${o.dutyId}:${o.status}`), ...handoffs.filter((h) => h.status !== 'waiting').map((h) => `handoff-${h.toAgent}:${h.status}`)];
       if (worked.length) console.log('Duty cycle:', JSON.stringify(worked));
