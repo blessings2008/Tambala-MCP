@@ -4,7 +4,7 @@ import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } fr
 import { getOrganizationSnapshot } from '../service.js';
 import { advanceTrackedTask, beginTrackedTask, failTrackedTask } from '../task-tracking.js';
 import { deterministicBriefing } from './briefing.js';
-import { createApprovalRequest } from './approvals-service.js';
+import { createApprovalRequest, registerApprovalHook, type ApprovalRow } from './approvals-service.js';
 import type { AgentName } from '../../services/ai/models.js';
 import { setRuntimeIncidentHandler, type RuntimeIncident } from './incident-events.js';
 import { type ContextKind, type StandingDuty } from './duties.js';
@@ -176,6 +176,7 @@ type DiscoveryQueueRow = {
   verification_status: string;
   processing_status: string;
   first_contact_message: string | null;
+  crm_lead_id?: string | null;
 };
 
 let discoveryQueueDispatchRunning = false;
@@ -272,6 +273,185 @@ export async function dispatchNewDiscoveryQueue(): Promise<number> {
     discoveryQueueDispatchRunning = false;
   }
 }
+
+let discoveryApprovalDispatchRunning = false;
+
+function normaliseDiscoveryName(value: string): string {
+  return value.toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\\s+/g, ' ');
+}
+
+function salesResultQualifies(result: string, organisationName: string): boolean {
+  const name = normaliseDiscoveryName(organisationName);
+  const output = normaliseDiscoveryName(result);
+  return output.includes(name) && /\\brecommendation\\b[\\s\\S]{0,240}\\bqualif(?:y|ied)\\b/i.test(result);
+}
+
+async function applyDiscoveryCrmApproval(approval: ApprovalRow, decision: 'approved' | 'rejected', note: string): Promise<void> {
+  const queueId = approval.subject_id;
+  if (!queueId) throw new Error('Discovery CRM approval is missing its queue record ID.');
+  const rows = await supabaseSelect<DiscoveryQueueRow>(
+    'lead_discovery_queue',
+    `select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id&id=eq.${encodeURIComponent(queueId)}&limit=1`,
+  );
+  const prospect = rows[0];
+  if (!prospect) throw new Error(`Discovery queue record ${queueId} no longer exists.`);
+
+  if (decision === 'rejected') {
+    if (prospect.processing_status === 'promoted') return;
+    await supabaseUpdate(
+      'lead_discovery_queue',
+      { processing_status: 'rejected', research_notes: [note ? `Founder rejected CRM promotion: ${note}` : 'Founder rejected CRM promotion.',].join(' '), updated_at: new Date().toISOString() },
+      `id=eq.${encodeURIComponent(queueId)}`,
+    );
+    return;
+  }
+
+  if (prospect.crm_lead_id) {
+    await supabaseUpdate('lead_discovery_queue', { processing_status: 'promoted', updated_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(queueId)}`);
+    return;
+  }
+
+  const [leadRows, clientRows] = await Promise.all([
+    supabaseSelect<Row>('leads', 'select=id,name,business_name&limit=5000'),
+    supabaseSelect<Row>('clients', 'select=id,name,business_name&limit=5000'),
+  ]);
+  const target = normaliseDiscoveryName(prospect.organisation_name);
+  const existingLead = leadRows.find((lead) =>
+    [lead.name, lead.business_name].some((value) => typeof value === 'string' && normaliseDiscoveryName(value) === target),
+  );
+  if (existingLead && typeof existingLead.id === 'string') {
+    await supabaseUpdate(
+      'lead_discovery_queue',
+      { processing_status: 'promoted', crm_lead_id: existingLead.id, updated_at: new Date().toISOString() },
+      `id=eq.${encodeURIComponent(queueId)}`,
+    );
+    return;
+  }
+  const existingClient = clientRows.find((client) =>
+    [client.name, client.business_name].some((value) => typeof value === 'string' && normaliseDiscoveryName(value) === target),
+  );
+  if (existingClient) {
+    await supabaseUpdate(
+      'lead_discovery_queue',
+      { processing_status: 'duplicate', research_notes: 'Not promoted: this organisation already exists in the clients register.', updated_at: new Date().toISOString() },
+      `id=eq.${encodeURIComponent(queueId)}`,
+    );
+    return;
+  }
+
+  const primaryPhone = prospect.public_phone?.split(/[;,]/)[0]?.trim() || null;
+  const sources = Array.isArray(prospect.source_urls)
+    ? prospect.source_urls.filter((value): value is string => typeof value === 'string')
+    : [];
+  const notes = [
+    'Founder-approved promotion from the verified prospect discovery queue.',
+    `Discovery queue ID: ${queueId}`,
+    `Sector: ${prospect.sector ?? 'Not supplied'}`,
+    `Website: ${prospect.website ?? 'Not supplied'}`,
+    `Service fit: ${prospect.service_fit.join(', ')}`,
+    `Research rationale: ${prospect.reason_for_fit ?? 'Not supplied'}`,
+    `Decision-maker: ${prospect.decision_maker_name ?? 'Not supplied'}${prospect.decision_maker_title ? ` (${prospect.decision_maker_title})` : ''}`,
+    `Public email: ${prospect.public_email ?? 'Not supplied'}`,
+    `Public phone(s): ${prospect.public_phone ?? 'Not supplied'}`,
+    `Evidence: ${sources.join(' | ')}`,
+  ].join('\\n');
+
+  const lead = await supabaseInsert<{ id: string }>('leads', {
+    name: prospect.decision_maker_name ?? prospect.organisation_name,
+    business_name: prospect.organisation_name,
+    email: prospect.public_email,
+    phone: primaryPhone,
+    source: 'Tambala Research (Founder-approved)',
+    status: 'new',
+    notes,
+  });
+  await supabaseUpdate(
+    'lead_discovery_queue',
+    { processing_status: 'promoted', crm_lead_id: lead.id, updated_at: new Date().toISOString() },
+    `id=eq.${encodeURIComponent(queueId)}`,
+  );
+}
+
+registerApprovalHook('lead_discovery_queue', applyDiscoveryCrmApproval);
+
+/**
+ * Convert completed Sales QUALIFY decisions into Founder approval requests.
+ * No CRM row is created until the Founder approves the request.
+ */
+export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
+  if (!dbConfigured() || discoveryApprovalDispatchRunning) return 0;
+  discoveryApprovalDispatchRunning = true;
+  try {
+    const [prospects, completedHandoffs, approvals] = await Promise.all([
+      supabaseSelect<DiscoveryQueueRow>(
+        'lead_discovery_queue',
+        'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id&processing_status=in.(reviewing,qualified)&order=created_at.asc&limit=100',
+      ),
+      supabaseSelect<{ id: string; request: string; result: string | null; status: string }>(
+        'organization_handoffs',
+        'select=id,request,result,status&source_duty_id=eq.lead-discovery-queue-watcher&status=eq.completed&order=created_at.desc&limit=300',
+      ),
+      supabaseSelect<ApprovalRow>(
+        'organization_approval_requests',
+        'select=id,action_type,summary,requested_by_role_id,required_authority,status,risk_level,resolution_note,resolved_by_role_id,task_id,content,subject_type,subject_id,created_at,resolved_at&subject_type=eq.lead_discovery_queue&limit=500',
+      ),
+    ]);
+
+    let created = 0;
+    for (const prospect of prospects) {
+      if (prospect.processing_status === 'reviewing') {
+        const handoff = completedHandoffs.find((item) =>
+          item.request.includes(`Queue record ID: ${prospect.id}.`) &&
+          typeof item.result === 'string' &&
+          salesResultQualifies(item.result, prospect.organisation_name),
+        );
+        if (!handoff) continue;
+      }
+
+      if (prospect.verification_status !== 'verified' || !prospect.service_fit.length || (!prospect.public_email && !prospect.public_phone)) {
+        continue;
+      }
+
+      const existingApproval = approvals.find((item) =>
+        item.action_type === 'crm_lead_promotion' && item.subject_id === prospect.id,
+      );
+      if (existingApproval) {
+        if (existingApproval.status === 'pending') {
+          if (prospect.processing_status !== 'qualified') {
+            await supabaseUpdate('lead_discovery_queue', { processing_status: 'qualified', updated_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(prospect.id)}`);
+          }
+        } else if (existingApproval.status === 'approved' || existingApproval.status === 'rejected') {
+          await applyDiscoveryCrmApproval(existingApproval, existingApproval.status, existingApproval.resolution_note ?? '');
+        }
+        continue;
+      }
+
+      const approvalId = await createApprovalRequest({
+        actionType: 'crm_lead_promotion',
+        summary: `Add ${prospect.organisation_name} to the CRM as a qualified prospect`,
+        requestedByRoleId: 'ceo',
+        riskLevel: 'low',
+        taskId: null,
+        content: JSON.stringify({ queueId: prospect.id, organisationName: prospect.organisation_name, website: prospect.website, email: prospect.public_email, phone: prospect.public_phone }),
+        subjectType: 'lead_discovery_queue',
+        subjectId: prospect.id,
+      });
+      if (!approvalId) continue;
+      await supabaseUpdate(
+        'lead_discovery_queue',
+        { processing_status: 'qualified', updated_at: new Date().toISOString() },
+        `id=eq.${encodeURIComponent(prospect.id)}`,
+      );
+      created++;
+    }
+    if (created) console.log('Discovery CRM promotion approvals created:', created);
+    return created;
+  } finally {
+    discoveryApprovalDispatchRunning = false;
+  }
+}
+
 /** Built-in duties only when there is no database: nothing can be saved, so nothing is pretended. */
 export function configStore(): DutyConfigStore | null { return dbConfigured() ? new SupabaseDutyConfigStore() : null; }
 
