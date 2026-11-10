@@ -189,6 +189,15 @@ test('outbox: first-contact Outreach is queued autonomously and strips internal 
   assert.doesNotMatch(h.sent.at(-1)!.text, /CEO|TT[- ]?001|Prepared by/i);
 });
 
+test('outbox: autonomous first contact rejects unsupported past-work claims', async () => {
+  const h = outboxHarness();
+  await assert.rejects(
+    queueMessage(h.deps, { ...sales, to: '0888123456', text: "We've helped similar firms attract more clients.", purpose: 'outreach' }),
+    /unverified past-work or results claim/i,
+  );
+  assert.equal(h.store.rows.filter((row) => row.audience === 'client').length, 0);
+});
+
 test('outbox: first-contact messages with unresolved placeholders are never queued', async () => {
   const h = outboxHarness();
   await assert.rejects(
