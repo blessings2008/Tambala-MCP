@@ -96,6 +96,17 @@ export function canFinalizeStatusReport(completedDepartments: string[], outstand
     && STATUS_REPORT_DEPARTMENTS.every((department) => completedDepartments.includes(department));
 }
 
+/** Detect Founder questions that should be answered from company records, not routed as department work. */
+export function isFounderKnowledgeQuestion(value: string): boolean {
+  const text = value.trim().replace(/\s+/g, ' ');
+  if (!text) return false;
+  // A question-shaped command is still an action request and belongs in the normal CEO delegation path.
+  if (/^(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:find|identify|research|create|draft|prepare|send|contact|build|write|make|run|fix|deploy|schedule|update|review|compare|design|generate|produce)\b/i.test(text)) return false;
+  return /^(?:who|what|when|where|why|how|which|is|are|was|were|do|does|did|have|has)\b/i.test(text)
+    || /^(?:tell me|show me|explain)\s+(?:how many|how much|what|who|when|where|whether|if)\b/i.test(text)
+    || /\b(?:how many|how much|did we|have we|are we|do we|what happened|who is responsible|who handles)\b/i.test(text);
+}
+
 export function isCompanyStatusRequest(value: string): boolean {
   const text = value.toLowerCase();
   // Include adjective forms such as "organizational status report" and
