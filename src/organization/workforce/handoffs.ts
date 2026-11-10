@@ -120,7 +120,7 @@ export async function queueHandoff(store: HandoffStore, input: {
   if (request.length < 5 || request.length > 1000) throw new HandoffError('The request must be 5 to 1000 characters.');
   const created = await store.create({
     from_role_id: input.fromRoleId, to_role_id: roleIdFor(input.toAgent), to_agent: input.toAgent, request,
-    context_summary: input.contextSummary ? input.contextSummary.slice(0, 1500) : null,
+    context_summary: input.contextSummary ? input.contextSummary.slice(0, 8000) : null,
     source_task_id: input.sourceTaskId ?? null, source_duty_id: input.sourceDutyId ?? null,
     status: 'queued', attempts: 0, result: null, error: null, task_id: null, room_id: null,
     created_at: (input.now ?? new Date()).toISOString(), completed_at: null,
