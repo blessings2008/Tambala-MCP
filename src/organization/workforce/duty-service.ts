@@ -303,12 +303,12 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
   const phone = [lead.whatsapp, lead.phone].find((value) => typeof value === 'string' && value.trim()) as string | undefined;
   if (!phone) return false;
 
-  const phoneDigits = phone.replace(/\\D/g, '');
+  const phoneDigits = phone.replace(/\D/g, '');
   const sentMessages = await supabaseSelect<{ number: string }>(
     'organization_messages',
     'select=number&direction=eq.out&audience=eq.client&status=eq.sent&limit=1000',
   );
-  if (sentMessages.some((message) => message.number.replace(/\\D/g, '') === phoneDigits)) return false;
+  if (sentMessages.some((message) => message.number.replace(/\D/g, '') === phoneDigits)) return false;
 
   const sources = Array.isArray(prospect.source_urls)
     ? prospect.source_urls.filter((value): value is string => typeof value === 'string')
