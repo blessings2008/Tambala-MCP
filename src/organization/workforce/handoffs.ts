@@ -380,6 +380,24 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         await deps.store.updateRoom(h.room_id, { status: 'ready_for_review', deliverable: stamped.slice(0, 8000) });
         await deps.store.roomEvent(h.room_id, 'room_ready_for_review', h.to_role_id, { taskId });
       }
+      // The approved first-contact is executed deterministically through the shared outbox.
+      // Once that outbox returns an explicit positive queued/sent result, the action itself is
+      // the acceptance evidence. Do not ask the LLM reviewer to re-interpret it or demand a
+      // second JSON block in the employee's prose; that created false failures after enqueue.
+      if (autonomousFirstContact && confirmsQueuedOrSentAction(actionsText)) {
+        await deps.tasks.advance(taskId, [
+          { status: 'returned_to_ceo', stage: 'review', eventType: 'department_work_returned', roleId: h.to_role_id, result: { handoffId: h.id, roomId: h.room_id, summary: stamped.slice(0, 8000), outboxConfirmed: true } },
+          { status: 'completed', stage: 'complete', eventType: 'handoff_completed', roleId: 'ceo', completedAt: deps.now().toISOString() },
+        ]);
+        await deps.store.update(h.id, { status: 'completed', result: stamped.slice(0, 8000), completed_at: deps.now().toISOString(), error: null });
+        if (h.room_id) {
+          await deps.store.roomEvent(h.room_id, 'ceo_review_accepted', 'ceo', { taskId, acceptedBy: 'verified_outbox_result', result: actionsText });
+          await deps.store.updateRoom(h.room_id, { status: 'archived', closed_at: deps.now().toISOString(), blocker: null });
+          await deps.store.roomEvent(h.room_id, 'room_archived', 'ceo', { retained: true, acceptedBy: 'verified_outbox_result' });
+        }
+        outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'completed', taskId, roomId: h.room_id ?? undefined });
+        continue;
+      }
       const review = (await deps.askAgent('orchestrator', [
         'CEO REVIEW — you own acceptance of this delegated work.',
         'Review only whether the employee completed the exact request. Use the request and deliverable below; do not add facts or assume missing work was done.',
