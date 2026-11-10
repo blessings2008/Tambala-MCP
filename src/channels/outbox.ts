@@ -56,6 +56,9 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
   const to = normalizePhone(input.to);
   if (!to) throw new OutboxError(`"${input.to}" is not a valid phone number. Use international format, e.g. +265888123456.`);
   const now = deps.now();
+  if (input.purpose === 'outreach' && input.agent === 'outreach' && input.roleId === 'director-sales-business-development' && /\[(?:name|company|business(?: name)?|contact(?: name)?|recipient)\]|\{\{\s*(?:name|company|business(?:_name)?|contact(?:_name)?)\s*\}\}|(?:^|[\s,])(?:hi|hello)\s+name\b/i.test(input.text)) {
+    throw new OutboxError('First-contact message contains an unresolved placeholder. No customer message was queued.');
+  }
   const autonomousOutreach = input.purpose === 'outreach' && input.agent === 'outreach' && input.roleId === 'director-sales-business-development';
   let verifiedContactLabel = input.contactLabel?.trim() || null;
   const founder = deps.founderNumber();
