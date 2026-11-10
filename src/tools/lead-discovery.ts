@@ -3,7 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { insertRow, supabaseSelect, updateRow } from '../lib/database.js';
 
 type Row = Record<string, unknown>;
-type QueueStatus = 'new' | 'reviewing' | 'qualified' | 'rejected' | 'duplicate';
+type QueueStatus = 'new' | 'reviewing' | 'qualified' | 'promoted' | 'rejected' | 'duplicate';
 
 const serviceFit = z.enum([
   'web_development',
@@ -112,7 +112,7 @@ export function registerLeadDiscoveryTools(server: McpServer): void {
   server.registerTool('list_prospect_discovery_queue', {
     description: 'Read prospects awaiting Sales review from the separate discovery queue. Does not change status or create CRM leads.',
     inputSchema: {
-      status: z.enum(['new', 'reviewing', 'qualified', 'rejected', 'duplicate']).optional(),
+      status: z.enum(['new', 'reviewing', 'qualified', 'promoted', 'rejected', 'duplicate']).optional(),
       limit: z.number().int().min(1).max(100).default(25),
     },
   }, async ({ status, limit }) => {
@@ -127,12 +127,12 @@ export function registerLeadDiscoveryTools(server: McpServer): void {
       count: rows.length,
       status_filter: status ?? 'all',
       prospects: rows,
-      note: 'Discovery records are not CRM leads. Sales review is required before any separate CRM promotion.',
+      note: 'Discovery records remain separate until Sales qualifies them and the Founder approves CRM promotion. Promoted records link to their CRM lead ID.',
     });
   });
 
   server.registerTool('update_prospect_review_status', {
-    description: 'Update a discovery prospect review state. Allowed states are reviewing, qualified, rejected, or duplicate. This tool cannot promote records into the CRM.',
+    description: 'Update a discovery prospect review state. Allowed states are reviewing, qualified, rejected, or duplicate. CRM promotion is handled by a separate Founder approval workflow.',
     inputSchema: {
       id: z.string().uuid(),
       status: z.enum(['reviewing', 'qualified', 'rejected', 'duplicate']),
@@ -146,7 +146,7 @@ export function registerLeadDiscoveryTools(server: McpServer): void {
     });
     if (!current.length) throw new Error('Discovery prospect not found.');
     if (current[0].processing_status === 'promoted') {
-      throw new Error('This prospect has already been promoted and cannot be changed through the discovery review tool.');
+      throw new Error('This prospect has already been promoted into the CRM and cannot be changed through the discovery review tool.');
     }
     const notes = safeOptional(review_note);
     const updated = await updateRow<Row>('lead_discovery_queue', id, {
