@@ -168,6 +168,45 @@ test('approved first-contact handoffs cannot complete on a draft without an acti
   assert.match(store.rows[0].error ?? '', /exactly one executable WhatsApp outreach action/i);
 });
 
+test('approved first contacts resume WhatsApp-registration clarifications without resuming other Founder approvals', async () => {
+  const prompts: string[] = [];
+  const { deps, store } = handoffDeps({
+    askAgent: async (agent, prompt) => {
+      prompts.push(`${agent}: ${prompt}`);
+      if (agent === 'orchestrator') return `DECISION: ACCEPT\nThe WhatsApp action was queued.`;
+      return `ACTIONS:\n{"type":"whatsapp","to":"+265888123456","purpose":"outreach","text":"Hello AgriTrust team."}`;
+    },
+    actions: { run: async () => 'WhatsApp message was queued for sending; delivery is not confirmed yet.' },
+  });
+  const first = await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'outreach',
+    sourceDutyId: 'approved-prospect-first-contact',
+    request: 'Founder-approved first contact for AgriTrust',
+    contextSummary: JSON.stringify({ prospect: { organisation_name: 'AgriTrust' }, crm_lead: { phone: '+265888123456' } }),
+  });
+  await store.update(first.id, {
+    status: 'awaiting_founder',
+    result: 'Clarification Required: Is +265888123456 WhatsApp‑registered?',
+    error: 'Awaiting Founder clarification.',
+  });
+  const other = await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'marketing',
+    sourceDutyId: 'weekly-marketing-focus',
+    request: 'Founder approval is required for this separate customer-facing work.',
+  });
+  await store.update(other.id, {
+    status: 'awaiting_founder',
+    result: 'Clarification Required: Is the customer message approved?',
+    error: 'Awaiting Founder clarification.',
+  });
+  const out = await processHandoffs(deps);
+  assert.equal(out[0].status, 'completed');
+  assert.match(prompts[0], /PREVIOUS ATTEMPT FEEDBACK: System resumed/i);
+  assert.equal(store.rows.find((row) => row.id === other.id)?.status, 'awaiting_founder');
+});
+
 test('task rooms pause on clarification and retain their history instead of completing', async () => {
   assert.equal(isFounderClarificationRequest('Clarification Required — do you mean Malabi Exclusive Lodges or the dessert?'), true);
   assert.equal(isFounderClarificationRequest('The lodge is in Lilongwe. Would you like a summary?'), false);
