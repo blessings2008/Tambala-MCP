@@ -196,6 +196,37 @@ function approvedFirstContactTarget(contextSummary: string | null): { phone: str
   }
 }
 
+function approvedFirstContactMessage(contextSummary: string | null, target: { phone: string; contact: string }): string | null {
+  if (!contextSummary) return null;
+  try {
+    const root = JSON.parse(contextSummary) as Record<string, unknown>;
+    const prospect = root.prospect && typeof root.prospect === 'object' ? root.prospect as Record<string, unknown> : {};
+    const prepared = typeof prospect.first_contact_message === 'string' ? prospect.first_contact_message.trim() : '';
+    if (prepared.length >= 30 && prepared.length <= 1500) return prepared;
+
+    const sector = typeof prospect.sector === 'string' ? prospect.sector.trim() : '';
+    const fit = Array.isArray(prospect.service_fit) ? prospect.service_fit.filter((v): v is string => typeof v === 'string') : [];
+    const labels: Record<string, string> = {
+      web_development: 'website design and development',
+      software_development: 'custom software development',
+      digital_product_development: 'digital product development',
+      social_media_management: 'social media management and content planning',
+    };
+    const services = [...new Set(fit.map((item) => labels[item]).filter(Boolean))];
+    if (!services.length) return null;
+    const sectorLine = sector ? ` I came across your work in ${sector}.` : '';
+    return [
+      `Good morning. My name is Bless from Tambala Technologies.`,
+      `I wanted to introduce our services to ${target.contact}.${sectorLine}`,
+      `We provide ${services.join(' and ')} to help organisations strengthen their digital presence and communicate their work more effectively.`,
+      'Would you be open to a brief conversation about whether these services could be useful to your organisation?',
+      'Thank you for your time.',
+    ].join('\\n\\n');
+  } catch {
+    return null;
+  }
+}
+
 function parseLegacyFirstContactAction(raw: string, target: { phone: string; contact: string }): { action: Action; clean: string } | null {
   const fence = String.fromCharCode(96).repeat(3);
   const blocks = [...raw.matchAll(new RegExp(fence + '(?:json)?\\s*([\\s\\S]*?)' + fence, 'gi'))];
@@ -289,19 +320,26 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       ].filter(Boolean).join('\n\n');
       const contextPacket = await deps.buildContext();
       if (h.room_id) await deps.store.updateRoom(h.room_id, { context_packet: { context_summary: h.context_summary, source_duty_id: h.source_duty_id, organization_context: contextPacket } });
-      const raw = (await deps.askAgent(agent, prompt, contextPacket)).trim();
-      let acted = parseActions(raw);
+      let acted;
+      let result: string;
       if (autonomousFirstContact && firstContactTarget) {
-        if (acted.actions.length === 0) {
-          const legacy = parseLegacyFirstContactAction(raw, firstContactTarget);
-          if (legacy) acted = { ...acted, clean: legacy.clean, actions: [legacy.action], rejected: [] };
-        }
-        const outreachActions = acted.actions.filter((action) => action.type === 'whatsapp' && action.purpose === 'outreach');
-        if (acted.actions.length !== 1 || outreachActions.length !== 1) {
-          throw new Error('Approved first-contact requires exactly one executable WhatsApp outreach action; a draft alone is not accepted.');
-        }
+        // Founder-approved prospect records already contain verified contact and service-fit data.
+        // Build the one permitted first-contact action deterministically instead of asking an LLM
+        // to re-confirm WhatsApp registration or permission. The shared outbox still performs
+        // CRM, WhatsApp-registration, opt-out, cooldown and daily-limit checks before sending.
+        const message = approvedFirstContactMessage(h.context_summary, firstContactTarget);
+        if (!message) throw new Error('Approved first-contact has no safe message or supported service fit in its verified prospect record.');
+        acted = {
+          clean: `Prepared the approved first-contact message for ${firstContactTarget.contact}.`,
+          actions: [{ type: 'whatsapp' as const, to: firstContactTarget.phone, purpose: 'outreach' as const, contact: firstContactTarget.contact, text: message }],
+          rejected: [],
+        };
+        result = acted.clean;
+      } else {
+        const raw = (await deps.askAgent(agent, prompt, contextPacket)).trim();
+        acted = parseActions(raw);
+        result = acted.clean.trim();
       }
-      let result = acted.clean.trim();
       if (!result && autonomousFirstContact && firstContactTarget) result = `Prepared the first-contact WhatsApp action for ${firstContactTarget.contact}.`;
       if (!result) throw new Error('The employee returned no work product.');
       if (autonomousFirstContact && isFounderClarificationRequest(result)) throw new Error('Do not ask the Founder to confirm WhatsApp registration or first-contact permission; the approved destination is supplied and the shared outbox performs verification.');
