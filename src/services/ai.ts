@@ -33,11 +33,36 @@ function serializeBoundedContext(context: unknown, maxChars = MAX_CONTEXT_CHARS)
   return boundText(serialized, maxChars);
 }
 
+const RATE_LIMIT_RETRY_DELAY_MS = 60_000;
+
+function isRateLimitError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const value = error as { status?: unknown; code?: unknown; message?: unknown };
+  const status = typeof value.status === 'number' ? value.status : undefined;
+  const code = typeof value.code === 'string' ? value.code : '';
+  const message = typeof value.message === 'string' ? value.message.toLowerCase() : '';
+  return status === 429 || code === 'rate_limit_exceeded'
+    || /rate.?limit|too many requests|\btpm\b|tokens? per minute|token throughput|per-minute token|token rate limit|requested .* tokens?.* limit/i.test(message);
+}
+
+async function requestWithRateLimitRetry<T>(request: () => Promise<T>, agent: AgentName, model: string): Promise<T> {
+  try {
+    return await request();
+  } catch (error) {
+    if (!isRateLimitError(error)) throw error;
+    console.warn('AI provider rate limit hit; waiting 60 seconds before one retry', JSON.stringify({ agent, model, waitMs: RATE_LIMIT_RETRY_DELAY_MS }));
+    await new Promise<void>((resolve) => setTimeout(resolve, RATE_LIMIT_RETRY_DELAY_MS));
+    // A second failure is surfaced to the normal incident path; never spin in a retry loop.
+    return request();
+  }
+}
+
 function getClient(agent: AgentName): OpenAI {
   const existing = clients.get(agent);
   if (existing) return existing;
   const config = getAgentRuntimeConfig(agent);
-  const client = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseURL, timeout: 30000, maxRetries: 1 });
+  // Rate-limit retries are handled explicitly below so every retry waits the full 60 seconds.
+  const client = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseURL, timeout: 30000, maxRetries: 0 });
   clients.set(agent, client);
   return client;
 }
@@ -177,7 +202,7 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
       usage?: { completion_tokens?: number; prompt_tokens?: number; total_tokens?: number };
     };
     try {
-      response = await getClient(agent).chat.completions.create(requestPayload);
+      response = await requestWithRateLimitRetry(() => getClient(agent).chat.completions.create(requestPayload), agent, config.model);
     } catch (error) {
       const providerError = error as { status?: number; code?: string; request_id?: string; message?: string; headers?: Headers | Record<string, string> };
       const status = typeof providerError.status === 'number' ? providerError.status : undefined;
@@ -237,7 +262,7 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
         reasoningPresent: Boolean(firstChoice?.message?.reasoning),
       }));
       const retryPayload = { ...requestPayload, max_completion_tokens: 2_400 };
-      response = await getClient(agent).chat.completions.create(retryPayload);
+      response = await requestWithRateLimitRetry(() => getClient(agent).chat.completions.create(retryPayload), agent, config.model);
       content = response.choices[0]?.message?.content;
     }
     if (typeof content !== 'string' || !content.trim()) {
