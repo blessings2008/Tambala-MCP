@@ -227,7 +227,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
   const recent = await deps.store.recent(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
   for (const waiting of recent) {
     if (waiting.source_duty_id !== 'approved-prospect-first-contact' || waiting.status !== 'awaiting_founder') continue;
-    if (!/whatsapp[\\s-]*registered/i.test(waiting.result ?? '')) continue;
+    if (!/whatsapp[\s-]*registered/i.test(waiting.result ?? '')) continue;
     await deps.store.update(waiting.id, {
       status: 'queued',
       error: 'System resumed: the shared outbox verifies WhatsApp registration; Founder confirmation is not required.',
