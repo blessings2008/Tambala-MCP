@@ -290,7 +290,7 @@ function salesResultQualifies(result: string, organisationName: string): boolean
 const approvedProspectDispatching = new Set<string>();
 
 async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId: string): Promise<boolean> {
-  if (prospect.verification_status !== 'verified' || !prospect.service_fit.length || !prospect.public_phone) return false;
+  if (prospect.verification_status !== 'verified' || !prospect.service_fit.length || !prospect.public_phone || !prospect.reason_for_fit?.trim() || !prospect.source_urls?.length) return false;
   if (approvedProspectDispatching.has(leadId)) return false;
   approvedProspectDispatching.add(leadId);
   try {
@@ -307,6 +307,9 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
   if (!lead || String(lead.status ?? '').toLowerCase() !== 'new') return false;
   const phone = [lead.whatsapp, lead.phone].find((value) => typeof value === 'string' && value.trim()) as string | undefined;
   if (!phone) return false;
+
+  const publishedPhone = prospect.public_phone.split(/[;,]/)[0]?.replace(/\D/g, '') ?? '';
+  if (!publishedPhone || phone.replace(/\D/g, '') !== publishedPhone) return false;
 
   const phoneDigits = phone.replace(/\D/g, '');
   const sentMessages = await supabaseSelect<{ number: string }>(
