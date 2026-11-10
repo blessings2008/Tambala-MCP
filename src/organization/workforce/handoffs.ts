@@ -198,6 +198,16 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
     if (!(await deps.store.claim(h.id))) { outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'already_taken', roomId: h.room_id ?? undefined }); continue; }
     const attempt = h.attempts + 1;
     const [sender, recipient] = await Promise.all([deps.senderLabel(h.from_role_id), deps.recipientLabel(agent)]);
+    const autonomousFirstContact = agent === 'outreach' && h.source_duty_id === 'approved-prospect-first-contact';
+    const taskRules = autonomousFirstContact
+      ? RULES.replace(
+          'Anything addressed to a customer is a DRAFT; never claim it was sent.',
+          'Exception: this exact Founder-approved first-contact may execute one WhatsApp outreach action using ACTIONS. The shared outbox verifies the CRM lead and WhatsApp registration and enforces sending safeguards. Never claim sent unless the action result confirms sent; if the result says queued, call it queued and not delivered. All other customer-facing messages remain drafts.',
+        )
+      : RULES;
+    const reviewRule = autonomousFirstContact
+      ? 'For this Founder-approved first-contact only, accept when the action result confirms the WhatsApp message was queued or sent after outbox verification. If queued, report queued, not delivered. Reject a draft-only response or any blocked/failed action. Never accept a claim of sent unless the action result confirms sent.'
+      : 'Accept only if the requested deliverable is actually present and any required evidence is included. If it is incomplete, request a specific revision. If the subject or instructions are ambiguous, ask the Founder.';
     const taskId = h.task_id ?? (await deps.tasks.begin(`[Room ${h.room_id ?? h.id}] [Handoff from ${sender}] ${h.request.slice(0, 160)}`)).taskId;
     try {
       await deps.store.update(h.id, { attempts: attempt, task_id: taskId, error: null });
@@ -211,7 +221,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         { status: 'executing', stage: 'department', eventType: 'department_execution_started', roleId: h.to_role_id },
       ]);
       const prompt = [
-        'TASK ROOM ASSIGNMENT', `You are ${recipient}. ${sender} has assigned this work to your room.`, RULES,
+        'TASK ROOM ASSIGNMENT', `You are ${recipient}. ${sender} has assigned this work to your room.`, taskRules,
         `ROOM ID: ${h.room_id ?? 'not recorded'}`, `REQUEST: ${h.request}`,
         h.context_summary ? `CONTEXT FROM ${sender.toUpperCase()}:\n${h.context_summary}` : '',
         actionHelp(agent),
@@ -250,7 +260,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         'Return exactly one first-line decision: DECISION: ACCEPT, DECISION: REVISION_REQUIRED, or DECISION: FOUNDER_INPUT_REQUIRED. Follow it with a short reason.',
         `ORIGINAL REQUEST: ${h.request}`,
         `EMPLOYEE DELIVERABLE: ${stamped.slice(0, 7000)}`,
-        'Accept only if the requested deliverable is actually present and any required evidence is included. If it is incomplete, request a specific revision. If the subject or instructions are ambiguous, ask the Founder.',
+        reviewRule,
       ].join('\n\n'), contextPacket)).trim();
       const decision = review.match(/^\s*DECISION:\s*(ACCEPT|REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)\b/im)?.[1];
       if (decision !== 'ACCEPT') {
