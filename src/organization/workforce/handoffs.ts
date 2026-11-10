@@ -241,7 +241,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
     const taskRules = autonomousFirstContact
       ? RULES.replace(
           'Anything addressed to a customer is a DRAFT; never claim it was sent.',
-          'Exception: this exact Founder-approved first-contact may execute one WhatsApp outreach action using ACTIONS. The shared outbox verifies the CRM lead and WhatsApp registration and enforces sending safeguards. Never claim sent unless the action result confirms sent; if the result says queued, call it queued and not delivered. All other customer-facing messages remain drafts.',
+          'Exception: this exact Founder-approved first-contact may execute one WhatsApp outreach action using ACTIONS. The shared outbox verifies the CRM lead and WhatsApp registration and enforces sending safeguards. Do not claim prior client work, similar customers served, testimonials or results unless approved portfolio evidence supports the exact claim. Never claim sent unless the action result confirms sent; if the result says queued, call it queued and not delivered. All other customer-facing messages remain drafts.',
         )
       : RULES;
     const reviewRule = autonomousFirstContact
@@ -266,7 +266,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         `ROOM ID: ${h.room_id ?? 'not recorded'}`, `REQUEST: ${h.request}`,
         h.error ? `PREVIOUS ATTEMPT FEEDBACK: ${h.error}` : '',
         autonomousFirstContact && firstContactTarget
-          ? `MANDATORY FIRST-CONTACT ACTION: send exactly one WhatsApp outreach action to ${firstContactTarget.phone}; use ${firstContactTarget.contact} as the contact label. Do not use another number. A draft-only answer is invalid.`
+          ? `MANDATORY FIRST-CONTACT ACTION: send exactly one WhatsApp outreach action to ${firstContactTarget.phone}; use ${firstContactTarget.contact} as the contact label. Do not use another number. A draft-only answer is invalid. Do not claim prior client work, similar customers served, testimonials or results unless approved portfolio evidence supports the exact claim.`
           : '',
         h.context_summary ? `CONTEXT FROM ${sender.toUpperCase()}:\n${h.context_summary}` : '',
         actionHelp(agent),
