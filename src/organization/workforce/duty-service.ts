@@ -319,7 +319,7 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
   const phoneDigits = phone.replace(/\D/g, '');
   const sentMessages = await supabaseSelect<{ number: string; status: string }>(
     'organization_messages',
-    'select=number,status&direction=eq.out&audience=eq.client&status=in.(queued,sending,sent,blocked)&limit=1000',
+    'select=number,status&direction=eq.out&audience=eq.client&status=in.(queued,sending,sent,blocked,failed)&limit=1000',
   );
   if (sentMessages.some((message) => message.number.replace(/\D/g, '') === phoneDigits)) return false;
 
