@@ -61,7 +61,7 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
   const founder = deps.founderNumber();
   const blocked = await deps.store.blockedNumbers();
   const base = decide({ to, purpose: input.purpose, agent: input.agent, text: input.text, hasDocument: Boolean(input.documentId) }, { founderNumber: founder, blocked });
-  if (base.audience === 'client' && autonomousOutreach) {
+  if (base.audience === 'client' && autonomousOutreach && base.verdict !== 'block') {
     const crmLabel = await deps.verifyOutreachLead?.(to);
     if (!crmLabel || !/\(lead\)$/i.test(crmLabel)) {
       throw new OutboxError('Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number. No customer message was queued.');
