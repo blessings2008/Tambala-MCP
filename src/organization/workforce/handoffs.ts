@@ -224,6 +224,20 @@ function confirmsQueuedOrSentAction(value: string): boolean {
 /** Each delegation runs in an isolated, durable room. A room closes only after its deliverable is accepted. */
 export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<HandoffOutcome[]> {
   const outcomes: HandoffOutcome[] = [];
+  const recent = await deps.store.recent(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+  for (const waiting of recent) {
+    if (waiting.source_duty_id !== 'approved-prospect-first-contact' || waiting.status !== 'awaiting_founder') continue;
+    if (!/whatsapp[\\s-]*registered/i.test(waiting.result ?? '')) continue;
+    await deps.store.update(waiting.id, {
+      status: 'queued',
+      error: 'System resumed: the shared outbox verifies WhatsApp registration; Founder confirmation is not required.',
+      completed_at: null,
+    });
+    if (waiting.room_id) {
+      await deps.store.updateRoom(waiting.room_id, { status: 'active', blocker: null });
+      await deps.store.roomEvent(waiting.room_id, 'first_contact_resumed_for_outbox_verification', null, { reason: 'WhatsApp registration is verified by the shared outbox.' });
+    }
+  }
   for (const h of await deps.store.queued(limit)) {
     const agent = h.to_agent as AgentName;
     const blocked = await deps.agentUnavailableReason(agent);
@@ -288,6 +302,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       }
       const result = acted.clean.trim();
       if (!result) throw new Error('The employee returned no work product.');
+      if (autonomousFirstContact && isFounderClarificationRequest(result)) throw new Error('Do not ask the Founder to confirm WhatsApp registration or first-contact permission; the approved destination is supplied and the shared outbox performs verification.');
       const actionsText = await deps.actions.run({ agent, roleId: h.to_role_id, taskId }, acted.actions, acted.rejected);
       if (autonomousFirstContact && !confirmsQueuedOrSentAction(actionsText)) {
         throw new Error('The WhatsApp action did not confirm a queued or sent result; no first-contact message is recorded as complete.');
