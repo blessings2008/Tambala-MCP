@@ -212,7 +212,7 @@ function approvedFirstContactMessage(contextSummary: string | null, target: { ph
       software_development: 'custom software development',
       social_media_management: 'social media management and content planning',
     };
-    const services = [...new Set(fit.map((item) => labels[item.toLowerCase().replace(/[\\s-]+/g, '_')]).filter(Boolean))];
+    const services = [...new Set(fit.map((item) => labels[item.toLowerCase().replace(/[\s-]+/g, '_')]).filter(Boolean))];
     if (!services.length) return null;
     const sectorLine = sector ? ` I came across your work in ${sector}.` : '';
     return [
@@ -221,7 +221,7 @@ function approvedFirstContactMessage(contextSummary: string | null, target: { ph
       `We provide ${services.join(' and ')} to help organisations strengthen their digital presence and communicate their work more effectively.`,
       'Would you be open to a brief conversation about whether these services could be useful to your organisation?',
       'Thank you for your time.',
-    ].join('\\n\\n');
+    ].join('\n\n');
   } catch {
     return null;
   }
