@@ -112,6 +112,7 @@ test('Founder-approved first-contact handoffs may execute WhatsApp and accept a 
     toAgent: 'outreach',
     sourceDutyId: 'approved-prospect-first-contact',
     request: 'Founder-approved first contact for AgriTrust',
+    contextSummary: JSON.stringify({ prospect: { organisation_name: 'AgriTrust' }, crm_lead: { phone: '+265888123456' } }),
   });
   const out = await processHandoffs(deps);
   assert.equal(out[0].status, 'completed');
