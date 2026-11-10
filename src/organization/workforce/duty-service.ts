@@ -287,8 +287,13 @@ function salesResultQualifies(result: string, organisationName: string): boolean
   return output.includes(name) && /\brecommendation\b[\s\S]{0,240}\bqualif(?:y|ied)\b/i.test(result);
 }
 
+const approvedProspectDispatching = new Set<string>();
+
 async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId: string): Promise<boolean> {
   if (prospect.verification_status !== 'verified' || !prospect.service_fit.length || !prospect.public_phone) return false;
+  if (approvedProspectDispatching.has(leadId)) return false;
+  approvedProspectDispatching.add(leadId);
+  try {
   const previous = await supabaseSelect<{ request: string; status: string }>(
     'organization_handoffs',
     'select=request,status&source_duty_id=eq.approved-prospect-first-contact&order=created_at.desc&limit=500',
@@ -352,6 +357,9 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
     sign: signWork,
   });
   return true;
+  } finally {
+    approvedProspectDispatching.delete(leadId);
+  }
 }
 
 /** Dispatch at most one newly promoted prospect per runner cycle, with idempotent handoff checks. */
@@ -747,10 +755,8 @@ export async function runDutiesOnce(opts: { dutyId?: string; force?: boolean; ha
   running = true;
   try {
     const outcomes = opts.handoffsOnly ? [] : await runDueDuties(productionDeps(), opts);
-    if (!opts.skipDiscoveryQueue) {
-      await dispatchNewDiscoveryQueue();
-      await dispatchPromotedProspectsToSales();
-    }
+    if (!opts.skipDiscoveryQueue) await dispatchNewDiscoveryQueue();
+    await dispatchPromotedProspectsToSales();
     const handoffs = await processHandoffs(productionHandoffDeps());
     const messages = await runOutbox().catch(() => [] as SendOutcome[]);
     return { outcomes, handoffs, messages };
