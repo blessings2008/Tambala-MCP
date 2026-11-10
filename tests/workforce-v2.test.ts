@@ -97,6 +97,29 @@ test('the Founder assigns work and the employee completes it', async () => {
   assert.equal((await processHandoffs(deps)).length, 0); // nothing left in the inbox
 });
 
+test('Founder-approved first-contact handoffs may execute WhatsApp and accept a queued result', async () => {
+  const prompts: string[] = [];
+  const { deps, store } = handoffDeps({
+    askAgent: async (agent, prompt) => {
+      prompts.push(`${agent}: ${prompt}`);
+      if (agent === 'orchestrator') return `DECISION: ACCEPT\nThe verified WhatsApp action was queued.`;
+      return `Prepared a personalised introduction.\n\nACTIONS:\n{"type":"whatsapp","to":"+265888123456","purpose":"outreach","text":"Hello AgriTrust team."}`;
+    },
+    actions: { run: async () => 'WhatsApp message was queued for sending; delivery is not confirmed yet.' },
+  });
+  await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'outreach',
+    sourceDutyId: 'approved-prospect-first-contact',
+    request: 'Founder-approved first contact for AgriTrust',
+  });
+  const out = await processHandoffs(deps);
+  assert.equal(out[0].status, 'completed');
+  assert.match(prompts[0], /Exception: this exact Founder-approved first-contact/i);
+  assert.match(prompts[1], /accept when the action result confirms the WhatsApp message was queued or sent/i);
+  assert.match(store.rows[0].result ?? '', /queued for sending/);
+});
+
 test('task rooms pause on clarification and retain their history instead of completing', async () => {
   assert.equal(isFounderClarificationRequest('Clarification Required — do you mean Malabi Exclusive Lodges or the dessert?'), true);
   assert.equal(isFounderClarificationRequest('The lodge is in Lilongwe. Would you like a summary?'), false);
