@@ -251,32 +251,41 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
       throw new Error(`${agent} agent ${config.provider} request failed${status ? ` (HTTP ${status})` : ''}: ${detail}`);
     }
     let content = response.choices[0]?.message?.content;
-    if ((typeof content !== 'string' || !content.trim()) && agent === 'operations') {
-      const firstChoice = response.choices[0];
-      console.warn('Operations provider returned no message content; retrying once with a larger completion budget', JSON.stringify({
+    const firstChoice = response.choices[0];
+    const firstFinishReason = firstChoice?.finish_reason ?? null;
+    const needsCompletionRecovery = typeof content !== 'string' || !content.trim() || firstFinishReason === 'length';
+    if (needsCompletionRecovery) {
+      // gpt-oss models can spend the entire completion allowance on reasoning and
+      // return no user-visible content. This recovery is shared by every agent,
+      // not just Operations. Keep the retry bounded to protect Groq TPM budgets.
+      const retryCompletionBudget = Math.min(2_800, Math.max(2_400, completionBudget * 2));
+      console.warn('AI provider returned an empty or length-truncated completion; retrying once with a larger bounded budget', JSON.stringify({
+        agent,
         provider: config.provider,
         model: config.model,
-        finishReason: firstChoice?.finish_reason ?? null,
-        completionTokens: response.usage?.completion_tokens ?? null,
+        firstFinishReason,
+        firstCompletionTokens: response.usage?.completion_tokens ?? null,
         refusalPresent: Boolean(firstChoice?.message?.refusal),
         reasoningPresent: Boolean(firstChoice?.message?.reasoning),
+        retryCompletionBudget,
       }));
-      const retryPayload = { ...requestPayload, max_completion_tokens: 2_400 };
+      const retryPayload = { ...requestPayload, max_completion_tokens: retryCompletionBudget };
       response = await requestWithRateLimitRetry(() => getClient(agent).chat.completions.create(retryPayload), agent, config.model);
       content = response.choices[0]?.message?.content;
     }
     if (typeof content !== 'string' || !content.trim()) {
       const choice = response.choices[0];
-      console.error('AI provider returned no usable message content', JSON.stringify({
+      const finishReason = choice?.finish_reason ?? null;
+      console.error('AI provider returned no usable message content after bounded recovery', JSON.stringify({
         agent,
         provider: config.provider,
         model: config.model,
-        finishReason: choice?.finish_reason ?? null,
+        finishReason,
         completionTokens: response.usage?.completion_tokens ?? null,
         refusalPresent: Boolean(choice?.message?.refusal),
         reasoningPresent: Boolean(choice?.message?.reasoning),
       }));
-      throw new Error(`The ${agent} AI provider returned an empty response.`);
+      throw new Error(`The ${agent} AI provider returned no usable message content after one recovery attempt (finish reason: ${finishReason ?? 'unknown'}).`);
     }
     return content;
   } finally {
