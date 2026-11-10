@@ -358,7 +358,7 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
       `Send only to the supplied CRM number (${phone}) if the shared outbox confirms it is a CRM lead and WhatsApp-registered. Do not try another number or channel; respect opt-outs and sending limits.`,
       'Finish with ACTIONS: on its own line followed by exactly one valid JSON whatsapp action with purpose=outreach, the supplied number, the verified person or organisation name as contact, and the final message text. A draft alone is incomplete.',
       `CRM lead ID: ${leadId}.`,
-    ].join('\\n'),
+    ].join('\n'),
     contextSummary,
     sign: signWork,
   });
