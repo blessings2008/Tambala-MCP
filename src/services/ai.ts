@@ -10,7 +10,7 @@ const clients = new Map<AgentName, OpenAI>();
 // Preserve the full organization and grounding rules while keeping total requests below provider TPM limits.
 const MAX_SYSTEM_PROMPT_CHARS = 9_000;
 const MAX_USER_INPUT_CHARS = 3_000;
-const MAX_CONTEXT_CHARS = 700;
+const MAX_CONTEXT_CHARS = 4_000;
 const MAX_COMPLETION_TOKENS = 900;
 
 function boundText(value: string, maxChars: number): string {
