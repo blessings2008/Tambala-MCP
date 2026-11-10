@@ -73,6 +73,13 @@ ACTIONS:
   assert.match(mixed.rejected[0], /teleport/);
 });
 
+test('outreach action help forbids placeholders and requires an executable ACTIONS block', () => {
+  const help = actionHelp('outreach');
+  assert.match(help, /ACTIONS:/);
+  assert.match(help, /unresolved placeholders/i);
+  assert.match(help, /exact verified business name/i);
+});
+
 test('permissions: only the right roles may message customers, make documents and create payment links', () => {
   assert.deepEqual(allowedActionTypes('security'), ['notify_founder']);
   assert.deepEqual(allowedActionTypes('outreach'), ['notify_founder', 'whatsapp', 'document']);
