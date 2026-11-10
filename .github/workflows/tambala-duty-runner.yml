@@ -19,7 +19,7 @@ concurrency:
 jobs:
   run-due-duties:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
       - name: Verify scheduler secret is configured
         env:
@@ -40,7 +40,7 @@ jobs:
         env:
           SCHEDULER_TOKEN: ${{ secrets.TAMBALA_SCHEDULER_TOKEN }}
         run: |
-          curl --fail --silent --show-error --retry 2 --retry-delay 5 --retry-all-errors --max-time 90 \
+          curl --fail --silent --show-error --retry 2 --retry-delay 5 --retry-all-errors --max-time 180 \
             -X POST https://tambala-org.onrender.com/api/duties/run \
             -H "Authorization: Bearer $SCHEDULER_TOKEN" \
             -H "Content-Type: application/json" \

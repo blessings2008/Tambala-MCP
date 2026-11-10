@@ -3,6 +3,7 @@
  *   POST /message/sendText/{instance}     { number, text, delay? }
  *   POST /message/sendMedia/{instance}    { number, mediatype, mimetype, caption, media (URL or base64), fileName, delay? }
  *   GET  /instance/connectionState/{instance}
+ *   POST /chat/whatsappNumbers/{instance} { numbers: [number] }
  * Authentication is the `apikey` header.
  */
 export interface EvolutionConfig { url: string; key: string; instance: string }
@@ -62,6 +63,28 @@ export async function sendDocument(number: string, base64: string, fileName: str
     json: { number, mediatype: 'document', mimetype: 'application/pdf', caption, media: base64, fileName, delay: 1200 },
   });
   return { id: messageId(data) };
+}
+
+/** Verify one destination against WhatsApp before autonomous first-contact outreach. */
+export async function isWhatsAppNumber(number: string): Promise<boolean> {
+  const digits = number.replace(/\D/g, '');
+  if (!/^\d{8,15}$/.test(digits)) return false;
+  const request = () => call('/chat/whatsappNumbers/{instance}', { method: 'POST', json: { numbers: [digits] } });
+  let data: Record<string, unknown>;
+  try {
+    data = await request();
+  } catch (error) {
+    if (!(error instanceof EvolutionError) || !/Evolution API 429/.test(error.message)) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 60_000));
+    data = await request();
+  }
+  const rows: unknown[] = Array.isArray(data) ? data : Array.isArray(data.response) ? data.response as unknown[] : [];
+  return rows.some((entry) => {
+    if (!entry || typeof entry !== 'object') return false;
+    const row = entry as Record<string, unknown>;
+    const returnedNumber = String(row.number ?? row.jid ?? '').split('@')[0].replace(/\D/g, '');
+    return row.exists === true && returnedNumber === digits;
+  });
 }
 
 /** Evolution returns { instance: { instanceName, state } } (v2) or { state } on some builds. */

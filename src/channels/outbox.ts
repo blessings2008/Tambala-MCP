@@ -61,7 +61,7 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
   const founder = deps.founderNumber();
   const blocked = await deps.store.blockedNumbers();
   const base = decide({ to, purpose: input.purpose, agent: input.agent, text: input.text, hasDocument: Boolean(input.documentId) }, { founderNumber: founder, blocked });
-  if (base.audience === 'client' && autonomousOutreach) {
+  if (base.audience === 'client' && autonomousOutreach && base.verdict !== 'block') {
     const crmLabel = await deps.verifyOutreachLead?.(to);
     if (!crmLabel || !/\(lead\)$/i.test(crmLabel)) {
       throw new OutboxError('Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number. No customer message was queued.');
@@ -151,6 +151,7 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
   const blocked = await deps.store.blockedNumbers();
   const counts = { client: await deps.store.sentSince(since, 'client'), founder: await deps.store.sentSince(since, 'founder') };
   let sentClient = 0;
+  let clientAttempted = 0;
 
   for (const row of await deps.store.queued(max)) {
     const wait = async (reason: string) => { await deps.store.update(row.id, { status: 'queued', claimed_at: null, reason }); out.push({ id: row.id, status: 'waiting', reason }); };
@@ -167,9 +168,11 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
         if (remaining > 0) { await wait(`Customer-send cooldown active. Try again in about ${Math.ceil(remaining / 1000)} seconds.`); continue; }
       }
       if (counts.client >= CLIENT_DAILY_LIMIT()) { await wait(`Daily customer limit of ${CLIENT_DAILY_LIMIT()} reached. It will go out tomorrow.`); continue; }
+      if (clientAttempted >= 1) { await wait('One customer message per outbox pass; the rest will be picked up by the next scheduler cycle.'); continue; }
     } else if (counts.founder >= FOUNDER_DAILY_LIMIT()) { await wait('Daily limit of messages to the Founder reached.'); continue; }
 
     try {
+      if (row.audience === 'client') clientAttempted += 1;
       if (row.audience === 'client' && sentClient > 0 && deps.pauseMs) await (deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(deps.pauseMs);
       let result: { id: string | null };
       if (row.document_id) {

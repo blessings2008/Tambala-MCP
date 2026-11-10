@@ -287,6 +287,98 @@ function salesResultQualifies(result: string, organisationName: string): boolean
   return output.includes(name) && /\brecommendation\b[\s\S]{0,240}\bqualif(?:y|ied)\b/i.test(result);
 }
 
+const approvedProspectDispatching = new Set<string>();
+
+async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId: string): Promise<boolean> {
+  if (prospect.verification_status !== 'verified' || !prospect.service_fit.length || !prospect.public_phone || !prospect.reason_for_fit?.trim() || !Array.isArray(prospect.source_urls) || prospect.source_urls.length === 0) return false;
+  if (approvedProspectDispatching.has(leadId)) return false;
+  approvedProspectDispatching.add(leadId);
+  try {
+  const previous = await supabaseSelect<{ request: string; status: string }>(
+    'organization_handoffs',
+    'select=request,status&source_duty_id=eq.approved-prospect-first-contact&order=created_at.desc&limit=500',
+  );
+  if (previous.some((item) => item.request.includes(`CRM lead ID: ${leadId}.`))) return false;
+
+  const leads = await supabaseSelect<Row>('leads',
+    `select=id,name,business_name,phone,whatsapp,status,notes&id=eq.${encodeURIComponent(leadId)}&limit=1`,
+  );
+  const lead = leads[0];
+  if (!lead || String(lead.status ?? '').toLowerCase() !== 'new') return false;
+  const phone = [lead.whatsapp, lead.phone].find((value) => typeof value === 'string' && value.trim()) as string | undefined;
+  if (!phone) return false;
+
+  const publishedPhone = prospect.public_phone.split(/[;,]/)[0]?.replace(/\D/g, '') ?? '';
+  if (!publishedPhone || phone.replace(/\D/g, '') !== publishedPhone) return false;
+
+  const phoneDigits = phone.replace(/\D/g, '');
+  const sentMessages = await supabaseSelect<{ number: string }>(
+    'organization_messages',
+    'select=number&direction=eq.out&audience=eq.client&status=eq.sent&limit=1000',
+  );
+  if (sentMessages.some((message) => message.number.replace(/\D/g, '') === phoneDigits)) return false;
+
+  const sources = Array.isArray(prospect.source_urls)
+    ? prospect.source_urls.filter((value): value is string => typeof value === 'string')
+    : [];
+  const contextSummary = JSON.stringify({
+    source: 'public.lead_discovery_queue + public.leads',
+    instruction: 'Founder-approved, evidence-qualified prospect. Use only the supplied facts; do not repeat research.',
+    prospect: {
+      queue_id: prospect.id,
+      organisation_name: prospect.organisation_name,
+      website: prospect.website,
+      sector: prospect.sector,
+      service_fit: prospect.service_fit,
+      reason_for_fit: prospect.reason_for_fit,
+      decision_maker_name: prospect.decision_maker_name,
+      decision_maker_title: prospect.decision_maker_title,
+      public_email: prospect.public_email,
+      public_phone: prospect.public_phone,
+      source_urls: sources,
+      first_contact_message: prospect.first_contact_message,
+      verification_status: prospect.verification_status,
+    },
+    crm_lead: { id: leadId, name: lead.name, business_name: lead.business_name, phone: lead.phone, whatsapp: lead.whatsapp, status: lead.status },
+  });
+
+  await queueHandoff(handoffStore(), {
+    fromRoleId: 'ceo',
+    toAgent: 'outreach',
+    sourceDutyId: 'approved-prospect-first-contact',
+    request: [
+      'FIRST-CONTACT OUTREACH: this is one Founder-approved prospect, already promoted into the CRM.',
+      'Prepare and send one personalised first-contact WhatsApp introduction using the supplied verified company facts and active Tambala services.',
+      'The Founder has authorised autonomous first contact; do not ask for individual message approval.',
+      'The shared outbox independently checks that the destination is a CRM lead and is registered on WhatsApp. If that check fails, do not try another number or send by another channel; report the exact blocker.',
+      'Do not repeat web research, invent a decision-maker, or claim unverified needs. You may adapt the supplied first_contact_message if it is present and evidence-supported.',
+      'Use exactly one whatsapp action with purpose=outreach. Keep the message natural, personalised, respectful and free of internal employee identities.',
+      `CRM lead ID: ${leadId}.`,
+      `WhatsApp destination from CRM: ${phone}.`,
+    ].join(' '),
+    contextSummary,
+    sign: signWork,
+  });
+  return true;
+  } finally {
+    approvedProspectDispatching.delete(leadId);
+  }
+}
+
+/** Dispatch at most one newly promoted prospect per runner cycle, with idempotent handoff checks. */
+export async function dispatchPromotedProspectsToSales(): Promise<number> {
+  if (!dbConfigured()) return 0;
+  const prospects = await supabaseSelect<DiscoveryQueueRow>(
+    'lead_discovery_queue',
+    'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id&processing_status=eq.promoted&verification_status=eq.verified&order=updated_at.asc&limit=100',
+  );
+  for (const prospect of prospects) {
+    if (!prospect.crm_lead_id) continue;
+    if (await queueApprovedProspectForSales(prospect, prospect.crm_lead_id)) return 1;
+  }
+  return 0;
+}
+
 async function applyDiscoveryCrmApproval(approval: ApprovalRow, decision: 'approved' | 'rejected', note: string): Promise<void> {
   const queueId = approval.subject_id;
   if (!queueId) throw new Error('Discovery CRM approval is missing its queue record ID.');
@@ -309,6 +401,7 @@ async function applyDiscoveryCrmApproval(approval: ApprovalRow, decision: 'appro
 
   if (prospect.crm_lead_id) {
     await supabaseUpdate('lead_discovery_queue', { processing_status: 'promoted', updated_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(queueId)}`);
+    if (await queueApprovedProspectForSales(prospect, prospect.crm_lead_id)) await processHandoffs(productionHandoffDeps());
     return;
   }
 
@@ -326,6 +419,7 @@ async function applyDiscoveryCrmApproval(approval: ApprovalRow, decision: 'appro
       { processing_status: 'promoted', crm_lead_id: existingLead.id, updated_at: new Date().toISOString() },
       `id=eq.${encodeURIComponent(queueId)}`,
     );
+    if (await queueApprovedProspectForSales(prospect, existingLead.id)) await processHandoffs(productionHandoffDeps());
     return;
   }
   const existingClient = clientRows.find((client) =>
@@ -371,6 +465,7 @@ async function applyDiscoveryCrmApproval(approval: ApprovalRow, decision: 'appro
     { processing_status: 'promoted', crm_lead_id: lead.id, updated_at: new Date().toISOString() },
     `id=eq.${encodeURIComponent(queueId)}`,
   );
+  if (await queueApprovedProspectForSales(prospect, lead.id)) await processHandoffs(productionHandoffDeps());
 }
 
 registerApprovalHook('lead_discovery_queue', applyDiscoveryCrmApproval);
@@ -664,6 +759,7 @@ export async function runDutiesOnce(opts: { dutyId?: string; force?: boolean; ha
   try {
     const outcomes = opts.handoffsOnly ? [] : await runDueDuties(productionDeps(), opts);
     if (!opts.skipDiscoveryQueue) await dispatchNewDiscoveryQueue();
+    await dispatchPromotedProspectsToSales();
     const handoffs = await processHandoffs(productionHandoffDeps());
     const messages = await runOutbox().catch(() => [] as SendOutcome[]);
     return { outcomes, handoffs, messages };

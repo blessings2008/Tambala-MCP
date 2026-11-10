@@ -9,7 +9,7 @@ import { getBusinessSummary, getCompactCompanyContext } from '../services/ai/con
 import { buildProspectingSearchQueries } from '../services/web-research.js';
 import { signWork } from '../organization/workforce/sign-work.js';
 import { loadPdfForSending } from '../documents/service.js';
-import { connectionState, evolutionConfig, evolutionConfigured, sendDocument, sendText } from './evolution.js';
+import { connectionState, evolutionConfig, evolutionConfigured, isWhatsAppNumber, sendDocument, sendText } from './evolution.js';
 import { handleEvolutionWebhook, type FounderMessageEnvelope, type InboundDeps, type InboundSummary } from './inbound.js';
 import { messageStore, type MessageStore } from './message-store.js';
 import { onApprovalDecided, processOutbox, queueMessage, type OutboxDeps, type QueueInput, type QueueResult, type SendOutcome } from './outbox.js';
@@ -32,7 +32,7 @@ export function productionOutboxDeps(store: MessageStore = messageStore(), now: 
     approvals: { create: (input) => createApprovalRequest({ ...input }) },
     senderLabel: (roleId) => labelForRole(roleId),
     cooldownMs: Math.max(90_000, Number(process.env.TAMBALA_WHATSAPP_COOLDOWN_MS) || 90_000),
-    verifyOutreachLead: contactLabel,
+    verifyOutreachLead,
   };
 }
 
@@ -74,6 +74,34 @@ export async function contactLabel(number: string): Promise<string | null> {
   if (!dbConfigured()) return null;
   const hit = (await contacts()).find((c) => c.numbers.includes(number));
   return hit ? `${hit.name} (${hit.type})` : null;
+}
+
+let lastWhatsAppCheckAt = 0;
+let whatsappCheckQueue: Promise<void> = Promise.resolve();
+const whatsappCheckCache = new Map<string, { at: number; exists: boolean }>();
+
+/** Only a CRM lead is eligible for autonomous first contact; verify WhatsApp registration too. */
+async function verifyOutreachLead(number: string): Promise<string | null> {
+  if (!dbConfigured()) return null;
+  const hit = (await contacts()).find((contact) => contact.type === 'lead' && contact.numbers.includes(number));
+  if (!hit) return null;
+  const cached = whatsappCheckCache.get(number);
+  if (cached && Date.now() - cached.at < 24 * 60 * 60_000) return cached.exists ? hit.name + ' (lead)' : null;
+
+  let release!: () => void;
+  const previous = whatsappCheckQueue;
+  whatsappCheckQueue = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+  try {
+    const waitMs = Math.max(0, 90_000 - (Date.now() - lastWhatsAppCheckAt));
+    if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+    lastWhatsAppCheckAt = Date.now();
+    const exists = await isWhatsAppNumber(number);
+    whatsappCheckCache.set(number, { at: Date.now(), exists });
+    return exists ? hit.name + ' (lead)' : null;
+  } finally {
+    release();
+  }
 }
 
 async function answerFounderKnowledgeQuestion(envelope: FounderMessageEnvelope): Promise<string> {

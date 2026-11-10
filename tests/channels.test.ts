@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer, type IncomingMessage } from 'node:http';
 import { jidToNumber, maskNumber, normalizePhone } from '../src/channels/phone.ts';
 import { CLIENT_FACING_AGENTS, decide, sendWindowOpen, validateText, withOptOut } from '../src/channels/policy.ts';
-import { connectionState, EvolutionError, evolutionConfigured, sendDocument, sendText } from '../src/channels/evolution.ts';
+import { connectionState, EvolutionError, evolutionConfigured, isWhatsAppNumber, sendDocument, sendText } from '../src/channels/evolution.ts';
 import { InMemoryMessageStore } from '../src/channels/message-store.ts';
 import { onApprovalDecided, OutboxError, processOutbox, queueMessage, sanitizeCustomerMessage, type OutboxDeps } from '../src/channels/outbox.ts';
 import { handleEvolutionWebhook, messageText, senderNumber, type InboundDeps } from '../src/channels/inbound.ts';
@@ -95,6 +95,18 @@ test('Evolution client: sendText, sendDocument and connection state use the docu
   await withEvolution(() => ({ status: 200, json: { state: 'close' } }), async () => assert.deepEqual(await connectionState(), { state: 'close' }));
 });
 
+test('Evolution client: WhatsApp registration check confirms the exact number', async () => {
+  await withEvolution(() => ({ status: 200, json: [{ exists: true, jid: '265888123456@s.whatsapp.net', number: '265888123456' }] }), async (m) => {
+    assert.equal(await isWhatsAppNumber('+265 888 123 456'), true);
+    assert.equal(m.seen[0].method, 'POST');
+    assert.equal(m.seen[0].url, '/chat/whatsappNumbers/tambala%20main');
+    assert.deepEqual(m.seen[0].body, { numbers: ['265888123456'] });
+  });
+  await withEvolution(() => ({ status: 200, json: [{ exists: false, number: '265888123456' }] }), async () => {
+    assert.equal(await isWhatsAppNumber('265888123456'), false);
+  });
+});
+
 test('Evolution client: bad numbers are not retried, server errors are, and unconfigured is explicit', async () => {
   await withEvolution(() => ({ status: 400, json: { response: { message: [{ exists: false, number: '1' }] } } }), async () => {
     await assert.rejects(sendText('1', 'x'), (e: unknown) => e instanceof EvolutionError && e.retryable === false && /400/.test(e.message));
@@ -184,6 +196,18 @@ test('outbox: autonomous first contact is rejected when the number is not a CRM 
     /matching CRM lead/,
   );
   assert.equal(h.store.rows.length, 0);
+});
+
+test('outbox: at most one customer message is attempted per scheduler pass', async () => {
+  const h = outboxHarness();
+  const first = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello first prospect.', purpose: 'outreach' });
+  const second = await queueMessage(h.deps, { ...sales, to: '0888777888', text: 'Hello second prospect.', purpose: 'outreach' });
+  const firstPass = await processOutbox(h.deps);
+  assert.equal(firstPass.find((item) => item.id === first.id)?.status, 'sent');
+  assert.equal(firstPass.find((item) => item.id === second.id)?.status, 'waiting');
+  assert.match(firstPass.find((item) => item.id === second.id)?.reason ?? '', /one customer message per outbox pass/i);
+  const secondPass = await processOutbox(h.deps);
+  assert.equal(secondPass.find((item) => item.id === second.id)?.status, 'sent');
 });
 
 test('outbox: customer cooldown is enforced between separate worker runs', async () => {
