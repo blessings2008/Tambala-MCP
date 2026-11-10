@@ -47,26 +47,26 @@ export async function syncCompletedDiscoveryReviews(): Promise<DiscoveryReviewSy
     promoted: 0, duplicates: 0, rejected: 0, investigating: 0, skipped: 0, failed: 0,
   };
 
-  const handoffs = await supabaseSelect<DiscoveryReviewHandoff>(
-    'organization_handoffs',
-    'select=id,request,result&source_duty_id=eq.lead-discovery-queue-watcher&status=eq.completed&order=completed_at.asc&limit=100',
+  const queues = await supabaseSelect<DiscoveryQueueReviewState>(
+    'lead_discovery_queue',
+    'select=id,processing_status,verification_status,public_email,public_phone&processing_status=in.(reviewing,qualified)&order=created_at.asc&limit=200',
   );
 
-  for (const handoff of handoffs) {
-    const queueId = discoveryQueueIdFromReviewRequest(handoff.request);
-    const recommendation = discoveryReviewRecommendation(handoff.result);
-    if (!queueId || !recommendation) {
-      summary.skipped += 1;
-      continue;
-    }
-
+  for (const queue of queues) {
     try {
-      const rows = await supabaseSelect<DiscoveryQueueReviewState>(
-        'lead_discovery_queue',
-        'select=id,processing_status,verification_status,public_email,public_phone&id=eq.' + encodeURIComponent(queueId),
+      const handoffs = await supabaseSelect<DiscoveryReviewHandoff>(
+        'organization_handoffs',
+        'select=id,request,result&source_duty_id=eq.lead-discovery-queue-watcher&status=eq.completed&request=ilike.' +
+          encodeURIComponent('*Queue record ID: ' + queue.id + '*') +
+          '&order=completed_at.desc&limit=1',
       );
-      const queue = rows[0];
-      if (!queue || ['promoted', 'duplicate', 'rejected'].includes(queue.processing_status)) {
+      const handoff = handoffs[0];
+      if (!handoff || discoveryQueueIdFromReviewRequest(handoff.request) !== queue.id) {
+        summary.skipped += 1;
+        continue;
+      }
+      const recommendation = discoveryReviewRecommendation(handoff.result);
+      if (!recommendation) {
         summary.skipped += 1;
         continue;
       }
