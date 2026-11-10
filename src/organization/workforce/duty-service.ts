@@ -292,6 +292,11 @@ const approvedProspectDispatching = new Set<string>();
 async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId: string): Promise<boolean> {
   if (prospect.verification_status !== 'verified' || !prospect.service_fit.length || !prospect.public_phone || !prospect.reason_for_fit?.trim() || !Array.isArray(prospect.source_urls) || prospect.source_urls.length === 0) return false;
   if (approvedProspectDispatching.has(leadId)) return false;
+  const active = await supabaseSelect<{ id: string }>(
+    'organization_handoffs',
+    'select=id&source_duty_id=eq.approved-prospect-first-contact&status=in.(queued,running,awaiting_founder)&limit=1',
+  );
+  if (active.length) return false;
   approvedProspectDispatching.add(leadId);
   try {
   const previous = await supabaseSelect<{ request: string; status: string }>(
@@ -347,16 +352,12 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
     toAgent: 'outreach',
     sourceDutyId: 'approved-prospect-first-contact',
     request: [
-      'FIRST-CONTACT OUTREACH: this is one Founder-approved prospect, already promoted into the CRM.',
-      'Prepare and send one personalised first-contact WhatsApp introduction using the supplied verified company facts and active Tambala services.',
-      'The Founder has authorised autonomous first contact; do not ask for individual message approval.',
-      'The shared outbox independently checks that the destination is a CRM lead and is registered on WhatsApp. If that check fails, do not try another number or send by another channel; report the exact blocker.',
-      'Do not repeat web research, invent a decision-maker, or claim unverified needs. You may adapt the supplied first_contact_message if it is present and evidence-supported.',
-      'Do not use placeholders such as [Name], {{name}}, or the literal word Name. If no named person is supplied, greet the organisation using its exact verified name: ' + prospect.organisation_name + ' team. Set contact to the verified person name if supplied, otherwise to the organisation name.',
-      'The task is incomplete unless you execute the WhatsApp action. End your answer with ACTIONS: on its own line, followed by exactly one valid JSON object with type=whatsapp, to set to the supplied CRM destination, purpose=outreach, contact set to the verified person or organisation name, and text set to the final message. Do not put action JSON outside ACTIONS or provide only a draft.',
-      'Use exactly one whatsapp action with purpose=outreach. Keep the message natural, personalised, respectful and free of internal employee identities.',
+      `Founder-approved first-contact for ${prospect.organisation_name}.`,
+      'Use only the attached verified evidence and Tambala service context; do not research again or invent a person or need.',
+      'The Founder authorises one autonomous WhatsApp introduction. If no verified person name is supplied, greet the organisation by its exact name followed by team. Never use placeholders.',
+      `Send only to the supplied CRM number (${phone}) if the shared outbox confirms it is a CRM lead and WhatsApp-registered. Do not try another number or channel; respect opt-outs and sending limits.`,
+      'Finish with ACTIONS: on its own line followed by exactly one valid JSON whatsapp action with purpose=outreach, the supplied number, the verified person or organisation name as contact, and the final message text. A draft alone is incomplete.',
       `CRM lead ID: ${leadId}.`,
-      `WhatsApp destination from CRM: ${phone}.`,
     ].join('\n'),
     contextSummary,
     sign: signWork,
@@ -370,6 +371,11 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
 /** Dispatch at most one newly promoted prospect per runner cycle, with idempotent handoff checks. */
 export async function dispatchPromotedProspectsToSales(): Promise<number> {
   if (!dbConfigured()) return 0;
+  const active = await supabaseSelect<{ id: string }>(
+    'organization_handoffs',
+    'select=id&source_duty_id=eq.approved-prospect-first-contact&status=in.(queued,running,awaiting_founder)&limit=1',
+  );
+  if (active.length) return 0;
   const prospects = await supabaseSelect<DiscoveryQueueRow>(
     'lead_discovery_queue',
     'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id&processing_status=eq.promoted&verification_status=eq.verified&order=updated_at.asc&limit=100',
@@ -761,7 +767,8 @@ export async function runDutiesOnce(opts: { dutyId?: string; force?: boolean; ha
   try {
     const outcomes = opts.handoffsOnly ? [] : await runDueDuties(productionDeps(), opts);
     if (!opts.skipDiscoveryQueue) await dispatchNewDiscoveryQueue();
-    await dispatchPromotedProspectsToSales();
+    try { await dispatchPromotedProspectsToSales(); }
+    catch (error) { console.error('Promoted-prospect dispatch failed; existing handoffs will still be processed:', error); }
     const handoffs = await processHandoffs(productionHandoffDeps());
     const messages = await runOutbox().catch(() => [] as SendOutcome[]);
     return { outcomes, handoffs, messages };
