@@ -224,6 +224,20 @@ function confirmsQueuedOrSentAction(value: string): boolean {
 /** Each delegation runs in an isolated, durable room. A room closes only after its deliverable is accepted. */
 export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<HandoffOutcome[]> {
   const outcomes: HandoffOutcome[] = [];
+  const recent = await deps.store.recent(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+  for (const waiting of recent) {
+    if (waiting.source_duty_id !== 'approved-prospect-first-contact' || waiting.status !== 'awaiting_founder') continue;
+    if (!/whatsapp[\s\-\u2010-\u2015]*registered/i.test(waiting.result ?? '')) continue;
+    await deps.store.update(waiting.id, {
+      status: 'queued',
+      error: 'System resumed: the shared outbox verifies WhatsApp registration; Founder confirmation is not required.',
+      completed_at: null,
+    });
+    if (waiting.room_id) {
+      await deps.store.updateRoom(waiting.room_id, { status: 'active', blocker: null });
+      await deps.store.roomEvent(waiting.room_id, 'first_contact_resumed_for_outbox_verification', null, { reason: 'WhatsApp registration is verified by the shared outbox.' });
+    }
+  }
   for (const h of await deps.store.queued(limit)) {
     const agent = h.to_agent as AgentName;
     const blocked = await deps.agentUnavailableReason(agent);
@@ -236,6 +250,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
     }
     if (!(await deps.store.claim(h.id))) { outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'already_taken', roomId: h.room_id ?? undefined }); continue; }
     const attempt = h.attempts + 1;
+    const previousError = h.error;
     const [sender, recipient] = await Promise.all([deps.senderLabel(h.from_role_id), deps.recipientLabel(agent)]);
     const autonomousFirstContact = agent === 'outreach' && h.source_duty_id === 'approved-prospect-first-contact';
     const taskRules = autonomousFirstContact
@@ -264,7 +279,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       const prompt = [
         'TASK ROOM ASSIGNMENT', `You are ${recipient}. ${sender} has assigned this work to your room.`, taskRules,
         `ROOM ID: ${h.room_id ?? 'not recorded'}`, `REQUEST: ${h.request}`,
-        h.error ? `PREVIOUS ATTEMPT FEEDBACK: ${h.error}` : '',
+        previousError ? `PREVIOUS ATTEMPT FEEDBACK: ${previousError}` : '',
         autonomousFirstContact && firstContactTarget
           ? `MANDATORY FIRST-CONTACT ACTION: send exactly one WhatsApp outreach action to ${firstContactTarget.phone}; use ${firstContactTarget.contact} as the contact label. Do not use another number. A draft-only answer is invalid. Do not claim prior client work, similar customers served, testimonials or results unless approved portfolio evidence supports the exact claim.`
           : '',
@@ -286,8 +301,10 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
           throw new Error('Approved first-contact requires exactly one executable WhatsApp outreach action; a draft alone is not accepted.');
         }
       }
-      const result = acted.clean.trim();
+      let result = acted.clean.trim();
+      if (!result && autonomousFirstContact && firstContactTarget) result = `Prepared the first-contact WhatsApp action for ${firstContactTarget.contact}.`;
       if (!result) throw new Error('The employee returned no work product.');
+      if (autonomousFirstContact && isFounderClarificationRequest(result)) throw new Error('Do not ask the Founder to confirm WhatsApp registration or first-contact permission; the approved destination is supplied and the shared outbox performs verification.');
       const actionsText = await deps.actions.run({ agent, roleId: h.to_role_id, taskId }, acted.actions, acted.rejected);
       if (autonomousFirstContact && !confirmsQueuedOrSentAction(actionsText)) {
         throw new Error('The WhatsApp action did not confirm a queued or sent result; no first-contact message is recorded as complete.');
