@@ -300,7 +300,8 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
           throw new Error('Approved first-contact requires exactly one executable WhatsApp outreach action; a draft alone is not accepted.');
         }
       }
-      const result = acted.clean.trim();
+      let result = acted.clean.trim();
+      if (!result && autonomousFirstContact && firstContactTarget) result = `Prepared the first-contact WhatsApp action for ${firstContactTarget.contact}.`;
       if (!result) throw new Error('The employee returned no work product.');
       if (autonomousFirstContact && isFounderClarificationRequest(result)) throw new Error('Do not ask the Founder to confirm WhatsApp registration or first-contact permission; the approved destination is supplied and the shared outbox performs verification.');
       const actionsText = await deps.actions.run({ agent, roleId: h.to_role_id, taskId }, acted.actions, acted.rejected);
