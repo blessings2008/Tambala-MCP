@@ -193,7 +193,7 @@ export async function dispatchNewDiscoveryQueue(): Promise<number> {
   try {
     const pending = await supabaseSelect<DiscoveryQueueRow>(
       'lead_discovery_queue',
-      'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message&processing_status=eq.new&order=created_at.asc&limit=10',
+      'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message&processing_status=eq.new&order=created_at.asc&limit=2',
     );
     if (!pending.length) return 0;
 
@@ -214,9 +214,22 @@ export async function dispatchNewDiscoveryQueue(): Promise<number> {
 
     const contextSummary = JSON.stringify({
       source: 'public.lead_discovery_queue',
-      instruction: 'These records were researched by Central Research & Intelligence. Sales should use the supplied evidence and must not repeat prospect discovery.',
-      records: claimed,
-    }).slice(0, 7800);
+      instruction: 'Research is complete. Use only these supplied records; do not repeat web research.',
+      records: claimed.map((row) => ({
+        id: row.id,
+        organisation_name: row.organisation_name,
+        website: row.website,
+        sector: row.sector,
+        service_fit: row.service_fit,
+        reason_for_fit: row.reason_for_fit?.slice(0, 240) ?? null,
+        decision_maker_name: row.decision_maker_name,
+        decision_maker_title: row.decision_maker_title,
+        public_email: row.public_email,
+        public_phone: row.public_phone,
+        source_urls: Array.isArray(row.source_urls) ? row.source_urls.slice(0, 2) : row.source_urls,
+        verification_status: row.verification_status,
+      })),
+    });
 
     try {
       await queueHandoff(handoffStore(), {
