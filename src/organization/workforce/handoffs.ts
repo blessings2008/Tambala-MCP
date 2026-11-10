@@ -197,17 +197,18 @@ function approvedFirstContactTarget(contextSummary: string | null): { phone: str
 }
 
 function parseLegacyFirstContactAction(raw: string, target: { phone: string; contact: string }): { action: Action; clean: string } | null {
-  const blocks = [...raw.matchAll(new RegExp('\`{3}(?:json)?\\\\s*([\\\\s\\\\S]*?)\`{3}', 'gi'))];
-  const expected = target.phone.replace(/\\D/g, '');
+  const fence = String.fromCharCode(96).repeat(3);
+  const blocks = [...raw.matchAll(new RegExp(fence + '(?:json)?\\s*([\\s\\S]*?)' + fence, 'gi'))];
+  const expected = target.phone.replace(/\D/g, '');
   for (const block of blocks) {
     try {
       const value = JSON.parse(block[1]) as Record<string, unknown>;
       const destination = String(value.destination ?? '').trim();
       const message = String(value.message ?? '').trim();
       if (value.action !== 'whatsapp' || value.purpose !== 'outreach' || !destination || !message) continue;
-      if (destination.replace(/\\D/g, '') !== expected) continue;
+      if (destination.replace(/\D/g, '') !== expected) continue;
       const action: Action = { type: 'whatsapp', to: destination, purpose: 'outreach', contact: target.contact, text: message };
-      const clean = raw.replace(/\\*\\*WhatsApp Outreach Action\\*\\*/i, '').replace(new RegExp('\`{3}(?:json)?\\\\s*[\\\\s\\\\S]*?\`{3}', 'i'), '').trim();
+      const clean = raw.replace(/\*\*WhatsApp Outreach Action\*\*/i, '').replace(new RegExp(fence + '(?:json)?\\s*[\\s\\S]*?' + fence, 'i'), '').trim();
       return { action, clean };
     } catch {
       // Ignore unrelated or malformed JSON blocks; only the exact legacy WhatsApp shape is accepted.
@@ -217,9 +218,8 @@ function parseLegacyFirstContactAction(raw: string, target: { phone: string; con
 }
 
 function confirmsQueuedOrSentAction(value: string): boolean {
-  return /\\b(?:queued|sent)\\b/i.test(value) && !/\\b(?:not queued|not sent|blocked|failed|rejected|requires founder approval)\\b/i.test(value);
+  return /\b(?:queued|sent)\b/i.test(value) && !/\b(?:not queued|not sent|blocked|failed|rejected|requires founder approval)\b/i.test(value);
 }
-
 
 /** Each delegation runs in an isolated, durable room. A room closes only after its deliverable is accepted. */
 export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<HandoffOutcome[]> {
