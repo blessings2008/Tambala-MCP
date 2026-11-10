@@ -357,7 +357,7 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
       'Use exactly one whatsapp action with purpose=outreach. Keep the message natural, personalised, respectful and free of internal employee identities.',
       `CRM lead ID: ${leadId}.`,
       `WhatsApp destination from CRM: ${phone}.`,
-    ].join(' '),
+    ].join('\n'),
     contextSummary,
     sign: signWork,
   });
