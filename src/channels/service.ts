@@ -2,10 +2,10 @@ import { supabaseSelect } from '../lib/supabase.js';
 import { createApprovalRequest, decideApproval, listPendingApprovals, registerApprovalHook } from '../organization/workforce/approvals-service.js';
 import { dbConfigured } from '../organization/workforce/db-util.js';
 import { labelForRole } from '../organization/workforce/profiles.js';
-import { routeOrganizationObjective } from '../organization/service.js';
+import { getOrganizationSnapshot, routeOrganizationObjective } from '../organization/service.js';
 import { requireConfiguredRuntime, resolveExecutionRoute } from '../organization/execution-router.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../services/ai.js';
-import { getCompactCompanyContext } from '../services/ai/context.js';
+import { getBusinessSummary, getCompactCompanyContext } from '../services/ai/context.js';
 import { buildProspectingSearchQueries } from '../services/web-research.js';
 import { signWork } from '../organization/workforce/sign-work.js';
 import { loadPdfForSending } from '../documents/service.js';
@@ -16,7 +16,7 @@ import { onApprovalDecided, processOutbox, queueMessage, type OutboxDeps, type Q
 import { CLIENT_DAILY_LIMIT, FOUNDER_DAILY_LIMIT } from './policy.js';
 import { maskNumber, normalizePhone } from './phone.js';
 import { localTime } from '../organization/workforce/schedule.js';
-import { isCompanyStatusRequest, runCompanyStatusReport } from './founder-execution.js';
+import { isCompanyStatusRequest, isFounderKnowledgeQuestion, runCompanyStatusReport } from './founder-execution.js';
 
 /** The Founder's own WhatsApp number, where employees reach him. Set TAMBALA_FOUNDER_WHATSAPP. */
 export function founderNumber(): string | null {
@@ -76,6 +76,103 @@ export async function contactLabel(number: string): Promise<string | null> {
   return hit ? `${hit.name} (${hit.type})` : null;
 }
 
+async function answerFounderKnowledgeQuestion(envelope: FounderMessageEnvelope): Promise<string> {
+  const warnings: string[] = [];
+  const [companyContext, businessSummary, snapshot, queueRows, messageRows, approvalRows] = await Promise.all([
+    getCompactCompanyContext().catch((error) => { warnings.push('Company profile/services unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return null; }),
+    getBusinessSummary().catch((error) => { warnings.push('CRM summary unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return null; }),
+    getOrganizationSnapshot().catch((error) => { warnings.push('Organization chart unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return null; }),
+    supabaseSelect<Record<string, unknown>>('lead_discovery_queue', 'select=organisation_name,processing_status,verification_status,crm_lead_id,updated_at&order=created_at.desc&limit=500').catch((error) => { warnings.push('Prospect queue unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return []; }),
+    supabaseSelect<Record<string, unknown>>('organization_messages', 'select=direction,audience,purpose,status,sent_at,created_at,contact_label&order=created_at.desc&limit=1000').catch((error) => { warnings.push('Message history unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return []; }),
+    supabaseSelect<Record<string, unknown>>('organization_approval_requests', 'select=action_type,status,summary,created_at,resolved_at&order=created_at.desc&limit=300').catch((error) => { warnings.push('Approval history unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return []; }),
+  ]);
+
+  const countBy = (rows: Record<string, unknown>[], field: string) => rows.reduce<Record<string, number>>((counts, row) => {
+    const key = String(row[field] ?? 'unknown');
+    counts[key] = (counts[key] ?? 0) + 1;
+    return counts;
+  }, {});
+  const clientOutbound = messageRows.filter((row) => row.direction === 'out' && row.audience === 'client');
+  const sentClientMessages = clientOutbound.filter((row) => row.status === 'sent');
+  const units = snapshot?.organization?.units ?? [];
+  const roles = snapshot?.organization?.roles ?? [];
+  const crm = businessSummary ? {
+    leads_total: businessSummary.leads_total,
+    leads_by_status: businessSummary.leads_by_status,
+    clients_total: businessSummary.clients_total,
+    clients_by_status: businessSummary.clients_by_status,
+    projects_total: businessSummary.projects_total,
+    projects_by_status: businessSummary.projects_by_status,
+    tasks_total: businessSummary.tasks_total,
+    tasks_by_status: businessSummary.tasks_by_status,
+    task_details: businessSummary.task_details,
+  } : null;
+  const verifiedRecords = {
+    generated_at: new Date().toISOString(),
+    company: companyContext,
+    crm,
+    organization: snapshot ? {
+      source: snapshot.source,
+      departments: units.map((unit) => ({ name: unit.name, kind: unit.kind, status: unit.status })),
+      roles: roles.map((role) => ({ title: role.title, activation: role.activation, unitId: role.unitId })),
+    } : null,
+    prospect_queue: {
+      total_loaded: queueRows.length,
+      by_processing_status: countBy(queueRows, 'processing_status'),
+      by_verification_status: countBy(queueRows, 'verification_status'),
+      recent: queueRows.slice(0, 30).map((row) => ({
+        organisation_name: row.organisation_name,
+        processing_status: row.processing_status,
+        verification_status: row.verification_status,
+        has_crm_lead: Boolean(row.crm_lead_id),
+        updated_at: row.updated_at,
+      })),
+    },
+    client_messaging: {
+      outbound_client_messages_loaded: clientOutbound.length,
+      sent_to_clients: sentClientMessages.length,
+      outbound_by_status: countBy(clientOutbound, 'status'),
+      latest_successful_client_message_at: sentClientMessages.find((row) => typeof row.sent_at === 'string')?.sent_at ?? null,
+      recent_outbound: clientOutbound.slice(0, 15).map((row) => ({
+        purpose: row.purpose, status: row.status, contact_label: row.contact_label,
+        sent_at: row.sent_at, created_at: row.created_at,
+      })),
+      note: 'Only organization_messages rows with direction=out, audience=client and status=sent count as sent client messages. Founder notifications are not client outreach.',
+    },
+    approvals: {
+      total_loaded: approvalRows.length,
+      by_action_and_status: approvalRows.reduce<Record<string, number>>((counts, row) => {
+        const key = String(row.action_type ?? 'unknown') + ':' + String(row.status ?? 'unknown');
+        counts[key] = (counts[key] ?? 0) + 1;
+        return counts;
+      }, {}),
+      recent: approvalRows.slice(0, 20).map((row) => ({
+        action_type: row.action_type, status: row.status, summary: row.summary,
+        created_at: row.created_at, resolved_at: row.resolved_at,
+      })),
+    },
+    data_warnings: warnings,
+  };
+
+  const prompt = [
+    'You are the Chief Executive Officer of Tambala Technologies answering a direct factual or operational question from the Founder.',
+    'Answer the exact question directly using the verified live records below. You do NOT need to route a question to a department before answering it.',
+    'Use counts and timestamps exactly as supplied. Distinguish CRM lead creation from contacting a prospect; distinguish messages to the Founder from messages sent to clients.',
+    'If a fact is absent, say it is unavailable in the records. If the records show no client messages, say so plainly.',
+    'Never invent work, approvals, messages, department activity, or system status.',
+    'If the question actually requests a new action rather than information, explain the next responsible department and approval gate, but do not claim it has been performed.',
+    'Founder question:', envelope.content.text,
+    'Verified live organizational records:', JSON.stringify(verifiedRecords).slice(0, 14000),
+    'Respond in clear, concise language. State relevant blockers and the next concrete action where useful.',
+  ].join('\n\n');
+
+  return askTambalaAI(
+    'orchestrator',
+    prompt,
+    { communicationType: 'Founder factual question', sender: envelope.sender.name, recipient: 'Chief Executive Officer', messageId: envelope.message_id, verifiedRecords },
+  );
+}
+
 async function handleFounderInstruction(envelope: FounderMessageEnvelope): Promise<string> {
   if (isCompanyStatusRequest(envelope.content.text)) {
     try { return await runCompanyStatusReport(envelope); }
@@ -84,6 +181,14 @@ async function handleFounderInstruction(envelope: FounderMessageEnvelope): Promi
       console.error('Founder status report could not be completed:', detail);
       const safeDetail = detail.replace(/(?:gsk_|sk-|Bearer\\s+)[A-Za-z0-9._-]{12,}/g, '[redacted]').slice(0, 240);
       return `I received your status-report instruction, but the coordinated report could not finish. Runtime issue: ${safeDetail}. The CEO workflow needs its task/runtime configuration checked.`;
+    }
+  }
+  if (isFounderKnowledgeQuestion(envelope.content.text)) {
+    try { return await answerFounderKnowledgeQuestion(envelope); }
+    catch (error) {
+      const detail = error instanceof Error ? error.message : 'Founder question lookup failed.';
+      console.error('Founder factual question could not be answered:', detail);
+      return 'I received your question, but I could not retrieve the live company records needed to answer it. The lookup failed: ' + detail.slice(0, 220) + '. I will not guess.';
     }
   }
   try {
