@@ -352,6 +352,8 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
       'The Founder has authorised autonomous first contact; do not ask for individual message approval.',
       'The shared outbox independently checks that the destination is a CRM lead and is registered on WhatsApp. If that check fails, do not try another number or send by another channel; report the exact blocker.',
       'Do not repeat web research, invent a decision-maker, or claim unverified needs. You may adapt the supplied first_contact_message if it is present and evidence-supported.',
+      'Do not use placeholders such as [Name], {{name}}, or the literal word Name. If no named person is supplied, greet the organisation using its exact verified name: ' + prospect.organisation_name + ' team. Set contact to the verified person name if supplied, otherwise to the organisation name.',
+      'The task is incomplete unless you execute the WhatsApp action. End your answer with ACTIONS: on its own line, followed by exactly one valid JSON object with type=whatsapp, to set to the supplied CRM destination, purpose=outreach, contact set to the verified person or organisation name, and text set to the final message. Do not put action JSON outside ACTIONS or provide only a draft.',
       'Use exactly one whatsapp action with purpose=outreach. Keep the message natural, personalised, respectful and free of internal employee identities.',
       `CRM lead ID: ${leadId}.`,
       `WhatsApp destination from CRM: ${phone}.`,
