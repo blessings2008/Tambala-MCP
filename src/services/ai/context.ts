@@ -144,6 +144,99 @@ export async function getBusinessSummary(): Promise<DbRow> {
   return { company_type: 'one-person business', default_outreach_channel: 'WhatsApp/chat', location: 'Lilongwe, Malawi', leads_total: activeLeads.length, leads_by_status: countBy(activeLeads), clients_total: activeClients.length, clients_by_status: countBy(activeClients), projects_total: activeProjects.length, projects_by_status: countBy(activeProjects), tasks_total: activeTasks.length, open_tasks_total: activeTasks.length, tasks_by_status: countBy(activeTasks), task_details, calculation_rule: 'Open task counts include unassigned/unlinked tasks. Judge workload by age, due dates, priority, blocked status and dependencies; never by completion percentage alone.' };
 }
 
+/** Detailed, least-privilege CRM data for Sales and Customer Relations duties only. */
+export async function getDetailedCRMContext(): Promise<DbRow> {
+  const [leads, clients, tasks, messages] = await Promise.all([
+    supabaseSelect<DbRow>('leads', 'select=id,name,business_name,phone,whatsapp,email,source,status,notes,next_follow_up_at,created_at,updated_at&order=created_at.desc&limit=500'),
+    supabaseSelect<DbRow>('clients', 'select=id,name,business_name,phone,whatsapp,email,location,status,notes,created_at,updated_at&order=created_at.desc&limit=500'),
+    supabaseSelect<DbRow>('tasks', 'select=id,project_id,client_id,title,description,status,priority,due_at,completed_at,created_at,updated_at&order=due_at.asc.nullslast&limit=500'),
+    supabaseSelect<DbRow>('organization_messages', 'select=direction,number,audience,purpose,status,contact_label,sent_at,created_at&order=created_at.desc&limit=1000'),
+  ]);
+  const now = Date.now();
+  const activeLeads = leads.filter((row) => !isExcluded(row));
+  const activeClients = clients.filter((row) => !isExcluded(row));
+  const openTasks = tasks.filter((row) => !CLOSED_TASK_STATUSES.has(String(row.status ?? '').trim().toLowerCase()) && !/(^|\s)test(\s|[-_])/i.test(String(row.title ?? '')));
+  const outbound = messages.filter((row) => row.direction === 'out' && row.audience === 'client');
+  const sent = outbound.filter((row) => row.status === 'sent');
+  const digits = (value: unknown) => String(value ?? '').replace(/\D/g, '');
+  const sentNumbers = new Set(sent.map((row) => digits(row.number)).filter(Boolean));
+  const numberFor = (row: DbRow) => [row.whatsapp, row.phone].map(digits).find(Boolean) ?? null;
+  const decorateContact = (row: DbRow) => {
+    const number = numberFor(row);
+    const contacted = Boolean(number && sentNumbers.has(number));
+    const lastMessage = contacted
+      ? sent.find((message) => digits(message.number) === number)?.sent_at ?? null
+      : null;
+    return {
+      id: row.id, name: row.name, business_name: row.business_name,
+      phone: row.phone ?? null, whatsapp: row.whatsapp ?? null, email: row.email ?? null,
+      status: row.status ?? null, source: row.source ?? null,
+      next_follow_up_at: row.next_follow_up_at ?? null,
+      notes: typeof row.notes === 'string' ? row.notes.slice(0, 300) : null,
+      has_contact_number: Boolean(number), has_successful_outreach: contacted,
+      last_successful_outreach_at: lastMessage,
+      created_at: row.created_at ?? null,
+    };
+  };
+  const leadRecords = activeLeads.map(decorateContact);
+  const clientRecords = activeClients.map((row) => ({
+    ...decorateContact(row),
+    location: row.location ?? null,
+  }));
+  const clientById = new Map(clientRecords.map((row) => [String(row.id), row]));
+  const openClientTasks = openTasks
+    .filter((task) => typeof task.client_id === 'string' && clientById.has(String(task.client_id)))
+    .map((task) => ({
+      id: task.id, title: task.title, description: typeof task.description === 'string' ? task.description.slice(0, 240) : null,
+      status: task.status, priority: task.priority ?? null, due_at: task.due_at ?? null,
+      completed_at: task.completed_at ?? null, client: clientById.get(String(task.client_id)),
+    }));
+  const dueLeads = leadRecords.filter((lead) => {
+    const due = typeof lead.next_follow_up_at === 'string' ? Date.parse(lead.next_follow_up_at) : NaN;
+    return Number.isFinite(due) && due <= now;
+  });
+  const dueClientTasks = openClientTasks.filter((task) => {
+    const due = typeof task.due_at === 'string' ? Date.parse(task.due_at) : NaN;
+    return Number.isFinite(due) && due <= now;
+  });
+  const counts = (rows: DbRow[]) => rows.reduce<Record<string, number>>((result, row) => {
+    const key = String(row.status ?? 'unknown');
+    result[key] = (result[key] ?? 0) + 1;
+    return result;
+  }, {});
+  return {
+    generated_at: new Date(now).toISOString(),
+    data_scope: 'Detailed CRM contact records are supplied only to Sales & Business Development and Customer Relations & Support duties.',
+    lead_pipeline: {
+      total: leadRecords.length,
+      by_status: counts(activeLeads),
+      records: leadRecords.slice(0, 40),
+      uncontacted_with_number: leadRecords.filter((lead) => lead.has_contact_number && !lead.has_successful_outreach).slice(0, 20),
+    },
+    clients: {
+      total: clientRecords.length,
+      by_status: counts(activeClients),
+      records: clientRecords.slice(0, 30),
+    },
+    customer_followups: {
+      due_leads: dueLeads.slice(0, 30),
+      open_client_tasks: openClientTasks.slice(0, 40),
+      overdue_client_tasks: dueClientTasks.slice(0, 30),
+      note: 'A lead is due only when next_follow_up_at is present and at or before generated_at. Client follow-up work is represented by open tasks linked through client_id; tasks without a due_at are open but not classified as overdue.',
+    },
+    outreach_history: {
+      outbound_client_messages_loaded: outbound.length,
+      successfully_sent: sent.length,
+      by_status: counts(outbound),
+      recent: outbound.slice(0, 40).map((message) => ({
+        purpose: message.purpose, status: message.status, contact_label: message.contact_label,
+        sent_at: message.sent_at ?? null, created_at: message.created_at ?? null,
+      })),
+      note: 'A contact is marked as successfully contacted only when a matching phone number has an outbound client message with status=sent. Queued, pending, failed and Founder-directed messages are not counted as sent.',
+    },
+  };
+}
+
 export function crmStatus(lead?: DbRow, client?: DbRow) {
   const lv = lead?.lead; const cv = client?.client;
   const leadId = lv && typeof lv === 'object' && 'id' in lv ? String((lv as DbRow).id) : null;
