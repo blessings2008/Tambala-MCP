@@ -1,7 +1,7 @@
 import type { AgentName } from '../../services/ai/models.js';
 import type { Cadence } from './schedule.js';
 
-export type ContextKind = 'crm' | 'company' | 'organization' | 'briefing' | 'catalog' | 'invoices' | 'discovery';
+export type ContextKind = 'crm' | 'crm_detail' | 'company' | 'organization' | 'briefing' | 'catalog' | 'invoices' | 'discovery';
 
 export interface StandingDuty {
   id: string;
@@ -54,13 +54,13 @@ export const STANDING_DUTIES: readonly StandingDuty[] = [
   },
   {
     id: 'sales-pipeline-review', agent: 'outreach', title: 'Daily pipeline review and outreach preparation',
-    cadence: { kind: 'weekdays' }, time: '08:30', contexts: ['crm', 'company', 'catalog'],
+    cadence: { kind: 'weekdays' }, time: '08:30', contexts: ['crm', 'crm_detail', 'company', 'catalog'],
     job: 'Review the lead pipeline by status. Pick the best-fit leads that have not been contacted or are due. Identify up to five qualified CRM prospects that have not been contacted, verify their business names and WhatsApp numbers, and send personalised first-contact WhatsApp messages using the whatsapp action. First-contact messages from Outreach may be sent autonomously under the Founder-approved daily cap and cooldown. Keep each message natural, specific, relevant and customer-ready; never include internal role titles, employee codes (such as TT-001), agent names, signatures, routing notes, draft labels, internal analysis or unrelated information. Do not mention services unless they are in the verified catalogue. Do not message unknown numbers or invent contact details. If a lead clearly needs a quotation and the price list covers it, prepare it with the document action.',
     deliverable: 'Pipeline snapshot, prospects selected, messages actually queued or sent, delivery outcomes, replies received, and any blockers. Clearly separate messages queued, sent, failed, blocked and drafts awaiting approval using the action results; never describe an autonomous first-contact message as awaiting approval when it was queued or sent, and never claim delivery unless the outbox confirms it.',
   },
   {
     id: 'customer-followups', agent: 'followup', title: 'Daily customer follow-ups',
-    cadence: { kind: 'weekdays' }, time: '09:00', contexts: ['crm', 'company'],
+    cadence: { kind: 'weekdays' }, time: '09:00', contexts: ['crm', 'crm_detail', 'company'],
     job: 'Find leads and clients whose next follow-up is due or overdue, and open client tasks. Prepare a short check-in WhatsApp message (whatsapp action) for each due contact who has a number in the records, using only facts in the supplied records.',
     deliverable: 'Who is due and why, then one draft per person. Say clearly if nobody is due.',
     approval: { actionType: 'prepared_followups', riskLevel: 'low', summary: 'Prepared customer follow-up drafts awaiting Founder approval' },
