@@ -1,5 +1,5 @@
 import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../../lib/supabase.js';
-import { getBusinessSummary, getVerifiedCompanyContext } from '../../services/ai/context.js';
+import { getBusinessSummary, getDetailedCRMContext, getVerifiedCompanyContext } from '../../services/ai/context.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../../services/ai.js';
 import { getOrganizationSnapshot } from '../service.js';
 import { advanceTrackedTask, beginTrackedTask, failTrackedTask } from '../task-tracking.js';
@@ -614,6 +614,7 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
       const out: Row = {};
       for (const kind of kinds) {
         if (kind === 'crm') out.crm = await getBusinessSummary();
+        if (kind === 'crm_detail') out.crm_detail = await getDetailedCRMContext();
         if (kind === 'company') out.company = await getVerifiedCompanyContext();
         if (kind === 'organization') out.organization = await organizationContext(store, at);
         if (kind === 'briefing') out.briefing = await briefingContext(store, at);
