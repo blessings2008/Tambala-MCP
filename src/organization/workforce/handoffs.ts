@@ -210,9 +210,10 @@ function approvedFirstContactMessage(contextSummary: string | null, target: { ph
       web_development: 'website design and development',
       software_development: 'custom software development',
       digital_product_development: 'digital product development',
+      software_development: 'custom software development',
       social_media_management: 'social media management and content planning',
     };
-    const services = [...new Set(fit.map((item) => labels[item]).filter(Boolean))];
+    const services = [...new Set(fit.map((item) => labels[item.toLowerCase().replace(/[\\s-]+/g, '_')]).filter(Boolean))];
     if (!services.length) return null;
     const sectorLine = sector ? ` I came across your work in ${sector}.` : '';
     return [
