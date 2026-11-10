@@ -24,12 +24,12 @@ export type DiscoveryReviewSyncSummary = {
   skipped: number;
   failed: number;
 };
-
+  const match = /recommendation[\s\S]{0,180}?\b(qualify|investigate|reject)\b/i.exec(result);
 /** Extract only the recommendation attached to the review's Recommendation heading. */
 export function discoveryReviewRecommendation(result: string | null): 'qualify' | 'investigate' | 'reject' | null {
   if (!result) return null;
   const match = /recommendation[\\s\\S]{0,180}?\\b(qualify|investigate|reject)\\b/i.exec(result);
-  return match ? match[1].toLowerCase() as 'qualify' | 'investigate' | 'reject' : null;
+  return /queue record id:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(request)?.[1] ?? null;
 }
 
 export function discoveryQueueIdFromReviewRequest(request: string): string | null {
