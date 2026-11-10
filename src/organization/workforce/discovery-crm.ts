@@ -53,6 +53,7 @@ export async function syncCompletedDiscoveryReviews(): Promise<DiscoveryReviewSy
   );
 
   for (const queue of queues) {
+    let handoffId: string | null = null;
     try {
       const handoffs = await supabaseSelect<DiscoveryReviewHandoff>(
         'organization_handoffs',
@@ -61,6 +62,7 @@ export async function syncCompletedDiscoveryReviews(): Promise<DiscoveryReviewSy
           '&order=completed_at.desc&limit=1',
       );
       const handoff = handoffs[0];
+      handoffId = handoff?.id ?? null;
       if (!handoff || discoveryQueueIdFromReviewRequest(handoff.request) !== queue.id) {
         summary.skipped += 1;
         continue;
@@ -81,7 +83,7 @@ export async function syncCompletedDiscoveryReviews(): Promise<DiscoveryReviewSy
           await supabaseUpdate(
             'lead_discovery_queue',
             { processing_status: 'rejected', updated_at: new Date().toISOString() },
-            'id=eq.' + encodeURIComponent(queueId) + '&processing_status=eq.reviewing',
+            'id=eq.' + encodeURIComponent(queue.id) + '&processing_status=eq.reviewing',
           );
           summary.rejected += 1;
         } else {
@@ -107,7 +109,7 @@ export async function syncCompletedDiscoveryReviews(): Promise<DiscoveryReviewSy
 
       const result = await supabaseRpc<PromotionResult>(
         'promote_qualified_discovery_prospect',
-        { p_queue_id: queueId },
+        { p_queue_id: queue.id },
       );
       const outcome = result[0]?.outcome;
       if (outcome === 'promoted') summary.promoted += 1;
@@ -116,8 +118,8 @@ export async function syncCompletedDiscoveryReviews(): Promise<DiscoveryReviewSy
     } catch (error) {
       summary.failed += 1;
       console.error('[discovery-crm] Could not sync completed Sales review:', {
-        handoffId: handoff.id,
-        queueId,
+        handoffId,
+        queueId: queue.id,
         error: error instanceof Error ? error.message : String(error),
       });
     }
