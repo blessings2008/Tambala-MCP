@@ -70,6 +70,17 @@ export function senderNumber(m: RawMessage): string | null {
 const COMMAND_YES = /^\s*(yes|approve|ok)\s+([0-9a-f]{6})\s*$/i;
 const COMMAND_NO = /^\s*(no|reject)\s+([0-9a-f]{6})\s*(.*)$/is;
 
+export type CustomerReplyIntent = 'interested' | 'not_interested' | 'question' | 'other';
+
+/** Deterministic triage for customer replies; informs the Founder but never sends an unapproved sales response. */
+export function classifyCustomerReply(value: string): CustomerReplyIntent {
+  const text = value.trim().toLowerCase();
+  if (/\b(not interested|no thanks|not for us|we are not interested|don't need|dont need)\b/.test(text)) return 'not_interested';
+  if (/\b(yes|interested|sounds good|send (?:me )?(?:the )?(?:quote|quotation|details|proposal)|let's talk|lets talk|call me|contact me)\b/.test(text)) return 'interested';
+  if (/[?]/.test(text) || /^\s*(what|how|when|where|who|why|which|can|could|would|do|does|is|are|please explain)\b/.test(text)) return 'question';
+  return 'other';
+}
+
 export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown): Promise<InboundSummary> {
   const summary: InboundSummary = { stored: 0, duplicates: 0, optOuts: 0, founderCommands: 0, routedToOrganization: 0, forwarded: 0, unresolved: 0, ignored: 0 };
   const body = payload as { event?: unknown; instance?: unknown; data?: unknown };
@@ -138,7 +149,7 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
       summary.founderCommands += 1; continue;
     }
 
-    await deps.tellFounder(`Reply from ${label ?? pushName ?? maskNumber(number)}:\n"${text.slice(0, 400)}"`).catch(() => undefined);
+    await deps.tellFounder(`Reply from ${label ?? pushName ?? maskNumber(number)} [${classifyCustomerReply(text).replace('_', ' ')}]:\n"${text.slice(0, 400)}"`).catch(() => undefined);
     summary.forwarded += 1;
   }
   return summary;

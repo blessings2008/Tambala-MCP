@@ -1,6 +1,6 @@
 import { normalizePhone } from './phone.js';
 import { EvolutionError } from './evolution.js';
-import { CLIENT_DAILY_LIMIT, FOUNDER_DAILY_LIMIT, decide, sendWindowOpen, withOptOut, type Purpose } from './policy.js';
+import { FOUNDER_DAILY_LIMIT, decide, sendWindowOpen, type Purpose } from './policy.js';
 import type { MessageRow, MessageStore } from './message-store.js';
 import { localTime } from '../organization/workforce/schedule.js';
 
@@ -40,7 +40,7 @@ export interface QueueResult { id: string; status: MessageRow['status']; reason?
 export function sanitizeCustomerMessage(value: string): string {
   const internalLine = /^\s*(?:by\s+(?:the\s+)?(?:ceo|chief executive officer|head of|director of)\b.*|(?:prepared|generated|drafted|sent)\s+by\b.*|(?:agent|role|employee|department|internal analysis|routing note|internal note|internal only|internal use only)\s*:\s*.*|(?:ceo|chief executive officer|head of [^|—–-]+|director of [^|—–-]+)\s*[|—–-]\s*TT[-\s]?\d{3}.*|(?:—|–|-{1,2})?\s*TT[-\s]?\d{3}\b.*)$/i;
   return value.split(/\r?\n/)
-    .filter((line) => !internalLine.test(line))
+    .filter((line) => !internalLine.test(line) && !/^\s*reply\s+stop\s+to\s+opt\s+out[.!]*\s*$/i.test(line))
     .map((line) => line.replace(/\bTT[-\s]?\d{3}\b/gi, '').trimEnd())
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
@@ -76,7 +76,7 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
   }
   const customerCopy = base.audience === 'client' ? sanitizeCustomerMessage(input.text.trim()) : input.text.trim();
   if (base.audience === 'client' && customerCopy.length < 2) throw new OutboxError('The customer message contains no usable business content after internal notes were removed.');
-  const text = base.audience === 'client' ? withOptOut(customerCopy, input.purpose) : customerCopy;
+  const text = customerCopy;
 
   const row = await deps.store.add({
     direction: 'out', number: to, audience: base.audience, purpose: input.purpose, from_role_id: input.roleId, text,
@@ -155,7 +155,7 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
   const now = deps.now();
   const since = dayStartIso(now);
   const blocked = await deps.store.blockedNumbers();
-  const counts = { client: await deps.store.sentSince(since, 'client'), founder: await deps.store.sentSince(since, 'founder') };
+  const counts = { founder: await deps.store.sentSince(since, 'founder') };
   let sentClient = 0;
   let clientAttempted = 0;
 
@@ -173,7 +173,6 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
         const remaining = sentAt ? cooldownMs - (now.getTime() - sentAt) : 0;
         if (remaining > 0) { await wait(`Customer-send cooldown active. Try again in about ${Math.ceil(remaining / 1000)} seconds.`); continue; }
       }
-      if (counts.client >= CLIENT_DAILY_LIMIT()) { await wait(`Daily customer limit of ${CLIENT_DAILY_LIMIT()} reached. It will go out tomorrow.`); continue; }
       if (clientAttempted >= 1) { await wait('One customer message per outbox pass; the rest will be picked up by the next scheduler cycle.'); continue; }
     } else if (counts.founder >= FOUNDER_DAILY_LIMIT()) { await wait('Daily limit of messages to the Founder reached.'); continue; }
 
@@ -187,7 +186,7 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
         result = await deps.transport.sendDocument(row.number, doc.base64, doc.fileName, row.text);
       } else result = await deps.transport.sendText(row.number, row.text);
       await deps.store.update(row.id, { status: 'sent', claimed_at: null, provider_message_id: result.id, sent_at: deps.now().toISOString(), attempts: row.attempts + 1, reason: null });
-      if (row.audience === 'client') { counts.client += 1; sentClient += 1; } else counts.founder += 1;
+      if (row.audience === 'client') sentClient += 1; else counts.founder += 1;
       out.push({ id: row.id, status: 'sent' });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Send failed.';

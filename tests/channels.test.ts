@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type IncomingMessage } from 'node:http';
 import { jidToNumber, maskNumber, normalizePhone } from '../src/channels/phone.ts';
-import { CLIENT_FACING_AGENTS, decide, sendWindowOpen, validateText, withOptOut } from '../src/channels/policy.ts';
+import { CLIENT_FACING_AGENTS, decide, sendWindowOpen, validateText, OPT_OUT_PATTERN } from '../src/channels/policy.ts';
 import { connectionState, EvolutionError, evolutionConfigured, isWhatsAppNumber, sendDocument, sendText } from '../src/channels/evolution.ts';
 import { InMemoryMessageStore } from '../src/channels/message-store.ts';
 import { onApprovalDecided, OutboxError, processOutbox, queueMessage, sanitizeCustomerMessage, type OutboxDeps } from '../src/channels/outbox.ts';
-import { handleEvolutionWebhook, messageText, senderNumber, type InboundDeps } from '../src/channels/inbound.ts';
+import { classifyCustomerReply, handleEvolutionWebhook, messageText, senderNumber, type InboundDeps } from '../src/channels/inbound.ts';
 
 const at = (iso: string) => new Date(iso);
 const MON_10AM = '2026-11-09T08:00:00Z';   // 10:00 office time, Monday
@@ -40,9 +40,11 @@ test('policy: customers always need approval, the Founder never does, rules are 
   assert.deepEqual([...CLIENT_FACING_AGENTS].sort(), ['finance', 'followup', 'outreach', 'payments']);
   assert.ok(validateText('') && validateText('x'.repeat(1501)) && validateText('see http://a.com http://b.com http://c.com'));
   assert.equal(validateText('Hello'), null);
-  assert.match(withOptOut('Hi, we build websites.', 'outreach'), /Reply STOP to opt out\.$/);
-  assert.equal(withOptOut('Hi', 'followup'), 'Hi');
-  assert.equal(withOptOut('Hi. Reply STOP to stop.', 'outreach'), 'Hi. Reply STOP to stop.');
+  assert.equal(OPT_OUT_PATTERN.test('STOP'), true);
+  assert.equal(OPT_OUT_PATTERN.test('Please stop messaging me.'), true);
+  assert.equal(OPT_OUT_PATTERN.test('Do not contact me again'), true);
+  assert.equal(OPT_OUT_PATTERN.test('Remove me from your list'), true);
+  assert.equal(OPT_OUT_PATTERN.test('Not interested, thank you'), false);
 });
 
 test('sending window: Monday to Saturday, 07:30 to 19:30 office time', () => {
@@ -182,7 +184,7 @@ test('outbox: first-contact Outreach is queued autonomously and strips internal 
   assert.equal(h.approvals.length, 0);
   const row = (await h.store.byId(r.id))!;
   assert.match(row.text, /professional websites/);
-  assert.match(row.text, /Reply STOP to opt out/);
+  assert.doesNotMatch(row.text, /Reply STOP to opt out|opt out/i);
   assert.doesNotMatch(row.text, /CEO|TT[- ]?001|Prepared by/i);
   const sent = await processOutbox(h.deps);
   assert.equal(sent.find((item) => item.id === r.id)?.status, 'sent');
@@ -243,7 +245,7 @@ test('outbox: customer cooldown is enforced between separate worker runs', async
 });
 
 test('outbox: customer message sanitizer removes employee identifiers and internal attribution', () => {
-  const clean = sanitizeCustomerMessage('Hello, we can help with your website.\n\nBy CEO TT 001\nPrepared by CEO · TT-001');
+  const clean = sanitizeCustomerMessage('Hello, we can help with your website.\n\nReply STOP to opt out.\n\nBy CEO TT 001\nPrepared by CEO · TT-001');
   assert.equal(clean, 'Hello, we can help with your website.');
   assert.doesNotMatch(clean, /CEO|TT[- ]?001/i);
 });
@@ -260,7 +262,7 @@ test('outbox: rejection retires the message; the Founder dashboard send skips ap
   assert.equal(faked.status, 'pending_approval'); // an employee cannot claim Founder approval
 });
 
-test('outbox: the sending window, daily limit, opt-outs and duplicates are enforced', async () => {
+test('outbox: the sending window, no daily client cap, opt-outs and duplicates are enforced', async () => {
   const h = outboxHarness({ nowIso: SUN_10AM });
   const a = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello Banda, checking in.', purpose: 'followup' });
   await onApprovalDecided(h.deps, a.id, 'approved', null);
@@ -277,13 +279,11 @@ test('outbox: the sending window, daily limit, opt-outs and duplicates are enfor
   const stopped = await queueMessage(h.deps, { ...sales, to: '0888555666', text: 'Hello Mr Stop.', purpose: 'followup' });
   assert.equal(stopped.status, 'blocked'); assert.match(stopped.reason!, /opted out/);
 
-  process.env.TAMBALA_WHATSAPP_DAILY_LIMIT = '1';
-  try {
-    const b = await queueMessage(h.deps, { ...sales, to: '0888777888', text: 'Hello Phiri, checking in.', purpose: 'followup' });
-    await onApprovalDecided(h.deps, b.id, 'approved', null);
-    out = await processOutbox(h.deps);
-    assert.equal(out.find((o) => o.id === b.id)!.status, 'waiting'); assert.match(out.find((o) => o.id === b.id)!.reason!, /Daily customer limit/);
-  } finally { delete process.env.TAMBALA_WHATSAPP_DAILY_LIMIT; }
+  const b = await queueMessage(h.deps, { ...sales, to: '0888777888', text: 'Hello Phiri, checking in.', purpose: 'followup' });
+  await onApprovalDecided(h.deps, b.id, 'approved', null);
+  h.setNow('2026-11-09T08:02:00Z'); // cooldown has elapsed; there is no five-message daily ceiling
+  out = await processOutbox(h.deps);
+  assert.equal(out.find((o) => o.id === b.id)!.status, 'sent');
 });
 
 test('outbox: a number that opts out after approval is not messaged', async () => {
@@ -351,20 +351,23 @@ test('inbound: customer replies are stored, matched to the CRM and forwarded to 
   const h = inboundHarness();
   const s = await handleEvolutionWebhook(h.deps, evt('265888123456@s.whatsapp.net', 'Yes please send the quote'));
   assert.equal(s.stored, 1); assert.equal(s.forwarded, 1);
-  assert.equal(h.store.rows[0].contact_label, 'Lakeview Lodge (lead)'); assert.match(h.told[0], /Lakeview Lodge \(lead\)/); assert.match(h.told[0], /send the quote/);
+  assert.equal(h.store.rows[0].contact_label, 'Lakeview Lodge (lead)'); assert.match(h.told[0], /Lakeview Lodge \(lead\)/); assert.match(h.told[0], /interested/); assert.match(h.told[0], /send the quote/);
+  assert.equal(classifyCustomerReply('What are your prices?'), 'question');
+  assert.equal(classifyCustomerReply('Not interested, thank you.'), 'not_interested');
+  assert.equal(classifyCustomerReply('Thanks, yes please send the quote.'), 'interested');
   assert.equal((await handleEvolutionWebhook(h.deps, evt('265888123456@s.whatsapp.net', 'Yes please send the quote'))).duplicates, 1);
 });
 
 test('inbound: STOP opts the customer out, confirms, and tells the Founder', async () => {
   const h = inboundHarness();
-  for (const word of ['STOP', ' stop. ', 'Unsubscribe']) {
+  for (const word of ['STOP', ' stop. ', 'Unsubscribe', 'Please stop messaging me.', 'Do not contact me again', 'Remove me from your list']) {
     const s = await handleEvolutionWebhook(h.deps, evt('265888777000@s.whatsapp.net', word, `M-${word}`));
     assert.equal(s.optOuts, 1);
   }
   assert.ok((await h.store.blockedNumbers()).has('265888777000'));
   assert.match(h.replies[0], /unsubscribed/);
   const s2 = await handleEvolutionWebhook(h.deps, evt('265888777000@s.whatsapp.net', 'please stop calling me about this', 'M9'));
-  assert.equal(s2.optOuts, 0); // only a bare STOP is a keyword; free text is forwarded to a human
+  assert.equal(s2.optOuts, 1); // An explicit request to stop calling/contacting is still a do-not-contact request.
 });
 
 test('inbound: only the Founder number can approve or reject by WhatsApp', async () => {
