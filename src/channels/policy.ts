@@ -48,4 +48,4 @@ export function decide(input: PolicyInput, state: PolicyState): Verdict {
 }
 
 /** Recognise clear opt-out requests without mistaking ordinary objections for consent withdrawal. */
-export const OPT_OUT_PATTERN = /^\s*(?:(?:stop|unsubscribe|opt[\s-]?out|cancel|end|quit)|(?:please\s+)?(?:stop|cease)\s+(?:messaging|contacting|texting|sending(?:\s+me)?(?:\s+messages?)?)(?:\s+me)?(?:\s+again)?|(?:do\s+not|don't|dont)\s+(?:message|contact|text)\s+me(?:\s+again)?|remove\s+me\s+from\s+(?:your\s+)?(?:list|mailing\s+list)|no\s+more\s+(?:messages|texts|calls))\s*[.!]*\s*$/i;
+export const OPT_OUT_PATTERN = /^\s*(?:(?:stop|unsubscribe|opt[\s-]?out|cancel|end|quit)|(?:please\s+)?(?:stop|cease)\s+(?:messaging|contacting|texting|calling|sending(?:\s+me)?(?:\s+messages?)?)(?:\s+me)?(?:\s+again)?|(?:do\s+not|don't|dont)\s+(?:message|contact|text)\s+me(?:\s+again)?|remove\s+me\s+from\s+(?:your\s+)?(?:list|mailing\s+list)|no\s+more\s+(?:messages|texts|calls))\s*[.!]*\s*$/i;
