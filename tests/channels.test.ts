@@ -369,7 +369,7 @@ test('inbound: STOP opts the customer out, confirms, and tells the Founder', asy
   assert.ok((await h.store.blockedNumbers()).has('265888777000'));
   assert.match(h.replies[0], /unsubscribed/);
   const s2 = await handleEvolutionWebhook(h.deps, evt('265888777000@s.whatsapp.net', 'please stop calling me about this', 'M9'));
-  assert.equal(s2.optOuts, 0); // Calling is not the WhatsApp channel; the message is forwarded to a human.
+  assert.equal(s2.optOuts, 1); // An explicit request to stop calling/contacting is still a do-not-contact request.
 });
 
 test('inbound: only the Founder number can approve or reject by WhatsApp', async () => {
