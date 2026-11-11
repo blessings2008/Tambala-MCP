@@ -1,6 +1,6 @@
 import { normalizePhone } from './phone.js';
 import { EvolutionError } from './evolution.js';
-import { CLIENT_DAILY_LIMIT, FOUNDER_DAILY_LIMIT, decide, sendWindowOpen, withOptOut, type Purpose } from './policy.js';
+import { CLIENT_DAILY_LIMIT, FOUNDER_DAILY_LIMIT, decide, sendWindowOpen, type Purpose } from './policy.js';
 import type { MessageRow, MessageStore } from './message-store.js';
 import { localTime } from '../organization/workforce/schedule.js';
 
@@ -76,7 +76,7 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
   }
   const customerCopy = base.audience === 'client' ? sanitizeCustomerMessage(input.text.trim()) : input.text.trim();
   if (base.audience === 'client' && customerCopy.length < 2) throw new OutboxError('The customer message contains no usable business content after internal notes were removed.');
-  const text = base.audience === 'client' ? withOptOut(customerCopy, input.purpose) : customerCopy;
+  const text = customerCopy;
 
   const row = await deps.store.add({
     direction: 'out', number: to, audience: base.audience, purpose: input.purpose, from_role_id: input.roleId, text,
