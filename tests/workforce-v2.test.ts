@@ -105,7 +105,7 @@ test('Founder-approved first-contact handoffs may execute WhatsApp and accept a 
       if (agent === 'orchestrator') return `DECISION: ACCEPT\nThe verified WhatsApp action was queued.`;
       return `Prepared a personalised introduction.\n\nACTIONS:\n{"type":"whatsapp","to":"+265888123456","purpose":"outreach","text":"Hello AgriTrust team."}`;
     },
-    actions: { run: async () => 'WhatsApp message was queued for sending; delivery is not confirmed yet.' },
+    actions: { run: async () => 'Actions:\n✔ whatsapp: message queued for sending; delivery is not confirmed yet.' },
   });
   await queueHandoff(store, {
     fromRoleId: 'ceo',
@@ -133,7 +133,7 @@ test('approved first-contact handoffs convert the legacy WhatsApp action shape a
       if (agent === 'orchestrator') return `DECISION: ACCEPT\nThe WhatsApp action was queued.`;
       return `**WhatsApp Outreach Action**\n\n\`\`\`json\n{\"action\":\"whatsapp\",\"purpose\":\"outreach\",\"destination\":\"+265 994 136 898\",\"message\":\"Hello AgriTrust team.\"}\n\`\`\`\n\nWhat I did: prepared the message.`;
     },
-    actions: { run: async () => 'WhatsApp message to AgriTrust was queued for sending; delivery is not confirmed yet.' },
+    actions: { run: async () => 'Actions:\n✔ whatsapp: message to AgriTrust queued for sending; delivery is not confirmed yet.' },
   });
   await queueHandoff(store, {
     fromRoleId: 'ceo',
