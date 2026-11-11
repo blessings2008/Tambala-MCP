@@ -262,7 +262,7 @@ test('outbox: rejection retires the message; the Founder dashboard send skips ap
   assert.equal(faked.status, 'pending_approval'); // an employee cannot claim Founder approval
 });
 
-test('outbox: the sending window, daily limit, opt-outs and duplicates are enforced', async () => {
+test('outbox: the sending window, no daily client cap, opt-outs and duplicates are enforced', async () => {
   const h = outboxHarness({ nowIso: SUN_10AM });
   const a = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello Banda, checking in.', purpose: 'followup' });
   await onApprovalDecided(h.deps, a.id, 'approved', null);
@@ -279,13 +279,11 @@ test('outbox: the sending window, daily limit, opt-outs and duplicates are enfor
   const stopped = await queueMessage(h.deps, { ...sales, to: '0888555666', text: 'Hello Mr Stop.', purpose: 'followup' });
   assert.equal(stopped.status, 'blocked'); assert.match(stopped.reason!, /opted out/);
 
-  process.env.TAMBALA_WHATSAPP_DAILY_LIMIT = '1';
-  try {
-    const b = await queueMessage(h.deps, { ...sales, to: '0888777888', text: 'Hello Phiri, checking in.', purpose: 'followup' });
-    await onApprovalDecided(h.deps, b.id, 'approved', null);
-    out = await processOutbox(h.deps);
-    assert.equal(out.find((o) => o.id === b.id)!.status, 'waiting'); assert.match(out.find((o) => o.id === b.id)!.reason!, /Daily customer limit/);
-  } finally { delete process.env.TAMBALA_WHATSAPP_DAILY_LIMIT; }
+  const b = await queueMessage(h.deps, { ...sales, to: '0888777888', text: 'Hello Phiri, checking in.', purpose: 'followup' });
+  await onApprovalDecided(h.deps, b.id, 'approved', null);
+  h.setNow('2026-11-09T08:02:00Z'); // cooldown has elapsed; there is no five-message daily ceiling
+  out = await processOutbox(h.deps);
+  assert.equal(out.find((o) => o.id === b.id)!.status, 'sent');
 });
 
 test('outbox: a number that opts out after approval is not messaged', async () => {
