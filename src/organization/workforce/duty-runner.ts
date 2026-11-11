@@ -39,7 +39,7 @@ export interface DutyDeps {
 
 const MAX_ATTEMPTS = 3;
 const STALE_RUNNING_MS = 15 * 60_000;
-const RULES = 'Use ONLY the supplied data. If a source is empty or unavailable, say so plainly and list what you could not check. Never invent leads, clients, amounts, dates or results. Do not sign or add a sign-off: the system signs your work with your employee number. Customer-facing messages are drafts for Founder approval except first-contact WhatsApp outreach by the Sales & Business Development director, which may be sent autonomously only when the shared outbox verifies a CRM lead and applies the configured cap, cooldown and opt-out rules. Never claim a message was sent unless the outbox confirms it.';
+const RULES = 'Use ONLY the supplied data. If a source is empty or unavailable, say so plainly and list what you could not check. Never invent leads, clients, amounts, dates or results. Do not sign or add a sign-off: the system signs your work with your employee number. Customer-facing messages are drafts for Founder approval except first-contact WhatsApp outreach by the Sales & Business Development director, which may be sent autonomously only when the shared outbox verifies a CRM lead and applies the configured cooldown and opt-out rules. Never claim a message was sent unless the outbox confirms it.';
 
 export function buildDutyPrompt(duty: StandingDuty, lt: LocalTime, who?: { employeeNumber: string; title: string }): string {
   const parts = [
