@@ -176,7 +176,7 @@ test('approved first contacts resume WhatsApp-registration clarifications withou
       if (agent === 'orchestrator') return `DECISION: ACCEPT\nThe WhatsApp action was queued.`;
       return `ACTIONS:\n{"type":"whatsapp","to":"+265888123456","purpose":"outreach","text":"Hello AgriTrust team."}`;
     },
-    actions: { run: async () => 'WhatsApp message was queued for sending; delivery is not confirmed yet.' },
+    actions: { run: async () => 'Actions:\n✔ whatsapp: message queued for sending; delivery is not confirmed yet.' },
   });
   const first = await queueHandoff(store, {
     fromRoleId: 'ceo',
