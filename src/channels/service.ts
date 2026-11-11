@@ -13,7 +13,7 @@ import { connectionState, evolutionConfig, evolutionConfigured, isWhatsAppNumber
 import { handleEvolutionWebhook, type FounderMessageEnvelope, type InboundDeps, type InboundSummary } from './inbound.js';
 import { messageStore, type MessageStore } from './message-store.js';
 import { onApprovalDecided, processOutbox, queueMessage, type OutboxDeps, type QueueInput, type QueueResult, type SendOutcome } from './outbox.js';
-import { CLIENT_DAILY_LIMIT, FOUNDER_DAILY_LIMIT } from './policy.js';
+import { FOUNDER_DAILY_LIMIT } from './policy.js';
 import { maskNumber, normalizePhone } from './phone.js';
 import { localTime } from '../organization/workforce/schedule.js';
 import { isCompanyStatusRequest, isFounderKnowledgeQuestion, runCompanyStatusReport } from './founder-execution.js';
@@ -351,7 +351,7 @@ export async function channelStatus() {
       endpoint: '/api/channels/outbox/run',
     },
     sentToday: { clients: await store.sentSince(dayStart, 'client').catch(() => 0), founder: await store.sentSince(dayStart, 'founder').catch(() => 0) },
-    limits: { clients: CLIENT_DAILY_LIMIT(), founder: FOUNDER_DAILY_LIMIT() },
+    limits: { founder: FOUNDER_DAILY_LIMIT() },
     blocked: (await store.blockedNumbers().catch(() => new Set<string>())).size,
   };
 }
