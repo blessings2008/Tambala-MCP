@@ -245,7 +245,7 @@ test('outbox: customer cooldown is enforced between separate worker runs', async
 });
 
 test('outbox: customer message sanitizer removes employee identifiers and internal attribution', () => {
-  const clean = sanitizeCustomerMessage('Hello, we can help with your website.\n\nBy CEO TT 001\nPrepared by CEO · TT-001');
+  const clean = sanitizeCustomerMessage('Hello, we can help with your website.\n\nReply STOP to opt out.\n\nBy CEO TT 001\nPrepared by CEO · TT-001');
   assert.equal(clean, 'Hello, we can help with your website.');
   assert.doesNotMatch(clean, /CEO|TT[- ]?001/i);
 });
