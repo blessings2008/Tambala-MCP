@@ -112,7 +112,7 @@ test('Founder-approved first-contact handoffs may execute WhatsApp and accept a 
     toAgent: 'outreach',
     sourceDutyId: 'approved-prospect-first-contact',
     request: 'Founder-approved first contact for AgriTrust',
-    contextSummary: JSON.stringify({ prospect: { organisation_name: 'AgriTrust' }, crm_lead: { phone: '+265888123456' } }),
+    contextSummary: JSON.stringify({ prospect: { organisation_name: 'AgriTrust', service_fit: ['web_development'] }, crm_lead: { phone: '+265888123456' } }),
   });
   const out = await processHandoffs(deps);
   assert.equal(out[0].status, 'completed');
@@ -124,7 +124,7 @@ test('Founder-approved first-contact handoffs may execute WhatsApp and accept a 
 test('approved first-contact handoffs convert the legacy WhatsApp action shape and require a queued result', async () => {
   const prompts: string[] = [];
   const contextSummary = JSON.stringify({
-    prospect: { organisation_name: 'AgriTrust' },
+    prospect: { organisation_name: 'AgriTrust', service_fit: ['web_development'] },
     crm_lead: { phone: '+265 994 136 898', business_name: 'AgriTrust' },
   });
   const { deps, store } = handoffDeps({
@@ -165,7 +165,7 @@ test('approved first-contact handoffs cannot complete on a draft without an acti
   });
   const out = await processHandoffs(deps);
   assert.equal(out[0].status, 'retry');
-  assert.match(store.rows[0].error ?? '', /exactly one executable WhatsApp outreach action/i);
+  assert.match(store.rows[0].error ?? '', /no safe message or supported service fit/i);
 });
 
 test('approved first contacts resume WhatsApp-registration clarifications without resuming other Founder approvals', async () => {
