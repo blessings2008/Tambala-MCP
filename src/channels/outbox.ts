@@ -40,7 +40,7 @@ export interface QueueResult { id: string; status: MessageRow['status']; reason?
 export function sanitizeCustomerMessage(value: string): string {
   const internalLine = /^\s*(?:by\s+(?:the\s+)?(?:ceo|chief executive officer|head of|director of)\b.*|(?:prepared|generated|drafted|sent)\s+by\b.*|(?:agent|role|employee|department|internal analysis|routing note|internal note|internal only|internal use only)\s*:\s*.*|(?:ceo|chief executive officer|head of [^|—–-]+|director of [^|—–-]+)\s*[|—–-]\s*TT[-\s]?\d{3}.*|(?:—|–|-{1,2})?\s*TT[-\s]?\d{3}\b.*)$/i;
   return value.split(/\r?\n/)
-    .filter((line) => !internalLine.test(line))
+    .filter((line) => !internalLine.test(line) && !/^\\s*reply\\s+stop\\s+to\\s+opt\\s+out[.!]*\\s*$/i.test(line))
     .map((line) => line.replace(/\bTT[-\s]?\d{3}\b/gi, '').trimEnd())
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
