@@ -1,6 +1,6 @@
 import { normalizePhone } from './phone.js';
 import { EvolutionError } from './evolution.js';
-import { CLIENT_DAILY_LIMIT, FOUNDER_DAILY_LIMIT, decide, sendWindowOpen, type Purpose } from './policy.js';
+import { FOUNDER_DAILY_LIMIT, decide, sendWindowOpen, type Purpose } from './policy.js';
 import type { MessageRow, MessageStore } from './message-store.js';
 import { localTime } from '../organization/workforce/schedule.js';
 
@@ -155,7 +155,7 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
   const now = deps.now();
   const since = dayStartIso(now);
   const blocked = await deps.store.blockedNumbers();
-  const counts = { client: await deps.store.sentSince(since, 'client'), founder: await deps.store.sentSince(since, 'founder') };
+  const counts = { founder: await deps.store.sentSince(since, 'founder') };
   let sentClient = 0;
   let clientAttempted = 0;
 
@@ -173,7 +173,6 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
         const remaining = sentAt ? cooldownMs - (now.getTime() - sentAt) : 0;
         if (remaining > 0) { await wait(`Customer-send cooldown active. Try again in about ${Math.ceil(remaining / 1000)} seconds.`); continue; }
       }
-      if (counts.client >= CLIENT_DAILY_LIMIT()) { await wait(`Daily customer limit of ${CLIENT_DAILY_LIMIT()} reached. It will go out tomorrow.`); continue; }
       if (clientAttempted >= 1) { await wait('One customer message per outbox pass; the rest will be picked up by the next scheduler cycle.'); continue; }
     } else if (counts.founder >= FOUNDER_DAILY_LIMIT()) { await wait('Daily limit of messages to the Founder reached.'); continue; }
 
@@ -187,7 +186,7 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
         result = await deps.transport.sendDocument(row.number, doc.base64, doc.fileName, row.text);
       } else result = await deps.transport.sendText(row.number, row.text);
       await deps.store.update(row.id, { status: 'sent', claimed_at: null, provider_message_id: result.id, sent_at: deps.now().toISOString(), attempts: row.attempts + 1, reason: null });
-      if (row.audience === 'client') { counts.client += 1; sentClient += 1; } else counts.founder += 1;
+      if (row.audience === 'client') sentClient += 1; else counts.founder += 1;
       out.push({ id: row.id, status: 'sent' });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Send failed.';
