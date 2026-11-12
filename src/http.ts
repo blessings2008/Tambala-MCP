@@ -604,6 +604,21 @@ const server = createHttpServer(async (req, res) => {
         json(res, 201, { ticket });
         return;
       }
+      if (requestPath === '/api/customer-relations/reply' && req.method === 'POST') {
+        const body = await readJsonBody(req) as { phone?: string; message?: string; purpose?: string };
+        const phone = String(body.phone ?? '');
+        const message = String(body.message ?? '').trim();
+        if (message.length < 2 || message.length > 1500) { json(res, 400, { error: 'Reply must be 2–1,500 characters.' }); return; }
+        const conversation = await getCustomerConversation(phone, 1);
+        if (conversation.contact?.do_not_contact) { json(res, 403, { error: 'This customer is marked do-not-contact.' }); return; }
+        const queued = await queueWhatsApp({
+          roleId: 'director-customer-relations', agent: 'followup', to: phone, text: message,
+          purpose: body.purpose === 'followup' ? 'followup' : 'reply',
+          contactLabel: conversation.contact?.display_name ?? conversation.contact?.company_name ?? undefined,
+        });
+        json(res, 202, { queued, approval_required: true, sent: false });
+        return;
+      }
       const ticketMatch = /^\/api\/customer-relations\/tickets\/([0-9a-f-]{36})$/.exec(requestPath);
       if (ticketMatch && req.method === 'PATCH') {
         const body = await readJsonBody(req) as { status?: string; priority?: string; assigned_role_id?: string; note?: string };
@@ -638,6 +653,15 @@ const server = createHttpServer(async (req, res) => {
   if (requestPath === '/api/dashboard' && req.method === 'GET') {
     try { json(res, 200, await buildDashboard()); }
     catch (error) { console.error('Dashboard build failed:', error instanceof Error ? error.message : error); json(res, 500, { error: 'Dashboard data could not be built.' }); }
+    return;
+  }
+
+  if (requestPath === '/customer-relations' && req.method === 'GET') {
+    try {
+      const html = await readFile(new URL('../public/customer-relations.html', import.meta.url));
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'" });
+      res.end(html);
+    } catch (error) { console.error('Unable to load Customer Relations desk:', error); json(res, 500, { error: 'Customer Relations desk is unavailable.' }); }
     return;
   }
 
