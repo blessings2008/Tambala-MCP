@@ -30,7 +30,7 @@ export const actionSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('update_support_ticket'), id: z.string().uuid(),
-    status: z.enum(['open', 'in_progress', 'waiting_customer', 'waiting_internal', 'resolved', 'closed']).optional(),
+    status: z.enum(['open', 'in_progress', 'waiting_internal', 'resolved', 'closed']).optional(),
     priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
     assigned_role_id: z.string().trim().min(2).max(120).optional(),
     note: z.string().trim().max(3000).optional(),
