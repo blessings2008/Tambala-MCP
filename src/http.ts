@@ -610,7 +610,7 @@ const server = createHttpServer(async (req, res) => {
         const message = String(body.message ?? '').trim();
         if (message.length < 2 || message.length > 1500) { json(res, 400, { error: 'Reply must be 2–1,500 characters.' }); return; }
         const conversation = await getCustomerConversation(phone, 1);
-        if (conversation.contact?.do_not_contact) { json(res, 403, { error: 'This customer is marked do-not-contact.' }); return; }
+        if (conversation.blocked || conversation.contact?.do_not_contact) { json(res, 403, { error: 'This customer is blocked from outbound contact.' }); return; }
         const queued = await queueWhatsApp({
           roleId: 'director-customer-relations', agent: 'followup', to: phone, text: message,
           purpose: body.purpose === 'followup' ? 'followup' : 'reply',
