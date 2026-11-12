@@ -229,6 +229,7 @@ function render(){
  // settings
  fill('flagList',[['Role enforcement',c.roleEnforcement],['Worker signatures',c.signing],['Dev: treat agent roles as active',c.devActiveRoles],['Web research key',c.webResearch],['Pay token',c.tambalaPay],['WhatsApp flag',c.whatsapp]].map(([n,v])=>row(n,'',badge(v?'On':'Off',v?'good':'pending'))));
  fill('sourceList',[row('Organization source',c.orgSource==='supabase'?'Loaded from Supabase tables':c.orgSource==='seed-fallback'?'Built-in seed (no database verification)':'Unavailable',badge(c.orgSource||'unknown',c.orgSource==='supabase'?'good':'pending'))]);
+ buildSearchIndex();
 }
 
 
