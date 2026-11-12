@@ -103,14 +103,17 @@ export async function listCustomerConversations(limit = 50, search?: string) {
     const latest = rows[0];
     const phone = latest.number;
     const contact = phone ? contactByPhone.get(phone) ?? null : null;
-    const lastOutboundAt = rows.find((row) => row.direction === 'out')?.created_at ?? null;
-    const unreadCount = rows.filter((row) => row.direction === 'in' && (!lastOutboundAt || row.created_at > lastOutboundAt)).length;
+    // Pending-approval and queued outbound messages do not count as customer replies.
+    const lastDeliveredOutboundAt = rows.find((row) => row.direction === 'out' && row.status === 'sent')?.created_at ?? null;
+    const latestInbound = rows.find((row) => row.direction === 'in') ?? null;
+    const unreadCount = rows.filter((row) => row.direction === 'in' && (!lastDeliveredOutboundAt || row.created_at > lastDeliveredOutboundAt)).length;
     const label = contact?.display_name || latest.contact_label || (phone ? maskNumber(phone) : 'Unknown WhatsApp sender');
     return {
       key, phone, contact, contact_name: label, company_name: contact?.company_name ?? null,
       last_message: latest.text.slice(0, 500), last_message_at: latest.created_at,
       last_direction: latest.direction, message_count: rows.length, unread_count: unreadCount,
-      needs_reply: latest.direction === 'in', blocked: Boolean(phone && (blocked.has(phone) || contact?.do_not_contact)),
+      needs_reply: Boolean(latestInbound && (!lastDeliveredOutboundAt || latestInbound.created_at > lastDeliveredOutboundAt)),
+      blocked: Boolean(phone && (blocked.has(phone) || contact?.do_not_contact)),
       channel: 'whatsapp' as const,
     };
   }).filter((row) => !needle || [row.contact_name, row.company_name, row.phone, row.last_message].some((v) => String(v ?? '').toLowerCase().includes(needle)))
