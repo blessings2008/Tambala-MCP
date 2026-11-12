@@ -17,6 +17,7 @@ import { FOUNDER_DAILY_LIMIT } from './policy.js';
 import { maskNumber, normalizePhone } from './phone.js';
 import { localTime } from '../organization/workforce/schedule.js';
 import { isCompanyStatusRequest, isFounderKnowledgeQuestion, runCompanyStatusReport } from './founder-execution.js';
+import { recordCustomerResponse } from '../customer-support/service.js';
 
 /** The Founder's own WhatsApp number, where employees reach him. Set TAMBALA_FOUNDER_WHATSAPP. */
 export function founderNumber(): string | null {
@@ -45,7 +46,20 @@ let sending = false;
 export async function runOutbox(): Promise<SendOutcome[]> {
   if (sending) return [];
   sending = true;
-  try { return await processOutbox(productionOutboxDeps()); } finally { sending = false; }
+  const store = messageStore();
+  try {
+    const outcomes = await processOutbox(productionOutboxDeps(store));
+    for (const outcome of outcomes) {
+      if (outcome.status !== 'sent') continue;
+      const row = await store.byId(outcome.id).catch(() => null);
+      if (row?.direction === 'out' && row.audience === 'client' && row.number) {
+        await recordCustomerResponse(row.number).catch((error) => {
+          console.warn('Customer support first-response metric update failed:', error instanceof Error ? error.message : error);
+        });
+      }
+    }
+    return outcomes;
+  } finally { sending = false; }
 }
 
 // When the Founder decides on a message approval, release or retire the message right away.
