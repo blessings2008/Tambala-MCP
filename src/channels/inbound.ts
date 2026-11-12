@@ -1,7 +1,7 @@
 import { jidToNumber, maskNumber, normalizePhone } from './phone.js';
 import { OPT_OUT_PATTERN } from './policy.js';
 import type { MessageStore } from './message-store.js';
-import { markCustomerDoNotContact, syncCustomerContact } from '../customer-support/service.js';
+import { markCustomerDoNotContact, recordCustomerInbound, syncCustomerContact } from '../customer-support/service.js';
 
 export interface InboundDeps {
   store: MessageStore;
@@ -124,6 +124,12 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
       await deps.reply(number, 'You have been unsubscribed and will not receive more messages from Tambala Technologies. Sorry to see you go.').catch(() => undefined);
       await deps.tellFounder(`${label ?? maskNumber(number)} replied STOP and has been added to the do-not-contact list.`).catch(() => undefined);
       summary.optOuts += 1; continue;
+    }
+
+    if (number !== founder) {
+      await recordCustomerInbound(number).catch((error) => {
+        console.warn('Customer support ticket activity update failed:', error instanceof Error ? error.message : error);
+      });
     }
 
     if (founder && number === founder) {
