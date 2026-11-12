@@ -270,12 +270,12 @@ export async function customerSupportMetrics(conversationRows?: Awaited<ReturnTy
   const resolutionMinutes = resolved.map((ticket) => (Date.parse(ticket.resolved_at!) - Date.parse(ticket.created_at)) / 60000).filter((n) => Number.isFinite(n) && n >= 0);
   const average = (values: number[]) => values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : null;
   return {
-    tickets_total: tickets.length, tickets_open: tickets.filter((t) => activeStatuses.includes(t.status)).length,
+    tickets_loaded: tickets.length, tickets_open: tickets.filter((t) => activeStatuses.includes(t.status)).length,
     tickets_resolved: byStatus.resolved ?? 0, tickets_closed: byStatus.closed ?? 0,
-    conversations_total: conversations.length, conversations_needing_reply: conversations.filter((c) => c.needs_reply && !c.blocked).length,
+    conversations_loaded: conversations.length, conversations_needing_reply: conversations.filter((c) => c.needs_reply && !c.blocked).length,
     by_status: byStatus, by_priority: byPriority,
     average_first_response_minutes: average(responseMinutes), average_resolution_minutes: average(resolutionMinutes),
-    measured_from: 'Stored ticket timestamps; null means no qualifying records are available.',
+    measured_from: 'Counts use the latest 1,000 tickets and up to 100 recent conversations loaded. Response and resolution averages use stored timestamps; null means no qualifying records are available.',
   };
 }
 
