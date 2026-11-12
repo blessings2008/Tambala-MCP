@@ -120,6 +120,7 @@ export async function listCustomerConversations(limit = 50, search?: string) {
 export async function getCustomerConversation(phoneInput: string, limit = 100) {
   const phone = normalizePhone(phoneInput);
   if (!phone) throw new Error('Enter a valid WhatsApp phone number.');
+  if (phone === normalizePhone(process.env.TAMBALA_FOUNDER_WHATSAPP ?? '')) throw new Error('The Founder channel is not a customer conversation.');
   const contact = await syncCustomerContact(phone).catch(() => null);
   const [messages, tickets] = await Promise.all([
     supabaseSelect<ConversationMessage>('organization_messages', { select: 'id,direction,number,audience,text,status,purpose,contact_label,created_at,sent_at', number: `eq.${phone}`, order: 'created_at.desc', limit: String(Math.max(1, Math.min(limit, 200))) }),
