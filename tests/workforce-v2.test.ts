@@ -105,14 +105,14 @@ test('Founder-approved first-contact handoffs may execute WhatsApp and accept a 
       if (agent === 'orchestrator') return `DECISION: ACCEPT\nThe verified WhatsApp action was queued.`;
       return `Prepared a personalised introduction.\n\nACTIONS:\n{"type":"whatsapp","to":"+265888123456","purpose":"outreach","text":"Hello AgriTrust team."}`;
     },
-    actions: { run: async () => 'WhatsApp message was queued for sending; delivery is not confirmed yet.' },
+    actions: { run: async () => 'Actions:\n✔ whatsapp: message queued for sending; delivery is not confirmed yet.' },
   });
   await queueHandoff(store, {
     fromRoleId: 'ceo',
     toAgent: 'outreach',
     sourceDutyId: 'approved-prospect-first-contact',
     request: 'Founder-approved first contact for AgriTrust',
-    contextSummary: JSON.stringify({ prospect: { organisation_name: 'AgriTrust' }, crm_lead: { phone: '+265888123456' } }),
+    contextSummary: JSON.stringify({ prospect: { organisation_name: 'AgriTrust', service_fit: ['web_development'] }, crm_lead: { phone: '+265888123456' } }),
   });
   const out = await processHandoffs(deps);
   assert.equal(out[0].status, 'completed');
@@ -124,7 +124,7 @@ test('Founder-approved first-contact handoffs may execute WhatsApp and accept a 
 test('approved first-contact handoffs convert the legacy WhatsApp action shape and require a queued result', async () => {
   const prompts: string[] = [];
   const contextSummary = JSON.stringify({
-    prospect: { organisation_name: 'AgriTrust' },
+    prospect: { organisation_name: 'AgriTrust', service_fit: ['web_development'] },
     crm_lead: { phone: '+265 994 136 898', business_name: 'AgriTrust' },
   });
   const { deps, store } = handoffDeps({
@@ -133,7 +133,7 @@ test('approved first-contact handoffs convert the legacy WhatsApp action shape a
       if (agent === 'orchestrator') return `DECISION: ACCEPT\nThe WhatsApp action was queued.`;
       return `**WhatsApp Outreach Action**\n\n\`\`\`json\n{\"action\":\"whatsapp\",\"purpose\":\"outreach\",\"destination\":\"+265 994 136 898\",\"message\":\"Hello AgriTrust team.\"}\n\`\`\`\n\nWhat I did: prepared the message.`;
     },
-    actions: { run: async () => 'WhatsApp message to AgriTrust was queued for sending; delivery is not confirmed yet.' },
+    actions: { run: async () => 'Actions:\n✔ whatsapp: message queued for sending; delivery is not confirmed yet.' },
   });
   await queueHandoff(store, {
     fromRoleId: 'ceo',
@@ -161,7 +161,7 @@ test('approved first-contact handoffs cannot complete on a draft without an acti
     toAgent: 'outreach',
     sourceDutyId: 'approved-prospect-first-contact',
     request: 'Founder-approved first contact for AgriTrust',
-    contextSummary: JSON.stringify({ prospect: { organisation_name: 'AgriTrust' }, crm_lead: { phone: '+265 994 136 898' } }),
+    contextSummary: JSON.stringify({ prospect: { organisation_name: 'AgriTrust', service_fit: ['web_development'] }, crm_lead: { phone: '+265 994 136 898' } }),
   });
   const out = await processHandoffs(deps);
   assert.equal(out[0].status, 'retry');
@@ -176,14 +176,14 @@ test('approved first contacts resume WhatsApp-registration clarifications withou
       if (agent === 'orchestrator') return `DECISION: ACCEPT\nThe WhatsApp action was queued.`;
       return `ACTIONS:\n{"type":"whatsapp","to":"+265888123456","purpose":"outreach","text":"Hello AgriTrust team."}`;
     },
-    actions: { run: async () => 'WhatsApp message was queued for sending; delivery is not confirmed yet.' },
+    actions: { run: async () => 'Actions:\n✔ whatsapp: message queued for sending; delivery is not confirmed yet.' },
   });
   const first = await queueHandoff(store, {
     fromRoleId: 'ceo',
     toAgent: 'outreach',
     sourceDutyId: 'approved-prospect-first-contact',
     request: 'Founder-approved first contact for AgriTrust',
-    contextSummary: JSON.stringify({ prospect: { organisation_name: 'AgriTrust' }, crm_lead: { phone: '+265888123456' } }),
+    contextSummary: JSON.stringify({ prospect: { organisation_name: 'AgriTrust', service_fit: ['web_development'] }, crm_lead: { phone: '+265888123456' } }),
   });
   await store.update(first.id, {
     status: 'awaiting_founder',
