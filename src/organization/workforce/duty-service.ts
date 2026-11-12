@@ -728,7 +728,7 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
         if (kind === 'discovery') out.discovery = { note: 'Research-only queue. New entries await Sales review; do not create CRM leads or contact prospects.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status&processing_status=in.(new,reviewing)&order=research_date.desc,created_at.desc&limit=50') };
         if (kind === 'customer_support') {
           const [metrics, conversations, tickets] = await Promise.all([
-            customerSupportMetrics(), listCustomerConversations(20), listSupportTickets(undefined, 20),
+            customerSupportMetrics(), listCustomerConversations(8), listSupportTickets(undefined, 8),
           ]);
           out.customer_support = {
             metrics: {
@@ -743,7 +743,7 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
               message_count: item.message_count,
             })),
             tickets: tickets.map((ticket) => ({
-              id: ticket.id, subject: ticket.subject, description: ticket.description.slice(0, 500),
+              id: ticket.id, subject: ticket.subject, description: ticket.description.slice(0, 240),
               category: ticket.category, priority: ticket.priority, status: ticket.status,
               assigned_role_id: ticket.assigned_role_id, last_activity_at: ticket.last_activity_at,
               contact: ticket.contact ? {
@@ -751,7 +751,7 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
                 company_name: ticket.contact.company_name, do_not_contact: ticket.contact.do_not_contact,
               } : null,
             })),
-            note: 'Only the latest 20 conversations and tickets are included. Pending approvals are not counted as delivered replies.',
+            note: 'Only the latest 8 conversations and tickets are included. Pending approvals are not counted as delivered replies.',
           };
         }
       }
