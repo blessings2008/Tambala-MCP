@@ -107,12 +107,15 @@ export async function listCustomerConversations(limit = 50, search?: string) {
     const lastDeliveredOutboundAt = rows.find((row) => row.direction === 'out' && row.status === 'sent')?.created_at ?? null;
     const latestInbound = rows.find((row) => row.direction === 'in') ?? null;
     const unreadCount = rows.filter((row) => row.direction === 'in' && (!lastDeliveredOutboundAt || row.created_at > lastDeliveredOutboundAt)).length;
+    const needsReply = Boolean(latestInbound && (!lastDeliveredOutboundAt || latestInbound.created_at > lastDeliveredOutboundAt));
+    const pendingOutbound = latestInbound ? rows.find((row) => row.direction === 'out' && row.created_at > latestInbound.created_at && (row.status === 'pending_approval' || row.status === 'queued')) : undefined;
+    const replyState = !needsReply ? 'up_to_date' : pendingOutbound?.status === 'pending_approval' ? 'awaiting_approval' : pendingOutbound?.status === 'queued' ? 'queued' : 'needs_reply';
     const label = contact?.display_name || latest.contact_label || (phone ? maskNumber(phone) : 'Unknown WhatsApp sender');
     return {
       key, phone, contact, contact_name: label, company_name: contact?.company_name ?? null,
       last_message: latest.text.slice(0, 500), last_message_at: latest.created_at,
       last_direction: latest.direction, message_count: rows.length, unread_count: unreadCount,
-      needs_reply: Boolean(latestInbound && (!lastDeliveredOutboundAt || latestInbound.created_at > lastDeliveredOutboundAt)),
+      needs_reply: needsReply, reply_state: replyState,
       blocked: Boolean(phone && (blocked.has(phone) || contact?.do_not_contact)),
       channel: 'whatsapp' as const,
     };
