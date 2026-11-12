@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSupportTicket, recordCustomerResponse, updateSupportTicket } from '../src/customer-support/service.ts';
+import { createSupportTicket, listCustomerConversations, recordCustomerResponse, updateSupportTicket } from '../src/customer-support/service.ts';
 
 const CONTACT_ID = '11111111-1111-4111-8111-111111111111';
 const TICKET_ID = '22222222-2222-4222-8222-222222222222';
@@ -8,7 +8,7 @@ const PHONE = '265888123456';
 
 function mockDatabase() {
   const tables: Record<string, Record<string, unknown>[]> = {
-    customer_service_contacts: [], customer_service_tickets: [], customer_service_ticket_events: [],
+    customer_service_contacts: [], customer_service_tickets: [], customer_service_ticket_events: [], organization_messages: [], organization_contact_blocks: [],
   };
   const originalFetch = globalThis.fetch;
   const originalKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -104,5 +104,28 @@ test('first-response metrics change only after a customer-facing reply is delive
     await recordCustomerResponse(PHONE);
     assert.equal(db.tables.customer_service_tickets[0].status, 'waiting_customer');
     assert.equal(typeof db.tables.customer_service_tickets[0].first_response_at, 'string');
+  } finally { db.restore(); }
+});
+
+test('approval-pending WhatsApp drafts do not clear the customer reply-needed state', async () => {
+  const db = mockDatabase();
+  try {
+    const inboundAt = '2026-11-12T10:00:00.000Z';
+    const pendingAt = '2026-11-12T10:01:00.000Z';
+    db.tables.customer_service_contacts.push({
+      id: CONTACT_ID, phone: PHONE, display_name: 'Test Customer', contact_type: 'unknown', do_not_contact: false,
+    });
+    db.tables.organization_messages.push(
+      { id: 'out-1', direction: 'out', audience: 'client', number: PHONE, text: 'Draft reply', status: 'pending_approval', purpose: 'reply', contact_label: 'Test Customer', created_at: pendingAt },
+      { id: 'in-1', direction: 'in', audience: null, number: PHONE, text: 'I need help', status: 'received', purpose: 'inbound', contact_label: 'Test Customer', created_at: inboundAt },
+    );
+    db.tables.organization_contact_blocks.length = 0;
+    const rows = await listCustomerConversations(10);
+    assert.equal(rows[0].needs_reply, true);
+    assert.equal(rows[0].reply_state, 'awaiting_approval');
+    db.tables.organization_messages[0].status = 'sent';
+    const delivered = await listCustomerConversations(10);
+    assert.equal(delivered[0].needs_reply, false);
+    assert.equal(delivered[0].reply_state, 'up_to_date');
   } finally { db.restore(); }
 });
