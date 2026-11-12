@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSupportTicket, listCustomerConversations, recordCustomerResponse, updateSupportTicket } from '../src/customer-support/service.js';
+import { createSupportTicket, listCustomerConversations, recordCustomerInbound, recordCustomerResponse, updateSupportTicket } from '../src/customer-support/service.js';
 
 const CONTACT_ID = '11111111-1111-4111-8111-111111111111';
 const TICKET_ID = '22222222-2222-4222-8222-222222222222';
@@ -127,5 +127,23 @@ test('approval-pending WhatsApp drafts do not clear the customer reply-needed st
     const delivered = await listCustomerConversations(10);
     assert.equal(delivered[0].needs_reply, false);
     assert.equal(delivered[0].reply_state, 'up_to_date');
+  } finally { db.restore(); }
+});
+
+test('new customer messages return waiting tickets to in-progress and record the event', async () => {
+  const db = mockDatabase();
+  try {
+    db.tables.customer_service_contacts.push({
+      id: CONTACT_ID, phone: PHONE, display_name: 'Test Customer', contact_type: 'unknown', do_not_contact: false,
+    });
+    db.tables.customer_service_tickets.push({
+      id: TICKET_ID, contact_id: CONTACT_ID, subject: 'Support request', description: 'Waiting for customer response.',
+      category: 'general', priority: 'normal', status: 'waiting_customer', assigned_role_id: 'director-customer-relations',
+      first_response_at: new Date().toISOString(), last_activity_at: new Date().toISOString(), resolved_at: null, closed_at: null,
+      created_by_role_id: 'director-customer-relations', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    });
+    await recordCustomerInbound(PHONE);
+    assert.equal(db.tables.customer_service_tickets[0].status, 'in_progress');
+    assert.equal(db.tables.customer_service_ticket_events[0].event_type, 'status_changed');
   } finally { db.restore(); }
 });
