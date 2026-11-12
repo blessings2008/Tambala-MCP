@@ -139,6 +139,11 @@ test('first-contact outreach action reports queued status, not Founder approval'
 });
 
 test('only Customer Relations can create, update and annotate support tickets', async () => {
+  assert.ok(allowedActionTypes('followup').includes('create_support_ticket'));
+  assert.ok(allowedActionTypes('followup').includes('update_support_ticket'));
+  assert.ok(allowedActionTypes('followup').includes('add_support_note'));
+  assert.ok(!allowedActionTypes('outreach').includes('create_support_ticket'));
+  assert.match(actionHelp('followup'), /create_support_ticket/);
   const h = harness();
   const actions = parse(
     '{"type":"create_support_ticket","phone":"+265888123456","subject":"Login issue","description":"Customer cannot access their account.","category":"technical","priority":"high"}',
