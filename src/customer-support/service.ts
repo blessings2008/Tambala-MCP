@@ -114,14 +114,12 @@ export async function listCustomerConversations(limit = 50, search?: string) {
 export async function getCustomerConversation(phoneInput: string, limit = 100) {
   const phone = normalizePhone(phoneInput);
   if (!phone) throw new Error('Enter a valid WhatsApp phone number.');
-  const [messages, contacts, tickets] = await Promise.all([
+  const contact = await syncCustomerContact(phone).catch(() => null);
+  const [messages, tickets] = await Promise.all([
     supabaseSelect<ConversationMessage>('organization_messages', { select: 'id,direction,number,text,status,purpose,contact_label,created_at,sent_at', number: `eq.${phone}`, order: 'created_at.desc', limit: String(Math.max(1, Math.min(limit, 200))) }),
-    supabaseSelect<CustomerContact>('customer_service_contacts', { select: '*', phone: `eq.${phone}`, limit: '1' }),
-    supabaseSelect<SupportTicket>('customer_service_tickets', { select: '*', order: 'created_at.desc', limit: '100' }),
+    contact ? supabaseSelect<SupportTicket>('customer_service_tickets', { select: '*', contact_id: `eq.${contact.id}`, order: 'created_at.desc', limit: '100' }) : Promise.resolve([] as SupportTicket[]),
   ]);
-  const contact = contacts[0] ?? null;
-  const contactTickets = contact ? tickets.filter((ticket) => ticket.contact_id === contact.id) : [];
-  return { phone, contact, messages: messages.reverse(), tickets: contactTickets };
+  return { phone, contact, messages: messages.reverse(), tickets };
 }
 
 export async function createSupportTicket(input: {
