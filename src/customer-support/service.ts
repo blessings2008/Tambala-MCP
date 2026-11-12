@@ -57,6 +57,13 @@ export async function syncCustomerContact(phoneInput: string, displayName?: stri
   });
 }
 
+export async function markCustomerDoNotContact(phoneInput: string): Promise<void> {
+  const phone = normalizePhone(phoneInput);
+  if (!phone) return;
+  const rows = await supabaseSelect<CustomerContact>('customer_service_contacts', { select: 'id', phone: `eq.${phone}`, limit: '1' });
+  if (rows[0]) await updateRow<CustomerContact>('customer_service_contacts', rows[0].id, { do_not_contact: true, last_seen_at: nowIso() });
+}
+
 export async function updateCustomerContact(input: {
   id: string; display_name?: string; email?: string; company_name?: string; notes?: string;
 }): Promise<CustomerContact> {
@@ -128,7 +135,6 @@ export async function createSupportTicket(input: {
   if (!description || description.length > 5000) throw new Error('Ticket description must be 1–5,000 characters.');
   const contact = await syncCustomerContact(phone);
   if (!contact) throw new Error('Could not create or find the customer profile.');
-  if (contact.do_not_contact) throw new Error('This contact is opted out. A support ticket may be recorded, but outbound contact is blocked.');
   const actor = input.actor_role_id ?? 'director-customer-relations';
   const ticket = await insertRow<SupportTicket>('customer_service_tickets', {
     contact_id: contact.id, subject, description, category: input.category ?? 'general',
