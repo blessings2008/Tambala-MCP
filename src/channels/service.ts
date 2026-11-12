@@ -52,7 +52,7 @@ export async function runOutbox(): Promise<SendOutcome[]> {
     for (const outcome of outcomes) {
       if (outcome.status !== 'sent') continue;
       const row = await store.byId(outcome.id).catch(() => null);
-      if (row?.direction === 'out' && row.audience === 'client' && row.number) {
+      if (row?.direction === 'out' && row.audience === 'client' && row.number && (row.purpose === 'reply' || row.purpose === 'followup')) {
         await recordCustomerResponse(row.number).catch((error) => {
           console.warn('Customer support first-response metric update failed:', error instanceof Error ? error.message : error);
         });
