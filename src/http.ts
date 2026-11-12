@@ -647,7 +647,7 @@ const server = createHttpServer(async (req, res) => {
       json(res, 404, { error: 'Customer Relations endpoint not found.' });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Customer Relations request failed.';
-      json(res, /not found/i.test(message) ? 404 : /required|valid|between|must be|provide|opted out/i.test(message) ? 400 : 500, { error: message.slice(0, 300) });
+      json(res, /not found/i.test(message) ? 404 : /required|valid|between|must be|provide|opted out|automatically|does not exist|not active/i.test(message) ? 400 : 500, { error: message.slice(0, 300) });
     }
     return;
   }
