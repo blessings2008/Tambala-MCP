@@ -96,6 +96,6 @@ export function registerCustomerSupportTools(server: McpServer): void {
       purpose,
       contactLabel: contact?.display_name ?? contact?.company_name ?? undefined,
     });
-    return text({ queued: true, result, approval_required: true, note: 'No customer message has been sent. Founder approval is required before delivery.' });
+    return text({ queued: result.status === 'pending_approval' || result.status === 'queued', blocked: result.status === 'blocked', result, approval_required: result.status === 'pending_approval', sent: false, note: result.status === 'blocked' ? (result.reason ?? 'The message was blocked by channel policy.') : 'No customer message has been sent. Founder approval is required before delivery.' }, result.status === 'blocked');
   });
 }
