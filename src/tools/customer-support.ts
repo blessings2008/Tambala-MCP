@@ -30,7 +30,7 @@ export function registerCustomerSupportTools(server: McpServer): void {
   server.registerTool('list_customer_support_tickets', {
     description: 'List Customer Relations support tickets with their customer profiles. Read-only.',
     inputSchema: {
-      status: z.enum(['open', 'in_progress', 'waiting_customer', 'waiting_internal', 'resolved', 'closed']).optional(),
+      status: z.enum(['open', 'in_progress', 'waiting_internal', 'resolved', 'closed']).optional(),
       limit: z.number().int().min(1).max(100).default(40),
     },
   }, async ({ status, limit }) => text({ tickets: await listSupportTickets(status, limit ?? 40) }));
