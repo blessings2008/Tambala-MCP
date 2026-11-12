@@ -599,7 +599,7 @@ const server = createHttpServer(async (req, res) => {
           phone: String(body.phone ?? ''), subject: String(body.subject ?? ''), description: String(body.description ?? ''),
           category: body.category as import('./customer-support/service.js').TicketCategory,
           priority: body.priority as import('./customer-support/service.js').TicketPriority,
-          source_channel: body.source_channel,
+          source_channel: body.source_channel, actor_role_id: 'founder',
         });
         json(res, 201, { ticket });
         return;
@@ -627,7 +627,7 @@ const server = createHttpServer(async (req, res) => {
         const ticket = await updateSupportTicket({
           id: ticketMatch[1], status: body.status as import('./customer-support/service.js').TicketStatus,
           priority: body.priority as import('./customer-support/service.js').TicketPriority,
-          assigned_role_id: body.assigned_role_id, note: body.note,
+          assigned_role_id: body.assigned_role_id, note: body.note, actor_role_id: 'founder',
         });
         json(res, 200, { ticket });
         return;
@@ -635,7 +635,7 @@ const server = createHttpServer(async (req, res) => {
       const noteMatch = /^\/api\/customer-relations\/tickets\/([0-9a-f-]{36})\/notes$/.exec(requestPath);
       if (noteMatch && req.method === 'POST') {
         const body = await readJsonBody(req) as { note?: string };
-        json(res, 201, await addSupportTicketNote(noteMatch[1], String(body.note ?? '')));
+        json(res, 201, await addSupportTicketNote(noteMatch[1], String(body.note ?? ''), 'founder'));
         return;
       }
       const contactMatch = /^\/api\/customer-relations\/contacts\/([0-9a-f-]{36})$/.exec(requestPath);
