@@ -89,7 +89,7 @@ export function registerCustomerSupportTools(server: McpServer): void {
   }, async ({ phone: number, message, purpose }) => {
     const conversation = await getCustomerConversation(number, 1);
     const contact = conversation.contact;
-    if (contact?.do_not_contact) return text({ queued: false, blocked: true, reason: 'This customer is marked do-not-contact.' }, true);
+    if (conversation.blocked || contact?.do_not_contact) return text({ queued: false, blocked: true, reason: 'This customer is blocked from outbound contact.' }, true);
     const result = await queueWhatsApp({
       roleId: 'director-customer-relations',
       agent: 'followup',
