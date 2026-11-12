@@ -161,6 +161,7 @@ export async function updateSupportTicket(input: {
     patch.status = input.status;
     if (input.status === 'resolved') { patch.resolved_at = nowIso(); patch.closed_at = null; }
     else if (input.status === 'closed') { patch.closed_at = nowIso(); patch.resolved_at = current.resolved_at ?? nowIso(); }
+    else if (input.status === 'waiting_customer' && !current.first_response_at) { patch.first_response_at = nowIso(); }
     else if (current.status === 'resolved' || current.status === 'closed') { patch.resolved_at = null; patch.closed_at = null; }
     events.push({ event_type: input.status === 'resolved' ? 'resolved' : (current.status === 'resolved' || current.status === 'closed') ? 'reopened' : 'status_changed', body: `Status changed from ${current.status} to ${input.status}.`, metadata: { from: current.status, to: input.status } });
   }
