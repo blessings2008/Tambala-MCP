@@ -13,7 +13,7 @@ export interface CustomDutyRow {
 }
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
-const CUSTOM_CONTEXTS: readonly ContextKind[] = ['crm', 'company', 'organization', 'catalog', 'invoices'];
+const CUSTOM_CONTEXTS: readonly ContextKind[] = ['crm', 'company', 'organization', 'catalog', 'invoices', 'customer_support'];
 const text = (v: unknown, min: number, max: number, label: string): string => {
   const s = typeof v === 'string' ? v.trim() : '';
   if (s.length < min || s.length > max) throw new DutyConfigError(`${label} must be ${min} to ${max} characters.`);
