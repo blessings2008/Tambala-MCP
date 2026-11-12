@@ -146,11 +146,12 @@ export async function getBusinessSummary(): Promise<DbRow> {
 
 /** Detailed, least-privilege CRM data for Sales and Customer Relations duties only. */
 export async function getDetailedCRMContext(): Promise<DbRow> {
-  const [leads, clients, tasks, messages] = await Promise.all([
+  const [leads, clients, tasks, messages, projects] = await Promise.all([
     supabaseSelect<DbRow>('leads', 'select=id,name,business_name,phone,whatsapp,email,source,status,notes,next_follow_up_at,created_at,updated_at&order=created_at.desc&limit=500'),
     supabaseSelect<DbRow>('clients', 'select=id,name,business_name,phone,whatsapp,email,location,status,notes,created_at,updated_at&order=created_at.desc&limit=500'),
     supabaseSelect<DbRow>('tasks', 'select=id,project_id,client_id,title,description,status,priority,due_at,completed_at,created_at,updated_at&order=due_at.asc.nullslast&limit=500'),
     supabaseSelect<DbRow>('organization_messages', 'select=direction,number,audience,purpose,status,contact_label,sent_at,created_at&order=created_at.desc&limit=1000'),
+    supabaseSelect<DbRow>('projects', 'select=*&order=created_at.desc&limit=100'),
   ]);
   const now = Date.now();
   const activeLeads = leads.filter((row) => !isExcluded(row));
@@ -191,6 +192,19 @@ export async function getDetailedCRMContext(): Promise<DbRow> {
       status: task.status, priority: task.priority ?? null, due_at: task.due_at ?? null,
       completed_at: task.completed_at ?? null, client: clientById.get(String(task.client_id)),
     }));
+  const projectRecords = projects.map((project) => ({
+    id: project.id ?? null,
+    client_id: project.client_id ?? null,
+    name: project.name ?? null,
+    description: typeof project.description === 'string' ? project.description.slice(0, 300) : null,
+    notes: typeof project.notes === 'string' ? project.notes.slice(0, 500) : null,
+    status: project.status ?? null,
+    website_url: project.website_url ?? project.url ?? null,
+    demo_url: project.demo_url ?? project.preview_url ?? null,
+    repository_url: project.repository_url ?? project.repo_url ?? null,
+    created_at: project.created_at ?? null,
+    updated_at: project.updated_at ?? null,
+  }));
   const dueLeads = leadRecords.filter((lead) => {
     const due = typeof lead.next_follow_up_at === 'string' ? Date.parse(lead.next_follow_up_at) : NaN;
     return Number.isFinite(due) && due <= now;
@@ -217,6 +231,11 @@ export async function getDetailedCRMContext(): Promise<DbRow> {
       total: clientRecords.length,
       by_status: counts(activeClients),
       records: clientRecords.slice(0, 30),
+    },
+    projects: {
+      total: projectRecords.length,
+      records: projectRecords,
+      instruction: 'Use project name, description, notes and URLs to identify any concept/demo genuinely prepared for a matching organisation. A project record alone does not prove a website concept is complete; require explicit completed concept/demo evidence before using the prepared-concept WhatsApp format.',
     },
     customer_followups: {
       due_leads: dueLeads.slice(0, 30),
