@@ -240,7 +240,7 @@ const server = createHttpServer(async (req, res) => {
   }
 
 
-  if ((requestPath === '/api/chat-test/status' || requestPath === '/api/chat-test' || requestPath === '/api/chat-test/collaborate' || requestPath === '/api/chat-test/step' || requestPath === '/api/dashboard' || requestPath === '/api/dashboard/approvals/decide' || requestPath.startsWith('/api/dashboard/') || requestPath.startsWith('/api/customer-relations/')) && (req.method === 'GET' || req.method === 'POST')) {
+  if ((requestPath === '/api/chat-test/status' || requestPath === '/api/chat-test' || requestPath === '/api/chat-test/collaborate' || requestPath === '/api/chat-test/step' || requestPath === '/api/dashboard' || requestPath === '/api/dashboard/approvals/decide' || requestPath.startsWith('/api/dashboard/') || requestPath.startsWith('/api/customer-relations/')) && (req.method === 'GET' || req.method === 'POST' || req.method === 'PATCH')) {
     if (!chatTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized. Check the chat test token.' }); return; }
   }
 
