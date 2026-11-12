@@ -19,7 +19,7 @@ export interface SupportTicket extends DbRow {
   created_by_role_id: string; created_at: string; updated_at: string;
 }
 export interface ConversationMessage extends DbRow {
-  id: string; direction: 'in' | 'out'; number: string | null; text: string; status: string;
+  id: string; direction: 'in' | 'out'; number: string | null; audience?: string | null; text: string; status: string;
   purpose: string; contact_label: string | null; created_at: string; sent_at: string | null;
 }
 const nowIso = () => new Date().toISOString();
@@ -32,7 +32,7 @@ const ticketChannels = ['whatsapp', 'email', 'phone', 'website', 'manual', 'othe
 
 export async function syncCustomerContact(phoneInput: string, displayName?: string | null, contactLabel?: string | null): Promise<CustomerContact | null> {
   const phone = normalizePhone(phoneInput);
-  if (!phone) return null;
+  if (!phone || phone === normalizePhone(process.env.TAMBALA_FOUNDER_WHATSAPP ?? '')) return null;
   const [existing, clients, leads] = await Promise.all([
     supabaseSelect<CustomerContact>('customer_service_contacts', { select: '*', phone: `eq.${phone}`, limit: '1' }),
     supabaseSelect<DbRow>('clients', { select: 'id,name,business_name,email,phone,whatsapp', limit: '2000' }),
@@ -84,14 +84,16 @@ export async function updateCustomerContact(input: {
 
 export async function listCustomerConversations(limit = 50, search?: string) {
   const [messages, contacts, blocks] = await Promise.all([
-    supabaseSelect<ConversationMessage>('organization_messages', { select: 'id,direction,number,text,status,purpose,contact_label,created_at,sent_at', order: 'created_at.desc', limit: '500' }),
+    supabaseSelect<ConversationMessage>('organization_messages', { select: 'id,direction,number,audience,text,status,purpose,contact_label,created_at,sent_at', order: 'created_at.desc', limit: '500' }),
     supabaseSelect<CustomerContact>('customer_service_contacts', { select: '*', order: 'last_seen_at.desc', limit: '1500' }),
     supabaseSelect<DbRow>('organization_contact_blocks', { select: 'number', limit: '5000' }),
   ]);
   const contactByPhone = new Map(contacts.map((contact) => [contact.phone, contact]));
   const blocked = new Set(blocks.map((row) => String(row.number)));
   const grouped = new Map<string, ConversationMessage[]>();
+  const founderPhone = normalizePhone(process.env.TAMBALA_FOUNDER_WHATSAPP ?? '');
   for (const message of messages) {
+    if (message.audience === 'founder' || (founderPhone && message.number === founderPhone)) continue;
     const key = message.number ?? `unknown:${message.id}`;
     const group = grouped.get(key) ?? [];
     group.push(message); grouped.set(key, group);
@@ -120,7 +122,7 @@ export async function getCustomerConversation(phoneInput: string, limit = 100) {
   if (!phone) throw new Error('Enter a valid WhatsApp phone number.');
   const contact = await syncCustomerContact(phone).catch(() => null);
   const [messages, tickets] = await Promise.all([
-    supabaseSelect<ConversationMessage>('organization_messages', { select: 'id,direction,number,text,status,purpose,contact_label,created_at,sent_at', number: `eq.${phone}`, order: 'created_at.desc', limit: String(Math.max(1, Math.min(limit, 200))) }),
+    supabaseSelect<ConversationMessage>('organization_messages', { select: 'id,direction,number,audience,text,status,purpose,contact_label,created_at,sent_at', number: `eq.${phone}`, order: 'created_at.desc', limit: String(Math.max(1, Math.min(limit, 200))) }),
     contact ? supabaseSelect<SupportTicket>('customer_service_tickets', { select: '*', contact_id: `eq.${contact.id}`, order: 'created_at.desc', limit: '100' }) : Promise.resolve([] as SupportTicket[]),
   ]);
   return { phone, contact, messages: messages.reverse(), tickets };
