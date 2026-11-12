@@ -22,6 +22,20 @@ export const actionSchema = z.discriminatedUnion('type', [
     type: z.literal('invoice_link'), client: partySchema, description: z.string().trim().min(3).max(180), amount: z.number().positive().max(100_000_000),
     withPdf: z.boolean().default(false), sendTo: phone.optional(), message: msg.optional(),
   }),
+  z.object({
+    type: z.literal('create_support_ticket'), phone,
+    subject: z.string().trim().min(3).max(180), description: z.string().trim().min(1).max(5000),
+    category: z.enum(['general', 'billing', 'technical', 'sales', 'complaint', 'other']).default('general'),
+    priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
+  }),
+  z.object({
+    type: z.literal('update_support_ticket'), id: z.string().uuid(),
+    status: z.enum(['open', 'in_progress', 'waiting_customer', 'waiting_internal', 'resolved', 'closed']).optional(),
+    priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
+    assigned_role_id: z.string().trim().min(2).max(120).optional(),
+    note: z.string().trim().max(3000).optional(),
+  }),
+  z.object({ type: z.literal('add_support_note'), ticket_id: z.string().uuid(), note: z.string().trim().min(1).max(3000) }),
 ]);
 export type Action = z.infer<typeof actionSchema>;
 
@@ -29,12 +43,14 @@ export const MAX_ACTIONS_PER_RUN = 5;
 const CLIENT_AGENTS = new Set(['outreach', 'followup', 'finance', 'payments']);
 const DOC_AGENTS = new Set(['outreach', 'followup', 'finance', 'payments', 'marketing', 'legal', 'orchestrator']);
 const INVOICE_AGENTS = new Set(['finance', 'payments']);
+const SUPPORT_AGENTS = new Set(['followup']);
 
 export function allowedActionTypes(agent: string): Action['type'][] {
   const out: Action['type'][] = ['notify_founder'];
   if (CLIENT_AGENTS.has(agent)) out.push('whatsapp');
   if (DOC_AGENTS.has(agent)) out.push('document');
   if (INVOICE_AGENTS.has(agent)) out.push('invoice_link');
+  if (SUPPORT_AGENTS.has(agent)) out.push('create_support_ticket', 'update_support_ticket', 'add_support_note');
   return out;
 }
 
@@ -153,5 +169,8 @@ export function actionHelp(agent: string): string {
   if (allowed.includes('whatsapp')) lines.push('- WhatsApp a customer: {"type":"whatsapp","to":"+265...","purpose":"outreach|followup","text":"..."}  (short, polite, specific; no pressure; include contact only when a real name is verified).');
   if (allowed.includes('document')) lines.push('- Prepare a PDF: {"type":"document","kind":"quotation|invoice|letter|receipt","client":{"name":"...","phone":"..."},"items":[{"sku":"PRICE-LIST-SKU","quantity":1}],"subject":"...","notes":"...","sendTo":"+265...","message":"covering note"}  (items come from the price list by sku; a custom line needs {"description","quantity","unitPrice"} and is flagged for review; letters use "body" instead of items).');
   if (allowed.includes('invoice_link')) lines.push('- Create a payment link: {"type":"invoice_link","client":{"name":"...","phone":"..."},"description":"...","amount":0,"withPdf":true,"sendTo":"+265...","message":"..."}  (amount in MWK, from verified records only).');
+  if (allowed.includes('create_support_ticket')) lines.push('- Create a customer support ticket: {"type":"create_support_ticket","phone":"+265...","subject":"...","description":"...","category":"general|billing|technical|sales|complaint|other","priority":"low|normal|high|urgent"}  (only for a genuine unresolved customer issue; do not duplicate an existing open ticket).');
+  if (allowed.includes('update_support_ticket')) lines.push('- Update a support ticket: {"type":"update_support_ticket","id":"<ticket UUID>","status":"open|in_progress|waiting_customer|waiting_internal|resolved|closed","priority":"low|normal|high|urgent","note":"..."}  (use only ticket IDs and facts in the supplied context).');
+  if (allowed.includes('add_support_note')) lines.push('- Add an internal support note: {"type":"add_support_note","ticket_id":"<ticket UUID>","note":"..."}  (internal only; never include confidential internal notes in a customer message).');
   return lines.join('\n');
 }
