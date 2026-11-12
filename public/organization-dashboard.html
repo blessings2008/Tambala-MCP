@@ -280,7 +280,7 @@ function renderDepartmentOffice(){
    if(!visible.length){team.append(h('div','office-empty','No team members match these filters.'));return}
    visible.forEach(e=>{const card=h('div','office-person');const top=h('div','office-person-top');top.append(h('b','',e.employeeNumber+' · '+e.title),badge(EMP_LABEL[e.status]||String(e.status||'unknown').replaceAll('_',' '),EMP_KIND[e.status]||'info'));card.append(top,h('small','',e.week.completed+' weekly duties completed · '+Number(e.inbox?.queued||0)+' queued handoffs'));const ta=el2('textarea',{maxlength:'1000','aria-label':'Task for '+e.employeeNumber});ta.placeholder='Describe a task for this employee…';const btn=h('button','sm ok','Assign task');btn.style.marginTop='7px';btn.addEventListener('click',async()=>{const request=ta.value.trim();if(request.length<5){notify('Write a clear task first.');return}btn.disabled=true;try{await post('/api/dashboard/handoffs/assign',{agent:e.agent,request});ta.value='';notify('Task assigned to '+e.employeeNumber+'.');await load();renderDepartmentOffice()}catch(err){notify(err.message)}finally{btn.disabled=false}});card.append(ta,btn);team.append(card)});
   };
-  if(!team.dataset.controlsBound){search.addEventListener('input',drawTeam);filter.addEventListener('change',drawTeam);team.dataset.controlsBound='1'}
+  search.oninput=drawTeam;filter.onchange=drawTeam;
   drawTeam();
  }
  const wl=$('officeWorkload');wl.replaceChildren();const counts=[['Completed',done],['Open',open],['Failed',failed]];const max=Math.max(1,...counts.map(x=>x[1]));counts.forEach(([label,n])=>{const r=h('div','office-bar');r.append(h('span','',label));const bar=h('div','bar');const fillBar=h('i','');fillBar.style.setProperty('--pct',(n/max*100)+'%');bar.append(fillBar);r.append(bar,h('b','',String(n)));wl.append(r)});
@@ -289,7 +289,7 @@ function renderDepartmentOffice(){
  if(!d.tasks.ok){taskBox.append(h('div','err-box','Task data unavailable: '+d.tasks.error))}
  else if(!tasks.length){taskBox.append(h('div','office-empty','No tasks assigned to this department yet.'))}
  else{
-  const classify=t=>{const st=String(t.status||'').toLowerCase();if(['failed','blocked','cancelled'].includes(st))return 'attention';if(['running','in_progress','processing'].includes(st))return 'progress';if(['awaiting_founder','awaiting_approval','pending_approval'].includes(st))return 'waiting';if(['new','queued','pending','created','assigned'].includes(st))return 'queued';if(st==='completed'||st==='done')return 'completed';return 'other'};
+  const classify=t=>{const st=String(t.status||'').toLowerCase();if(['failed','blocked','cancelled','returned_to_ceo'].includes(st))return 'attention';if(['running','in_progress','processing','ceo_analyzing','delegated','executing','waiting_for_tool','needs_more_work'].includes(st))return 'progress';if(['awaiting_founder','awaiting_approval','pending_approval','department_review','returned_for_review'].includes(st))return 'waiting';if(['new','queued','pending','created','assigned'].includes(st))return 'queued';if(st==='completed'||st==='done')return 'completed';return 'other'};
   const search=$('officeTaskSearch'),filter=$('officeTaskFilter'),sort=$('officeTaskSort');
   const draw=()=>{taskBox.replaceChildren();const q=(search.value||'').trim().toLowerCase();const chosen=filter.value;const visible=tasks.filter(t=>(chosen==='all'||classify(t)===chosen)&&[t.objective,t.current_stage,t.status,t.error_message].some(v=>String(v||'').toLowerCase().includes(q))).sort((a,b)=>{const delta=new Date(a.created_at||0)-new Date(b.created_at||0);return sort.value==='oldest'?delta:-delta});
    const lanes=[['attention','Needs attention'],['progress','In progress'],['waiting','Awaiting founder'],['queued','Queued'],['completed','Completed'],['other','Other']];
@@ -299,7 +299,7 @@ function renderDepartmentOffice(){
     taskBox.append(lane)
    });
   };
-  if(!taskBox.dataset.controlsBound){$('officeTaskSearch').addEventListener('input',draw);$('officeTaskFilter').addEventListener('change',draw);$('officeTaskSort').addEventListener('change',draw);taskBox.dataset.controlsBound='1'}
+  $('officeTaskSearch').oninput=draw;$('officeTaskFilter').onchange=draw;$('officeTaskSort').onchange=draw;
   draw();
  }
  const dutyBox=$('officeDuties');dutyBox.replaceChildren();if(!d.workforce.ok)dutyBox.append(h('div','err-box','Workforce data unavailable.'));else if(!duties.length)dutyBox.append(h('div','office-empty','No standing duties are assigned to this department.'));duties.forEach(x=>{const r=h('div','duty');const c=h('div','dc');c.append(h('b','',x.title),h('small','',x.employee.employeeNumber+' · '+x.schedule+(x.lastRun?' · last '+x.lastRun.status.replaceAll('_',' ')+' '+ago(x.lastRun.at):'')));r.append(c,badge(DUTY_LABEL[x.state]||x.state,DUTY_KIND[x.state]));dutyBox.append(r)});
