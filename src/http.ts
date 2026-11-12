@@ -617,6 +617,7 @@ const server = createHttpServer(async (req, res) => {
           contactLabel: conversation.contact?.display_name ?? conversation.contact?.company_name ?? undefined,
         });
         if (queued.status === 'blocked' || queued.status === 'rejected') { json(res, 403, { queued: false, blocked: true, sent: false, reason: queued.reason ?? 'The message was blocked by channel policy.' }); return; }
+        if (queued.status !== 'pending_approval' && queued.status !== 'queued') { json(res, 409, { queued: false, sent: false, reason: queued.reason ?? 'The message could not be queued.' }); return; }
         json(res, 202, { queued: true, approval_required: queued.status === 'pending_approval', sent: false, result: queued });
         return;
       }
