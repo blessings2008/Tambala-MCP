@@ -258,10 +258,10 @@ export async function listSupportTickets(status?: TicketStatus, limit = 50) {
   return tickets.map((ticket) => ({ ...ticket, contact: contactById.get(ticket.contact_id) ?? null }));
 }
 
-export async function customerSupportMetrics() {
+export async function customerSupportMetrics(conversationRows?: Awaited<ReturnType<typeof listCustomerConversations>>) {
   const [tickets, conversations] = await Promise.all([
     supabaseSelect<SupportTicket>('customer_service_tickets', { select: 'id,status,priority,created_at,first_response_at,resolved_at', order: 'created_at.desc', limit: '1000' }),
-    listCustomerConversations(100),
+    conversationRows ? Promise.resolve(conversationRows) : listCustomerConversations(100),
   ]);
   const byStatus = tickets.reduce<Record<string, number>>((acc, ticket) => { acc[ticket.status] = (acc[ticket.status] ?? 0) + 1; return acc; }, {});
   const byPriority = tickets.reduce<Record<string, number>>((acc, ticket) => { acc[ticket.priority] = (acc[ticket.priority] ?? 0) + 1; return acc; }, {});
