@@ -1,7 +1,7 @@
 import type { AgentName } from '../../services/ai/models.js';
 import type { Cadence } from './schedule.js';
 
-export type ContextKind = 'crm' | 'company' | 'organization' | 'briefing' | 'catalog' | 'invoices';
+export type ContextKind = 'crm' | 'crm_detail' | 'company' | 'organization' | 'briefing' | 'catalog' | 'invoices' | 'discovery';
 
 export interface StandingDuty {
   id: string;
@@ -27,9 +27,23 @@ export interface StandingDuty {
 
 export const STANDING_DUTIES: readonly StandingDuty[] = [
   {
-    id: 'security-audit-review', agent: 'security', title: 'Daily security and audit review',
-    cadence: { kind: 'weekdays' }, time: '07:30', contexts: ['organization'],
-    job: 'Review the last day of audit events, denied tool calls, failed tasks and role bindings. Flag anything unusual: repeated denials, activity outside office hours, unbound connections.',
+    id: 'daily-lead-discovery', agent: 'research', title: 'Daily Malawi prospect discovery',
+    cadence: { kind: 'daily' }, time: '06:00', contexts: ['crm', 'company', 'discovery'], needsWeb: true,
+    researchQuery: 'Find at least ten new Malawian organisations that plausibly fit Tambala Technologies active services. Continue researching across sectors and regions until ten evidence-qualified prospects are found or reasonable research avenues are exhausted. Verify organisation identity, service-fit evidence, website and publicly listed contacts using official or authoritative sources. Exclude CRM clients/leads and the discovery queue.',
+    job: `Research at least ten new organisations in Malawi for Tambala Technologies. Search across sectors and regions. Use the supplied company services and excluded CRM/discovery names. Prefer official organisation websites, official social profiles, regulators, credible directories and recent sources. Do not invent facts, people, emails, phone numbers, websites or needs. A service-fit reason must point to a visible evidence-based opportunity, not a guess. Save only prospects with at least one valid source URL, a substantive fit reason and one or more active Tambala service-fit codes. Use exact codes: web_development, software_development, digital_product_development, social_media_management. Leave unknown contact fields null. The target is a minimum of ten evidence-qualified prospects. Continue searching until at least ten qualify or reasonable research avenues are exhausted; if fewer than ten genuinely meet the evidence bar, return the qualified records found and clearly explain the shortfall. Never weaken verification standards to reach the target. Do not contact anyone or create CRM records. For every prospect, prepare a personalised first_contact_message using this exact Tambala first-contact structure and tone: (1) greeting and introduction exactly: 'Good morning. My name is Bless from Tambala Technologies.' (2) 'I came across [organisation] and wanted to reach out regarding its [specific, evidence-supported online/digital presence or relevant business opportunity].' (3) Explain in plain, natural language how the relevant Tambala service could help that organisation and its audience, based only on observable evidence; adapt the hospitality example's structure to the prospect's sector. (4) State a respectful potential improvement without criticising its current setup or asserting unverified deficiencies. (5) Close with: 'Would you be open to having a brief conversation about this?' Do not use generic mass-marketing language, pressure, invented needs, unsupported compliments, internal agent names, or signatures. If there is not enough evidence to write a genuinely personalised message, set first_contact_message to null.`,
+    deliverable: 'A concise research summary, then emit this exact machine-readable wrapper: DISCOVERED_PROSPECTS: followed by a fenced json code block containing a JSON array, then END_DISCOVERED_PROSPECTS on its own line after the closing fence. Each item uses organisation_name, website, sector, service_fit (array of exact codes), reason_for_fit, decision_maker_name, decision_maker_title, public_email, public_phone, source_urls (array of URLs), verification_status (verified, partial, or unverified), research_notes, and first_contact_message. Use null for unknown optional values. Include at least ten items when ten or more qualify; include every qualified item found if fewer than ten qualify after reasonable research. Output an empty array if none meet the evidence standard. Do not put commentary inside the JSON block.',
+  },
+  {
+    id: 'sales-discovery-queue-review', agent: 'outreach', title: 'Daily discovery queue review',
+    cadence: { kind: 'weekdays' }, time: '08:15', contexts: ['company', 'discovery'],
+    job: 'Review the new research prospects supplied in context.discovery. Assess whether the evidence supports the stated Tambala service fit, whether sources are credible, and whether contacts are actually public and attributable. Recommend which records Sales should qualify, reject or investigate further. Do not edit queue statuses, create CRM leads, or contact organisations. If the queue is empty, say so plainly.',
+    deliverable: 'A short queue review grouped into recommended qualify, investigate, and reject, with reasons and missing evidence. Clearly state that these are recommendations only; no records were changed.',
+  },
+
+  {
+    id: 'security-audit-review', agent: 'security', title: 'Daily incident monitoring and security review',
+    cadence: { kind: 'daily' }, time: '07:30', contexts: ['organization'],
+    job: 'Act as the organisation incident-monitoring and security function, not merely an audit-event summariser. Review audit_last_24h, tasks_last_7d, failed_task_events_last_7d, duty_runs_last_7d and active_role_bindings. The failed_task_events_last_7d list is authoritative for execution failures because task failures are recorded in organization_task_events, not necessarily in organization_audit_events. Correlate each stage_failed event with its task and duty run where possible. Report every distinct failure with timestamp, affected task/duty/department if known, exact error, likely cause category (provider/model, rate limit, tool/schema, application, permissions, data/persistence, or unknown), and whether it repeated. Any failed task, failed duty, skipped critical duty, unbound active connection, or rejected security action means status MUST be Needs attention; never report Normal while any such issue is present. State Normal only when the relevant sources were checked and there are no failures or anomalies. Do not invent tool actions such as check_tool_permissions; the only action you may request is notify_founder. For repeated production failures or a security/permission risk, include an ACTIONS block with a valid notify_founder JSON action. Distinguish no events found from monitoring unavailable or incomplete data.' ,
     deliverable: 'A short security status (Normal / Needs attention), the specific items behind it, and one recommended action if any.',
   },
   {
@@ -40,14 +54,13 @@ export const STANDING_DUTIES: readonly StandingDuty[] = [
   },
   {
     id: 'sales-pipeline-review', agent: 'outreach', title: 'Daily pipeline review and outreach preparation',
-    cadence: { kind: 'weekdays' }, time: '08:30', contexts: ['crm', 'company', 'catalog'],
-    job: 'Review the lead pipeline by status. Pick the best-fit leads that have not been contacted or are due. Prepare up to five first-contact WhatsApp messages (use the whatsapp action, only for leads that have a phone or WhatsApp number in the data), each naming the lead it is for, using only verified company facts. If a lead clearly needs a quotation and the price list covers it, prepare it with the document action.',
-    deliverable: 'Pipeline snapshot, the chosen leads with a one-line reason each, and the drafts.',
-    approval: { actionType: 'prepared_outreach', riskLevel: 'low', summary: 'Prepared outreach drafts awaiting Founder approval' },
+    cadence: { kind: 'weekdays' }, time: '08:30', contexts: ['crm', 'crm_detail', 'company', 'catalog'],
+    job: 'Review the lead pipeline by status. Pick the best-fit leads that have not been contacted or are due. Identify the single best-fit CRM prospect that has not been contacted, verify its business name and WhatsApp number, and send one personalised first-contact WhatsApp message using the whatsapp action. The system processes additional approved prospects in separate scheduler cycles to respect the customer-send cooldown. First-contact messages from Outreach may be sent autonomously under the Founder-approved daily cap and cooldown. Keep each message natural, specific, relevant and customer-ready; never include internal role titles, employee codes (such as TT-001), agent names, signatures, routing notes, draft labels, internal analysis or unrelated information. Do not mention services unless they are in the verified catalogue. Do not message unknown numbers or invent contact details. If a lead clearly needs a quotation and the price list covers it, prepare it with the document action.',
+    deliverable: 'Pipeline snapshot, the one prospect selected, the message actually queued or sent, delivery outcome, replies received, and any blockers. Clearly separate messages queued, sent, failed, blocked and drafts awaiting approval using the action results; never describe an autonomous first-contact message as awaiting approval when it was queued or sent, and never claim delivery unless the outbox confirms it.',
   },
   {
     id: 'customer-followups', agent: 'followup', title: 'Daily customer follow-ups',
-    cadence: { kind: 'weekdays' }, time: '09:00', contexts: ['crm', 'company'],
+    cadence: { kind: 'weekdays' }, time: '09:00', contexts: ['crm', 'crm_detail', 'company'],
     job: 'Find leads and clients whose next follow-up is due or overdue, and open client tasks. Prepare a short check-in WhatsApp message (whatsapp action) for each due contact who has a number in the records, using only facts in the supplied records.',
     deliverable: 'Who is due and why, then one draft per person. Say clearly if nobody is due.',
     approval: { actionType: 'prepared_followups', riskLevel: 'low', summary: 'Prepared customer follow-up drafts awaiting Founder approval' },

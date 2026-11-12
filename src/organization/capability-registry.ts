@@ -35,7 +35,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
     unitTags: ['sales', 'business-development', 'outreach'],
     roleTags: ['sales', 'business development', 'outreach'],
     description: 'Find, qualify, prioritize and pursue new business opportunities.',
-    objectiveKeywords: ['client', 'customer', 'prospect', 'prospects', 'lead', 'leads', 'sales', 'outreach', 'business development', 'deal', 'hotel', 'hotels', 'lodge', 'lodges', 'tourism', 'website', 'websites', 'businesses', 'target businesses', 'pitch'],
+    objectiveKeywords: ['client', 'clients', 'customer', 'customers', 'potential client', 'potential clients', 'potential customer', 'potential customers', 'new client', 'new clients', 'new customer', 'new customers', 'client acquisition', 'customer acquisition', 'identify clients', 'find clients', 'prospecting', 'prospect research', 'prospect', 'prospects', 'business prospect', 'business prospects', 'lead', 'leads', 'lead generation', 'generate leads', 'sales', 'outreach', 'business development', 'new business opportunities', 'businesses to approach', 'deal', 'hotel', 'hotels', 'lodge', 'lodges', 'tourism', 'website', 'websites', 'businesses', 'target businesses', 'pitch'],
     researchKeywords: ['prospective client', 'business lead', 'decision maker', 'company contact'],
     deliverableHints: ['qualified prospect', 'lead shortlist', 'outreach target'],
   },
@@ -45,7 +45,7 @@ export const DEPARTMENT_CAPABILITIES: DepartmentCapability[] = [
     unitTags: ['research', 'intelligence'],
     roleTags: ['research', 'intelligence'],
     description: 'Conduct independent web research and return verified evidence.',
-    objectiveKeywords: ['research', 'investigate', 'find information', 'verify', 'market', 'competitor', 'source', 'evidence'],
+    objectiveKeywords: ['research', 'investigate', 'find information', 'verify', 'market', 'competitor', 'source', 'evidence', 'web search', 'search the web', 'search online', 'online search', 'internet search', 'web lookup', 'look up', 'look online', 'find public information', 'public information', 'find official information', 'check online', 'find sources', 'search for information'],
     researchKeywords: ['research topic', 'official sources', 'recent information', 'verified evidence'],
     deliverableHints: ['research brief', 'source list', 'evidence summary'],
   },
@@ -215,14 +215,28 @@ function normalize(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+function keywordVariants(keyword: string): string[] {
+  const normalized = normalize(keyword);
+  if (!normalized) return [];
+  const words = normalized.split(' ');
+  const last = words[words.length - 1];
+  const prefix = words.slice(0, -1);
+  const plural = /[^aeiou]y$/.test(last)
+    ? last.slice(0, -1) + 'ies'
+    : /(?:s|x|z|ch|sh)$/.test(last)
+      ? last + 'es'
+      : last + 's';
+  return [...new Set([normalized, [...prefix, plural].join(' ')])];
+}
+
 function countMatches(text: string, keywords: string[]): number {
-  // Match complete normalized words/phrases. Substring matching makes short
-  // terms such as "IT" fire inside unrelated words such as "website".
+  // Match complete normalized words/phrases, including ordinary plural forms.
+  // Substring matching makes short terms such as "IT" fire inside "website".
   const normalized = ` ${normalize(text)} `;
   return keywords.reduce((score, keyword) => {
-    const normalizedKeyword = normalize(keyword);
-    if (!normalizedKeyword) return score;
-    return score + (normalized.includes(` ${normalizedKeyword} `) ? 1 : 0);
+    const variants = keywordVariants(keyword);
+    if (!variants.length) return score;
+    return score + (variants.some((variant) => normalized.includes(` ${variant} `)) ? 1 : 0);
   }, 0);
 }
 
@@ -248,7 +262,7 @@ function findRole(definition: OrganizationDefinition, tags: string[], unitId: st
 }
 
 export function routeObjective(definition: OrganizationDefinition, objective: string): CapabilityMatch[] {
-  return DEPARTMENT_CAPABILITIES
+  const matches = DEPARTMENT_CAPABILITIES
     .map((capability) => {
       const keywordScore = countMatches(objective, [
         ...capability.objectiveKeywords,
@@ -268,13 +282,61 @@ export function routeObjective(definition: OrganizationDefinition, objective: st
     })
     .filter((match) => match.keywordScore > 0)
     .sort((a, b) => b.score - a.score);
+
+  if (matches.length) return matches;
+
+  // A final intent-level fallback protects natural Founder language from a
+  // brittle keyword-list miss. It only maps unmistakable prospecting intent;
+  // it never assigns an unrelated department just because one exists.
+  const normalized = normalize(objective);
+  const clearProspectingIntent =
+    /\b(?:potential|prospective|new)\s+(?:business\s+)?(?:clients?|customers?)\b/.test(normalized)
+    || /\b(?:lead generation|prospect(?:ing| research)?|client acquisition|customer acquisition)\b/.test(normalized)
+    || /\b(?:identify|find|discover|source|generate|build|list)\b(?: [a-z0-9]+){0,8}\b(?:clients?|customers?|leads?|prospects?)\b/.test(normalized);
+  if (!clearProspectingIntent) return [];
+
+  const capability = DEPARTMENT_CAPABILITIES.find((item) => item.id === 'sales_prospecting');
+  if (!capability) return [];
+  const unit = findUnit(definition, capability.unitTags, capability.unitId);
+  const role = findRole(definition, capability.roleTags, unit?.id ?? null);
+  const keywordScore = 3;
+  return [{
+    capability,
+    unit,
+    role,
+    keywordScore,
+    score: keywordScore + (unit ? 1 : 0) + (role ? 1 : 0),
+    researchQuery: capability.researchKeywords.slice(0, 4).join(', '),
+  }];
 }
 
 /**
  * Build a compact research query from the matched capability only.
  * Never pass the Founder/CEO prompt through as the search query.
  */
-export function buildResearchQuery(_objective: string, match: CapabilityMatch): string {
+export function buildResearchQuery(objective: string, match: CapabilityMatch): string {
+  if (match.capability.id === 'sales_prospecting') {
+    return 'Malawi businesses and organizations likely to need website development, web applications, custom software, digital products, or social media management; official business websites, public contact details, and decision makers'.slice(0, 500);
+  }
+
+  if (match.capability.id === 'web_research') {
+    // Keep the subject being researched; do not replace it with generic keywords.
+    const subject = objective
+      .replace(/^(please\s+)?(do\s+)?(a\s+)?(quick\s+)?(web|internet|online)\s+search\s+(for|on|about|into)\s+/i, '')
+      .replace(/^(please\s+)?search\s+(the\s+)?(web|internet|online)\s+(for|on|about)\s+/i, '')
+      .replace(/^(please\s+)?(look\s*up|look\s+online|find\s+public\s+information|find\s+official\s+information|check\s+online)\s+(for|on|about)?\s*/i, '')
+      .replace(/^(please\s+)?(research|investigate)\s+(on|about|into)?\s*/i, '')
+      .replace(/[.?!,:;]+$/g, '')
+      .trim();
+    if (subject) {
+      const qualifiers = match.capability.researchKeywords
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .slice(1, 4);
+      return [subject, ...qualifiers].join(', ').slice(0, 500);
+    }
+  }
+
   const terms = match.capability.researchKeywords
     .map((value) => value.trim())
     .filter(Boolean)

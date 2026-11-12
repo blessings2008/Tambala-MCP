@@ -49,7 +49,7 @@ Every specialist profile requires its own configuration:
 
 The orchestrator's shared Groq credential is not a fallback for specialist agents. The readiness gate reports missing environment-variable names without exposing secret values. A specialist with incomplete configuration must be blocked rather than silently replaced by Sales, Research, or another unrelated agent.
 
-All specialist directory entries currently remain `planned` in the organization chart. Runtime configuration alone must never activate a role or create an organizational authority binding.
+The seed organization starts specialist roles as `planned`. The live status endpoint reads each agent's exact role activation from the persistent organization snapshot; it does not rely on the static directory defaults. Runtime configuration alone must never activate a role or create an organizational authority binding. The manual activation script also marks a unit `active` when one of its accountable roles is activated, so the org-chart unit status and role activation do not drift apart.
 
 **Execution now enforces this distinction:** a mapped specialist route is blocked with `not_activated` unless the matched organizational role is explicitly `active`. This remains true even when the provider API key, base URL, and model are configured. Only after the role is active does the runtime readiness gate check its dedicated provider configuration. This prevents a configured model from silently becoming an employee or receiving delegated work without an organizational appointment.
 

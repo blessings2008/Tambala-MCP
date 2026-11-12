@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { STANDING_DUTIES } from '../src/organization/workforce/duties.ts';
 import { resolveDuties, validateCustomDuty, validateOverride, DutyConfigError, saveCustomDuty, InMemoryDutyConfigStore } from '../src/organization/workforce/duty-config.ts';
-import { extractHandoffs, queueHandoff, processHandoffs, InMemoryHandoffStore, HandoffError, colleagueList, type HandoffDeps } from '../src/organization/workforce/handoffs.ts';
+import { extractHandoffs, queueHandoff, processHandoffs, InMemoryHandoffStore, HandoffError, colleagueList, isFounderClarificationRequest, resumeFounderHandoff, resumeFounderTaskRoom, type HandoffDeps } from '../src/organization/workforce/handoffs.ts';
 import { buildDutyPrompt, runDuty, type DutyDeps } from '../src/organization/workforce/duty-runner.ts';
 import { InMemoryDutyStore } from '../src/organization/workforce/duty-store.ts';
 import { EMPLOYEE_NUMBERS, getEmployeeProfiles } from '../src/organization/workforce/profiles.ts';
@@ -37,7 +37,7 @@ test('handoff parsing keeps valid requests, drops bad ones, strips the block', (
 test('duty prompts introduce the employee and allow handoffs, but not for the CEO briefing', () => {
   const lt = localTime(at('2026-11-09T07:00:00Z'));
   const sales = buildDutyPrompt(duty('sales-pipeline-review'), lt, { employeeNumber: 'TT-002', title: 'Head of Sales' });
-  assert.match(sales, /You are employee TT-002, Head of Sales/); assert.match(sales, /Do not sign/); assert.match(sales, /HANDOFFS:/); assert.match(sales, /never claim it was sent/);
+  assert.match(sales, /You are employee TT-002, Head of Sales/); assert.match(sales, /Do not sign/); assert.match(sales, /HANDOFFS:/); assert.match(sales, /never claim a message was sent/i);
   assert.doesNotMatch(buildDutyPrompt(duty('ceo-daily-briefing'), localTime(at('2026-11-09T14:45:00Z'))), /HANDOFFS:/);
 });
 
@@ -79,7 +79,7 @@ function handoffDeps(over: Partial<HandoffDeps> = {}) {
   const deps: HandoffDeps = {
     store, now: () => at('2026-11-09T07:00:00Z'), agentUnavailableReason: async () => null,
     senderLabel: async (r) => (r === 'founder' ? 'The Founder' : r), recipientLabel: async () => 'employee TT-005, Head of Marketing', actions: { run: async () => '' }, sign: async () => ({ block: '— TT-005\n  ✍ TEST-SIG' }),
-    buildContext: async () => ({}), askAgent: async (_a, prompt) => { asked.push(prompt); return 'Here is the overview.'; },
+    buildContext: async () => ({}), askAgent: async (agent, prompt) => { asked.push(prompt); return agent === 'orchestrator' ? 'DECISION: ACCEPT\\nThe deliverable meets the request.' : 'Here is the overview.'; },
     tasks: { begin: async () => ({ taskId: 't' }), advance: async () => {}, fail: async () => {} }, ...over,
   };
   return { deps, store, asked };
@@ -93,8 +93,164 @@ test('the Founder assigns work and the employee completes it', async () => {
   assert.equal(out[0].status, 'completed');
   assert.equal(store.rows[0].status, 'completed');
   assert.equal(store.rows[0].result, 'Here is the overview.\n\n— TT-005\n  ✍ TEST-SIG');
-  assert.match(asked[0], /The Founder has asked for your help/); assert.match(asked[0], /Do not hand work on/);
+  assert.match(asked[0], /The Founder has assigned this work to your room/); assert.match(asked[0], /Do not hand work on/);
   assert.equal((await processHandoffs(deps)).length, 0); // nothing left in the inbox
+});
+
+test('Founder-approved first-contact handoffs may execute WhatsApp and accept a queued result', async () => {
+  const prompts: string[] = [];
+  const { deps, store } = handoffDeps({
+    askAgent: async (agent, prompt) => {
+      prompts.push(`${agent}: ${prompt}`);
+      if (agent === 'orchestrator') return `DECISION: ACCEPT\nThe verified WhatsApp action was queued.`;
+      return `Prepared a personalised introduction.\n\nACTIONS:\n{"type":"whatsapp","to":"+265888123456","purpose":"outreach","text":"Hello AgriTrust team."}`;
+    },
+    actions: { run: async () => 'Actions:\n✔ whatsapp: message queued for sending; delivery is not confirmed yet.' },
+  });
+  await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'outreach',
+    sourceDutyId: 'approved-prospect-first-contact',
+    request: 'Founder-approved first contact for AgriTrust',
+    contextSummary: JSON.stringify({ prospect: { organisation_name: 'AgriTrust', service_fit: ['web_development'] }, crm_lead: { phone: '+265888123456' } }),
+  });
+  const out = await processHandoffs(deps);
+  assert.equal(out[0].status, 'completed');
+  assert.equal(prompts.length, 0, 'approved first-contact is assembled deterministically from the verified prospect record');
+  assert.match(store.rows[0].result ?? '', /queued for sending/);
+});
+
+test('approved first-contact handoffs convert the legacy WhatsApp action shape and require a queued result', async () => {
+  const prompts: string[] = [];
+  const contextSummary = JSON.stringify({
+    prospect: { organisation_name: 'AgriTrust', service_fit: ['web_development'] },
+    crm_lead: { phone: '+265 994 136 898', business_name: 'AgriTrust' },
+  });
+  const { deps, store } = handoffDeps({
+    askAgent: async (agent, prompt) => {
+      prompts.push(`${agent}: ${prompt}`);
+      if (agent === 'orchestrator') return `DECISION: ACCEPT\nThe WhatsApp action was queued.`;
+      return `**WhatsApp Outreach Action**\n\n\`\`\`json\n{\"action\":\"whatsapp\",\"purpose\":\"outreach\",\"destination\":\"+265 994 136 898\",\"message\":\"Hello AgriTrust team.\"}\n\`\`\`\n\nWhat I did: prepared the message.`;
+    },
+    actions: { run: async () => 'Actions:\n✔ whatsapp: message queued for sending; delivery is not confirmed yet.' },
+  });
+  await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'outreach',
+    sourceDutyId: 'approved-prospect-first-contact',
+    request: 'Founder-approved first contact for AgriTrust',
+    contextSummary,
+  });
+  const out = await processHandoffs(deps);
+  assert.equal(out[0].status, 'completed');
+  assert.equal(prompts.length, 0, 'legacy model action text is not needed when the verified prospect record supplies the message inputs');
+  assert.match(store.rows[0].result ?? '', /queued for sending/);
+});
+
+test('approved first-contact handoffs cannot complete on a draft without an action', async () => {
+  const { deps, store } = handoffDeps({
+    askAgent: async (agent) => agent === 'orchestrator'
+      ? 'DECISION: ACCEPT\nThe draft looks good.'
+      : 'Here is a draft for AgriTrust. No message has been sent.',
+    actions: { run: async () => 'This should not be called.' },
+  });
+  await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'outreach',
+    sourceDutyId: 'approved-prospect-first-contact',
+    request: 'Founder-approved first contact for AgriTrust',
+    contextSummary: JSON.stringify({ prospect: { organisation_name: 'AgriTrust' }, crm_lead: { phone: '+265 994 136 898' } }),
+  });
+  const out = await processHandoffs(deps);
+  assert.equal(out[0].status, 'retry');
+  assert.match(store.rows[0].error ?? '', /no safe message or supported service fit/i);
+});
+
+test('approved first contacts resume WhatsApp-registration clarifications without resuming other Founder approvals', async () => {
+  const prompts: string[] = [];
+  const { deps, store } = handoffDeps({
+    askAgent: async (agent, prompt) => {
+      prompts.push(`${agent}: ${prompt}`);
+      if (agent === 'orchestrator') return `DECISION: ACCEPT\nThe WhatsApp action was queued.`;
+      return `ACTIONS:\n{"type":"whatsapp","to":"+265888123456","purpose":"outreach","text":"Hello AgriTrust team."}`;
+    },
+    actions: { run: async () => 'Actions:\n✔ whatsapp: message queued for sending; delivery is not confirmed yet.' },
+  });
+  const first = await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'outreach',
+    sourceDutyId: 'approved-prospect-first-contact',
+    request: 'Founder-approved first contact for AgriTrust',
+    contextSummary: JSON.stringify({ prospect: { organisation_name: 'AgriTrust', service_fit: ['web_development'] }, crm_lead: { phone: '+265888123456' } }),
+  });
+  await store.update(first.id, {
+    status: 'awaiting_founder',
+    result: 'Clarification Required: Is +265888123456 WhatsApp‑registered?',
+    error: 'Awaiting Founder clarification.',
+  });
+  const other = await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'marketing',
+    sourceDutyId: 'weekly-marketing-focus',
+    request: 'Founder approval is required for this separate customer-facing work.',
+  });
+  await store.update(other.id, {
+    status: 'awaiting_founder',
+    result: 'Clarification Required: Is the customer message approved?',
+    error: 'Awaiting Founder clarification.',
+  });
+  const out = await processHandoffs(deps);
+  assert.equal(out[0].status, 'completed');
+  assert.equal(prompts.length, 0, 'resumed first-contact uses the same deterministic outbox path');
+  assert.equal(store.rows.find((row) => row.id === other.id)?.status, 'awaiting_founder');
+});
+
+test('task rooms pause on clarification and retain their history instead of completing', async () => {
+  assert.equal(isFounderClarificationRequest('Clarification Required — do you mean Malabi Exclusive Lodges or the dessert?'), true);
+  assert.equal(isFounderClarificationRequest('The lodge is in Lilongwe. Would you like a summary?'), false);
+  const { deps, store } = handoffDeps({ askAgent: async () => '## Clarification Required\\nDo you mean Malabi Exclusive Lodges in Lilongwe or the dessert?' });
+  const h = await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'research', request: 'Research Malabi and verify the correct entity' });
+  assert.ok(h.room_id);
+  const out = await processHandoffs(deps);
+  assert.equal(out[0].status, 'waiting');
+  assert.equal(store.rows[0].status, 'awaiting_founder');
+  assert.equal(store.rooms[0].status, 'awaiting_founder');
+  assert.equal(store.rooms[0].closed_at, null);
+  assert.ok(store.roomEvents.some((event) => event.event_type === 'clarification_requested'));
+  assert.equal((await processHandoffs(deps)).length, 0);
+});
+test('Founder clarification reopens the same room and resumes its original task', async () => {
+  let answer = 'Clarification Required: which Malabi do you mean?';
+  let starts = 0;
+  const { deps, store } = handoffDeps({
+    askAgent: async (agent) => agent === 'orchestrator' ? 'DECISION: ACCEPT\\nThe deliverable meets the request.' : answer,
+    tasks: { begin: async () => { starts += 1; return { taskId: 'same-task' }; }, advance: async () => {}, fail: async () => {} },
+  });
+  const handoff = await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'research', request: 'Research Malabi and verify the correct entity' });
+  await processHandoffs(deps);
+  const roomId = store.rows[0].room_id;
+  await resumeFounderHandoff(store, handoff.id, 'I mean Malabi Exclusive Lodges in Lilongwe.');
+  answer = 'Verified findings and source links are ready.';
+  await processHandoffs(deps);
+  assert.equal(starts, 1);
+  assert.equal(store.rows[0].status, 'completed');
+  assert.equal(store.rows[0].room_id, roomId);
+  assert.equal(store.rows[0].task_id, 'same-task');
+  assert.equal(store.rooms[0].status, 'archived');
+  assert.ok(store.roomEvents.some((event) => event.event_type === 'founder_clarification_received'));
+});
+
+test('Founder room reply resolves the room id rather than confusing it with the handoff id', async () => {
+  const store = new InMemoryHandoffStore();
+  const handoff = await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'research', request: 'Research Malabi and verify the correct entity' });
+  await store.update(handoff.id, { status: 'awaiting_founder' });
+  await store.updateRoom(handoff.room_id!, { status: 'awaiting_founder' });
+  assert.notEqual(handoff.id, handoff.room_id);
+  const resumed = await resumeFounderTaskRoom(store, handoff.room_id!, 'I mean Malabi Exclusive Lodges in Lilongwe.');
+  assert.equal(resumed.id, handoff.id);
+  assert.equal(resumed.status, 'queued');
+  assert.equal(store.rooms[0].status, 'active');
+  assert.ok(store.roomEvents.some((event) => event.event_type === 'founder_clarification_received'));
 });
 
 test('an unavailable colleague leaves the work waiting without rewriting it every tick', async () => {
@@ -105,13 +261,18 @@ test('an unavailable colleague leaves the work waiting without rewriting it ever
   assert.equal((await processHandoffs(deps))[0].status, 'waiting');
 });
 
-test('failed handoffs retry three times then stop', async () => {
+test('failed handoffs retry five total attempts and keep the room open until the final failure', async () => {
   const { deps, store } = handoffDeps({ askAgent: async () => { throw new Error('model down'); } });
   await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'marketing', request: 'Draft a one-page overview of our web services' });
   const statuses: string[] = [];
   for (let i = 0; i < 5; i += 1) for (const o of await processHandoffs(deps)) statuses.push(o.status);
-  assert.deepEqual(statuses, ['retry', 'retry', 'failed']);
+  assert.deepEqual(statuses, ['retry', 'retry', 'retry', 'retry', 'failed']);
+  assert.equal(store.rows[0].attempts, 5);
   assert.equal(store.rows[0].status, 'failed');
+  assert.equal(store.rooms[0].status, 'failed');
+  assert.ok(store.rooms[0].closed_at);
+  assert.equal(store.roomEvents.filter((event) => event.event_type === 'room_retry_scheduled').length, 4);
+  assert.equal(store.roomEvents.filter((event) => event.event_type === 'room_failed').length, 1);
 });
 
 test('handoff requests are validated and cannot target the CEO', async () => {
@@ -131,6 +292,8 @@ test('custom duties validate, get unique ids, and run through the same engine', 
   assert.equal(custom.custom, true); assert.equal(custom.cadence.kind, 'weekly'); assert.ok(custom.approval);
   const { deps } = dutyDeps('Ten lodges.', '2026-11-11T09:00:00Z', list); // Wednesday 11:00 office
   assert.equal((await runDuty(deps, custom)).status, 'awaiting_approval');
+  const ceoMinutes = validateCustomDuty({ ...ok, title: 'Morning board minutes', agent: 'orchestrator', cadence: { kind: 'weekdays' }, time: '08:25', contexts: ['briefing', 'organization'], requiresApproval: false }, new Set());
+  assert.deepEqual(ceoMinutes.contexts, ['briefing', 'organization']);
   for (const bad of [{ ...ok, title: 'x' }, { ...ok, agent: 'ghost' }, { ...ok, time: '25:00' }, { ...ok, time: '03:00' }, { ...ok, cadence: { kind: 'weekly', day: 9 } }, { ...ok, contexts: ['briefing'] }, { ...ok, job: 'short' }]) {
     assert.throws(() => validateCustomDuty(bad, new Set()), DutyConfigError);
   }

@@ -1,7 +1,6 @@
 # Getting Tambala MCP fully functional
 
-1. **Run the migrations** in `supabase/migrations/` in filename order (SQL editor). They are idempotent.
-   The last one loads the 25 units and 29 roles (all `planned`).
+1. **Run the migrations** in `supabase/migrations/` in filename order (SQL editor). They are idempotent. Apply `20261108_whatsapp_outbox_claims.sql` after `20261101_channels_documents_payments.sql` and before enabling the WhatsApp worker.
 2. **Activate the agents you want working:** review then run `supabase/manual/activate_agent_roles.sql`.
    Execution only happens for `active` roles; this is deliberately not a migration.
 3. **Set environment variables** from `.env.example` (at minimum the Supabase key, the orchestrator and each
@@ -31,7 +30,7 @@ follow-ups at 09:00, Finance reviews billing readiness on Mondays, and the CEO c
 3. Open **Workforce** in the dashboard. A role must be *active* and have a working model to do its job; otherwise its
    duties show as skipped with the reason. Use **Run now** on a duty to test it immediately.
 4. Anything addressed to a customer is parked in **Approvals**. Approve or reject there (rejecting needs a reason).
-   Approving records your decision only; no channel in this server sends messages, so you still send the message yourself.
+   Approval releases the message to the WhatsApp outbox; it is sent only inside the allowed sending window and subject to opt-out and daily-limit checks. Check **Messages** for delivery status.
 5. From Claude chat: `get_workforce_status`, `run_due_organization_duties`, `get_daily_briefing`,
    `decide_organization_approval` (Founder-only when role enforcement is on).
 
@@ -71,9 +70,10 @@ your own approval decisions (signed as TT-000). Each signed item ends with a lin
 
 1. Set `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_INSTANCE` (the instance connected to the business number) and
    `TAMBALA_FOUNDER_WHATSAPP` (your own number, where employees reach you).
-2. In Evolution, set the instance webhook to `https://<your-host>/webhooks/evolution?token=<EVOLUTION_WEBHOOK_TOKEN>`
+2. If it has not already been applied, run `20261108_whatsapp_outbox_claims.sql` before enabling the WhatsApp worker. On an always-on host, set `TAMBALA_WHATSAPP_OUTBOX_SCHEDULER=true` (optional interval: `TAMBALA_WHATSAPP_OUTBOX_INTERVAL_MINUTES=1`). On a sleeping/free host, use the external cron endpoint described below.
+3. In Evolution, set the instance webhook to `https://<your-host>/webhooks/evolution?token=<EVOLUTION_WEBHOOK_TOKEN>`
    with the `MESSAGES_UPSERT` event on and "webhook base64" off. Without the token the endpoint refuses everything.
-3. Open **Messages** in the dashboard and press *Send me a test*.
+4. Open **Messages** in the dashboard and press *Send me a test*.
 
 How it behaves:
 
@@ -83,9 +83,15 @@ How it behaves:
   a few seconds apart, within the daily cap, never twice within 24 hours, and never to a number that opted out.
   Outreach ends with "Reply STOP to opt out"; a bare STOP blocks the number permanently and tells you.
 - **Who may write to customers:** Outreach, Customer Relations, Finance and Payments. Everyone else may only message you.
-- **Replies** are stored and forwarded to you. They are never fed to the employees as instructions.
+- **Customer replies** are stored and forwarded to you; they are not treated as employee instructions.
+- **Your own messages** from `TAMBALA_FOUNDER_WHATSAPP` are packaged as a structured Founder instruction and delivered to the CEO. The CEO uses deterministic capability routing and may hand the task to its mapped specialist only when that role is active and its dedicated runtime is configured. The response returns to your WhatsApp. Approval and role-binding controls still apply to consequential writes and customer-facing actions.
+- Captionless images, videos, documents, audio, locations and contact cards are recorded as typed attachment notices. This build records their presence and metadata; it does not yet download or store the original media file. Incoming media attachments are not yet downloaded or made available in the dashboard; caption-only text is handled as text.
 - **Caveat:** Evolution uses an unofficial WhatsApp connection. Bulk or cold messaging can get a number banned. Keep volume low.
 - WhatsApp sometimes hides a sender's number (`@lid`). Such messages are stored but cannot be matched, opted out or treated as you.
+
+
+
+For hosts that sleep (including Render's free web-service plan), do not rely on an in-process timer. Configure an external cron to call `POST https://<your-host>/api/channels/outbox/run` every minute with `Authorization: Bearer $TAMBALA_SCHEDULER_TOKEN`. The token must be at least 24 characters. On an always-on host, you may instead set `TAMBALA_WHATSAPP_OUTBOX_SCHEDULER=true` and `TAMBALA_WHATSAPP_OUTBOX_INTERVAL_MINUTES=1`. The outbox uses atomic claims to prevent two workers from sending the same queued row concurrently.
 
 ## PDF documents
 
@@ -112,6 +118,7 @@ system (never by a model), stored in the database and downloadable from **Docume
 
 ## Security hardening
 
+- **OAuth revocation ledger:** the runtime syncs revoked token IDs through `public.oauth_revoked_tokens`. If Render logs report `PGRST205` for that table, verify Render's `SUPABASE_URL` points to the intended Tambala MCP project, then run `supabase/manual/repair_oauth_revoked_tokens.sql` in that project's SQL editor. This is separate from `bind_founder.sql`; it does not create or change Founder role bindings.
 - Connector sign-in: client ids are signed and carry their registered redirect URIs, so an authorization request with any
   other redirect is refused. Redirects must be https (or localhost). Registration is rate limited, the approval code locks out
   after five wrong tries for 15 minutes, authorization codes work once, refresh tokens rotate, and `/oauth/revoke` really revokes.

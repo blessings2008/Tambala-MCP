@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type IncomingMessage } from 'node:http';
 import { jidToNumber, maskNumber, normalizePhone } from '../src/channels/phone.ts';
-import { CLIENT_FACING_AGENTS, decide, sendWindowOpen, validateText, withOptOut } from '../src/channels/policy.ts';
-import { connectionState, EvolutionError, evolutionConfigured, sendDocument, sendText } from '../src/channels/evolution.ts';
+import { CLIENT_FACING_AGENTS, decide, sendWindowOpen, validateText, OPT_OUT_PATTERN } from '../src/channels/policy.ts';
+import { connectionState, EvolutionError, evolutionConfigured, isWhatsAppNumber, sendDocument, sendText } from '../src/channels/evolution.ts';
 import { InMemoryMessageStore } from '../src/channels/message-store.ts';
-import { onApprovalDecided, OutboxError, processOutbox, queueMessage, type OutboxDeps } from '../src/channels/outbox.ts';
-import { handleEvolutionWebhook, messageText, senderNumber, type InboundDeps } from '../src/channels/inbound.ts';
+import { onApprovalDecided, OutboxError, processOutbox, queueMessage, sanitizeCustomerMessage, type OutboxDeps } from '../src/channels/outbox.ts';
+import { classifyCustomerReply, handleEvolutionWebhook, messageText, senderNumber, type InboundDeps } from '../src/channels/inbound.ts';
 
 const at = (iso: string) => new Date(iso);
 const MON_10AM = '2026-11-09T08:00:00Z';   // 10:00 office time, Monday
@@ -40,9 +40,11 @@ test('policy: customers always need approval, the Founder never does, rules are 
   assert.deepEqual([...CLIENT_FACING_AGENTS].sort(), ['finance', 'followup', 'outreach', 'payments']);
   assert.ok(validateText('') && validateText('x'.repeat(1501)) && validateText('see http://a.com http://b.com http://c.com'));
   assert.equal(validateText('Hello'), null);
-  assert.match(withOptOut('Hi, we build websites.', 'outreach'), /Reply STOP to opt out\.$/);
-  assert.equal(withOptOut('Hi', 'followup'), 'Hi');
-  assert.equal(withOptOut('Hi. Reply STOP to stop.', 'outreach'), 'Hi. Reply STOP to stop.');
+  assert.equal(OPT_OUT_PATTERN.test('STOP'), true);
+  assert.equal(OPT_OUT_PATTERN.test('Please stop messaging me.'), true);
+  assert.equal(OPT_OUT_PATTERN.test('Do not contact me again'), true);
+  assert.equal(OPT_OUT_PATTERN.test('Remove me from your list'), true);
+  assert.equal(OPT_OUT_PATTERN.test('Not interested, thank you'), false);
 });
 
 test('sending window: Monday to Saturday, 07:30 to 19:30 office time', () => {
@@ -95,6 +97,18 @@ test('Evolution client: sendText, sendDocument and connection state use the docu
   await withEvolution(() => ({ status: 200, json: { state: 'close' } }), async () => assert.deepEqual(await connectionState(), { state: 'close' }));
 });
 
+test('Evolution client: WhatsApp registration check confirms the exact number', async () => {
+  await withEvolution(() => ({ status: 200, json: [{ exists: true, jid: '265888123456@s.whatsapp.net', number: '265888123456' }] }), async (m) => {
+    assert.equal(await isWhatsAppNumber('+265 888 123 456'), true);
+    assert.equal(m.seen[0].method, 'POST');
+    assert.equal(m.seen[0].url, '/chat/whatsappNumbers/tambala%20main');
+    assert.deepEqual(m.seen[0].body, { numbers: ['265888123456'] });
+  });
+  await withEvolution(() => ({ status: 200, json: [{ exists: false, number: '265888123456' }] }), async () => {
+    assert.equal(await isWhatsAppNumber('265888123456'), false);
+  });
+});
+
 test('Evolution client: bad numbers are not retried, server errors are, and unconfigured is explicit', async () => {
   await withEvolution(() => ({ status: 400, json: { response: { message: [{ exists: false, number: '1' }] } } }), async () => {
     await assert.rejects(sendText('1', 'x'), (e: unknown) => e instanceof EvolutionError && e.retryable === false && /400/.test(e.message));
@@ -123,19 +137,20 @@ function outboxHarness(over: Partial<OutboxDeps> & { nowIso?: string; founder?: 
     loadDocument: async (id) => (id === 'doc-1' ? { base64: 'JVBERi0=', fileName: 'TT-Q-2026-0001.pdf' } : null),
     sign: async () => ({ block: '— TT-002 · Head of Sales\n  ✍ AAAA-BBBB-CCCC-DDDD', fingerprint: 'AAAA-BBBB-CCCC-DDDD' }),
     approvals: { create: async (a) => { approvals.push(a); return `abcdef12-0000-4000-8000-000000000${approvals.length}`; } },
-    senderLabel: (r) => `TT-002 ${r}`, pauseMs: 0, ...over,
+    senderLabel: (r) => `TT-002 ${r}`, pauseMs: 0,
+    verifyOutreachLead: async (_number) => 'Verified Test Lodge (lead)', ...over,
   };
   return { deps, store, sent, approvals, setNow: (v: string) => { nowIso = v; } };
 }
 const sales = { roleId: 'director-sales-business-development', agent: 'outreach' };
 
-test('outbox: a customer message waits for approval, tells the Founder, and goes out only after approval', async () => {
+test('outbox: customer follow-ups wait for approval, tell the Founder, and go out only after approval', async () => {
   const h = outboxHarness();
-  const r = await queueMessage(h.deps, { ...sales, to: '0888 123 456', text: 'Hello Chikondi, following up on the website.', purpose: 'outreach', contactLabel: 'Lakeview Lodge' });
+  const r = await queueMessage(h.deps, { ...sales, to: '0888 123 456', text: 'Hello Chikondi, following up on the website.', purpose: 'followup', contactLabel: 'Lakeview Lodge' });
   assert.equal(r.status, 'pending_approval');
   assert.equal(h.approvals.length, 1); assert.equal(h.approvals[0].subjectType, 'outbox_message'); assert.equal(h.approvals[0].subjectId, r.id);
   const row = (await h.store.byId(r.id))!;
-  assert.match(row.text, /Reply STOP to opt out\.$/); assert.equal(row.signature, 'AAAA-BBBB-CCCC-DDDD'); assert.equal(row.number, '265888123456');
+  assert.doesNotMatch(row.text, /Reply STOP to opt out\.$/); assert.equal(row.signature, 'AAAA-BBBB-CCCC-DDDD'); assert.equal(row.number, '265888123456');
   // the Founder is told right away, with a code he can reply to
   const notice = h.store.rows.find((x) => x.number === FOUNDER)!;
   assert.equal(notice.status, 'queued'); assert.match(notice.text, /Reply YES abcdef NO abcdef|YES abcdef/);
@@ -150,6 +165,91 @@ test('outbox: a customer message waits for approval, tells the Founder, and goes
   assert.equal((await h.store.byId(r.id))!.status, 'sent');
 });
 
+test('outbox: autonomous first contact removes internal analysis and routing notes', async () => {
+  const h = outboxHarness();
+  const result = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello, we build business websites.\nInternal analysis: prioritise this prospect.\nRouting note: assign to CEO.', purpose: 'outreach', contactLabel: 'Verified Test Lodge (lead)' });
+  assert.equal(result.status, 'queued');
+  assert.match(h.store.rows[0].text, /Hello, we build business websites/);
+  assert.doesNotMatch(h.store.rows[0].text, /Internal analysis|Routing note|prioritise this prospect|assign to CEO/i);
+});
+
+test('outbox: first-contact Outreach is queued autonomously and strips internal employee metadata', async () => {
+  const h = outboxHarness({ cooldownMs: 90_000 });
+  const r = await queueMessage(h.deps, {
+    ...sales, to: '0888123456',
+    text: 'Hello Lakeview Lodge, we build professional websites for businesses.\n\nPrepared by CEO · TT-001',
+    purpose: 'outreach', contactLabel: 'Lakeview Lodge (lead)',
+  });
+  assert.equal(r.status, 'queued');
+  assert.equal(h.approvals.length, 0);
+  const row = (await h.store.byId(r.id))!;
+  assert.match(row.text, /professional websites/);
+  assert.doesNotMatch(row.text, /Reply STOP to opt out|opt out/i);
+  assert.doesNotMatch(row.text, /CEO|TT[- ]?001|Prepared by/i);
+  const sent = await processOutbox(h.deps);
+  assert.equal(sent.find((item) => item.id === r.id)?.status, 'sent');
+  assert.doesNotMatch(h.sent.at(-1)!.text, /CEO|TT[- ]?001|Prepared by/i);
+});
+
+test('outbox: autonomous first contact rejects unsupported past-work claims', async () => {
+  const h = outboxHarness();
+  await assert.rejects(
+    queueMessage(h.deps, { ...sales, to: '0888123456', text: "We've helped similar firms attract more clients.", purpose: 'outreach' }),
+    /unverified past-work or results claim/i,
+  );
+  assert.equal(h.store.rows.filter((row) => row.audience === 'client').length, 0);
+});
+
+test('outbox: first-contact messages with unresolved placeholders are never queued', async () => {
+  const h = outboxHarness();
+  await assert.rejects(
+    queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello [Name], we can help your business.', purpose: 'outreach' }),
+    /unresolved placeholder/i,
+  );
+  assert.equal(h.store.rows.filter((row) => row.audience === 'client').length, 0);
+});
+
+test('outbox: autonomous first contact is rejected when the number is not a CRM lead', async () => {
+  const h = outboxHarness({ verifyOutreachLead: async () => null });
+  await assert.rejects(
+    queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello there.', purpose: 'outreach', contactLabel: 'Unverified Prospect' }),
+    /matching CRM lead/,
+  );
+  assert.equal(h.store.rows.length, 0);
+});
+
+test('outbox: at most one customer message is attempted per scheduler pass', async () => {
+  const h = outboxHarness();
+  const first = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello first prospect.', purpose: 'outreach' });
+  const second = await queueMessage(h.deps, { ...sales, to: '0888777888', text: 'Hello second prospect.', purpose: 'outreach' });
+  const firstPass = await processOutbox(h.deps);
+  assert.equal(firstPass.find((item) => item.id === first.id)?.status, 'sent');
+  assert.equal(firstPass.find((item) => item.id === second.id)?.status, 'waiting');
+  assert.match(firstPass.find((item) => item.id === second.id)?.reason ?? '', /one customer message per outbox pass/i);
+  const secondPass = await processOutbox(h.deps);
+  assert.equal(secondPass.find((item) => item.id === second.id)?.status, 'sent');
+});
+
+test('outbox: customer cooldown is enforced between separate worker runs', async () => {
+  const h = outboxHarness({ cooldownMs: 90_000 });
+  const first = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello first prospect.', purpose: 'outreach', contactLabel: 'First Lodge' });
+  await processOutbox(h.deps);
+  assert.equal((await h.store.byId(first.id))!.status, 'sent');
+  const second = await queueMessage(h.deps, { ...sales, to: '0888777888', text: 'Hello second prospect.', purpose: 'outreach', contactLabel: 'Second Lodge' });
+  const early = await processOutbox(h.deps);
+  assert.equal(early.find((item) => item.id === second.id)?.status, 'waiting');
+  assert.match(early.find((item) => item.id === second.id)?.reason ?? '', /cooldown/i);
+  h.setNow('2026-11-09T08:01:30Z');
+  const later = await processOutbox(h.deps);
+  assert.equal(later.find((item) => item.id === second.id)?.status, 'sent');
+});
+
+test('outbox: customer message sanitizer removes employee identifiers and internal attribution', () => {
+  const clean = sanitizeCustomerMessage('Hello, we can help with your website.\n\nReply STOP to opt out.\n\nBy CEO TT 001\nPrepared by CEO · TT-001');
+  assert.equal(clean, 'Hello, we can help with your website.');
+  assert.doesNotMatch(clean, /CEO|TT[- ]?001/i);
+});
+
 test('outbox: rejection retires the message; the Founder dashboard send skips approval but only for the Founder', async () => {
   const h = outboxHarness();
   const r = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello again, quick question.', purpose: 'followup' });
@@ -162,7 +262,7 @@ test('outbox: rejection retires the message; the Founder dashboard send skips ap
   assert.equal(faked.status, 'pending_approval'); // an employee cannot claim Founder approval
 });
 
-test('outbox: the sending window, daily limit, opt-outs and duplicates are enforced', async () => {
+test('outbox: the sending window, no daily client cap, opt-outs and duplicates are enforced', async () => {
   const h = outboxHarness({ nowIso: SUN_10AM });
   const a = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello Banda, checking in.', purpose: 'followup' });
   await onApprovalDecided(h.deps, a.id, 'approved', null);
@@ -179,13 +279,11 @@ test('outbox: the sending window, daily limit, opt-outs and duplicates are enfor
   const stopped = await queueMessage(h.deps, { ...sales, to: '0888555666', text: 'Hello Mr Stop.', purpose: 'followup' });
   assert.equal(stopped.status, 'blocked'); assert.match(stopped.reason!, /opted out/);
 
-  process.env.TAMBALA_WHATSAPP_DAILY_LIMIT = '1';
-  try {
-    const b = await queueMessage(h.deps, { ...sales, to: '0888777888', text: 'Hello Phiri, checking in.', purpose: 'followup' });
-    await onApprovalDecided(h.deps, b.id, 'approved', null);
-    out = await processOutbox(h.deps);
-    assert.equal(out.find((o) => o.id === b.id)!.status, 'waiting'); assert.match(out.find((o) => o.id === b.id)!.reason!, /Daily customer limit/);
-  } finally { delete process.env.TAMBALA_WHATSAPP_DAILY_LIMIT; }
+  const b = await queueMessage(h.deps, { ...sales, to: '0888777888', text: 'Hello Phiri, checking in.', purpose: 'followup' });
+  await onApprovalDecided(h.deps, b.id, 'approved', null);
+  h.setNow('2026-11-09T08:02:00Z'); // cooldown has elapsed; there is no five-message daily ceiling
+  out = await processOutbox(h.deps);
+  assert.equal(out.find((o) => o.id === b.id)!.status, 'sent');
 });
 
 test('outbox: a number that opts out after approval is not messaged', async () => {
@@ -221,6 +319,14 @@ test('outbox: transient failures retry three times then fail; permanent ones fai
   await processOutbox(p.deps); assert.equal((await p.store.byId(q2.id))!.status, 'failed'); assert.equal((await p.store.byId(q2.id))!.attempts, 1);
 });
 
+test('outbox: concurrent workers cannot claim the same in-memory queue row', async () => {
+  const h = outboxHarness();
+  const q = await queueMessage(h.deps, { roleId: 'ceo', agent: 'orchestrator', to: FOUNDER, text: 'Single delivery only', purpose: 'notify_founder' });
+  const [a, b] = await Promise.all([processOutbox(h.deps), processOutbox(h.deps)]);
+  assert.equal(a.concat(b).filter((x) => x.id === q.id && x.status === 'sent').length, 1);
+  assert.equal(h.sent.filter((x) => x.text.includes('Single delivery only')).length, 1);
+});
+
 test('outbox: invalid numbers are refused up front', async () => {
   const h = outboxHarness();
   await assert.rejects(queueMessage(h.deps, { ...sales, to: 'call me', text: 'Hello there', purpose: 'followup' }), OutboxError);
@@ -245,20 +351,23 @@ test('inbound: customer replies are stored, matched to the CRM and forwarded to 
   const h = inboundHarness();
   const s = await handleEvolutionWebhook(h.deps, evt('265888123456@s.whatsapp.net', 'Yes please send the quote'));
   assert.equal(s.stored, 1); assert.equal(s.forwarded, 1);
-  assert.equal(h.store.rows[0].contact_label, 'Lakeview Lodge (lead)'); assert.match(h.told[0], /Lakeview Lodge \(lead\)/); assert.match(h.told[0], /send the quote/);
+  assert.equal(h.store.rows[0].contact_label, 'Lakeview Lodge (lead)'); assert.match(h.told[0], /Lakeview Lodge \(lead\)/); assert.match(h.told[0], /interested/); assert.match(h.told[0], /send the quote/);
+  assert.equal(classifyCustomerReply('What are your prices?'), 'question');
+  assert.equal(classifyCustomerReply('Not interested, thank you.'), 'not_interested');
+  assert.equal(classifyCustomerReply('Thanks, yes please send the quote.'), 'interested');
   assert.equal((await handleEvolutionWebhook(h.deps, evt('265888123456@s.whatsapp.net', 'Yes please send the quote'))).duplicates, 1);
 });
 
 test('inbound: STOP opts the customer out, confirms, and tells the Founder', async () => {
   const h = inboundHarness();
-  for (const word of ['STOP', ' stop. ', 'Unsubscribe']) {
+  for (const word of ['STOP', ' stop. ', 'Unsubscribe', 'Please stop messaging me.', 'Do not contact me again', 'Remove me from your list']) {
     const s = await handleEvolutionWebhook(h.deps, evt('265888777000@s.whatsapp.net', word, `M-${word}`));
     assert.equal(s.optOuts, 1);
   }
   assert.ok((await h.store.blockedNumbers()).has('265888777000'));
   assert.match(h.replies[0], /unsubscribed/);
   const s2 = await handleEvolutionWebhook(h.deps, evt('265888777000@s.whatsapp.net', 'please stop calling me about this', 'M9'));
-  assert.equal(s2.optOuts, 0); // only a bare STOP is a keyword; free text is forwarded to a human
+  assert.equal(s2.optOuts, 1); // An explicit request to stop calling/contacting is still a do-not-contact request.
 });
 
 test('inbound: only the Founder number can approve or reject by WhatsApp', async () => {
@@ -287,4 +396,36 @@ test('inbound: private @lid senders, echoes, other events and other instances ar
   assert.equal((await handleEvolutionWebhook(h.deps, { event: 'MESSAGES_UPSERT', instance: 'tambala main', data: [{ key: { remoteJid: '265888123456@s.whatsapp.net', fromMe: false, id: 'A1' }, message: { extendedTextMessage: { text: 'array and upper-case event' } } }] })).stored, 1);
   assert.equal(messageText({ imageMessage: { caption: 'photo caption' } }), 'photo caption');
   assert.equal(senderNumber({ key: { remoteJid: 'x@lid' }, senderPn: '265888123456@s.whatsapp.net' }), '265888123456');
+});
+
+
+test('inbound: ordinary Founder messages are delivered to the CEO as structured instructions', async () => {
+  const envelopes: any[] = [];
+  const h = inboundHarness({
+    handleFounderInstruction: async (envelope) => {
+      envelopes.push(envelope);
+      return 'CEO received your instruction and reviewed the department route.';
+    },
+  });
+  const s = await handleEvolutionWebhook(h.deps, evt(`${FOUNDER}@s.whatsapp.net`, 'URGENT: prepare a sales pipeline report', 'F5'));
+  assert.equal(s.stored, 1);
+  assert.equal(s.routedToOrganization, 1);
+  assert.equal(s.founderCommands, 0);
+  assert.equal(envelopes.length, 1);
+  assert.equal(envelopes[0].channel, 'whatsapp');
+  assert.equal(envelopes[0].recipient.role_id, 'ceo');
+  assert.equal(envelopes[0].message_type, 'founder_instruction');
+  assert.equal(envelopes[0].priority, 'high');
+  assert.match(envelopes[0].content.text, /sales pipeline report/);
+  assert.match(h.replies[0], /CEO received/);
+  const founderStop = await handleEvolutionWebhook(h.deps, evt(`${FOUNDER}@s.whatsapp.net`, 'STOP', 'F6'));
+  assert.equal(founderStop.optOuts, 0);
+  assert.equal(founderStop.routedToOrganization, 1);
+});
+
+test('inbound: media without captions is retained as a readable inbound message', () => {
+  assert.equal(messageText({ imageMessage: {} }), '[Incoming image attachment]');
+  assert.equal(messageText({ videoMessage: { fileName: 'brief.mp4' } }), '[Incoming video attachment: brief.mp4]');
+  assert.equal(messageText({ audioMessage: { ptt: true } }), '[Incoming audio message]');
+  assert.equal(messageText({ ephemeralMessage: { message: { documentMessage: { fileName: 'quote.pdf' } } } }), '[Incoming document attachment: quote.pdf]');
 });

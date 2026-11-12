@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../lib/supabase.js';
+import { supabaseInsert, supabaseSelect, supabaseUpdate, supabaseRpc } from '../lib/supabase.js';
 import { dbConfigured } from '../organization/workforce/db-util.js';
 import type { Audience, Purpose } from './policy.js';
 
-export type MessageStatus = 'pending_approval' | 'queued' | 'sent' | 'failed' | 'rejected' | 'blocked' | 'received';
+export type MessageStatus = 'pending_approval' | 'queued' | 'sending' | 'sent' | 'failed' | 'rejected' | 'blocked' | 'received';
 
 export interface MessageRow {
   id: string;
@@ -24,13 +24,14 @@ export interface MessageRow {
   contact_label: string | null;   // matched lead/client name, when known
   created_at: string;
   sent_at: string | null;
+  claimed_at?: string | null;
 }
 
 export interface MessageStore {
   add(row: Omit<MessageRow, 'id'>): Promise<MessageRow>;
   update(id: string, patch: Partial<MessageRow>): Promise<void>;
   byId(id: string): Promise<MessageRow | null>;
-  queued(limit: number): Promise<MessageRow[]>;
+  queued(limit: number): Promise<MessageRow[]>; // atomically claims rows and marks them sending
   recent(limit: number): Promise<MessageRow[]>;
   sentSince(sinceIso: string, audience: Audience): Promise<number>;
   duplicateSince(number: string, text: string, sinceIso: string): Promise<boolean>;
@@ -43,7 +44,7 @@ export class SupabaseMessageStore implements MessageStore {
   add(row: Omit<MessageRow, 'id'>) { return supabaseInsert<MessageRow>('organization_messages', row as unknown as Record<string, unknown>); }
   async update(id: string, patch: Partial<MessageRow>) { await supabaseUpdate('organization_messages', patch as Record<string, unknown>, `id=eq.${encodeURIComponent(id)}`); }
   async byId(id: string) { return (await supabaseSelect<MessageRow>('organization_messages', `select=*&id=eq.${encodeURIComponent(id)}&limit=1`))[0] ?? null; }
-  queued(limit: number) { return supabaseSelect<MessageRow>('organization_messages', `select=*&direction=eq.out&status=eq.queued&order=created_at.asc&limit=${limit}`); }
+  queued(limit: number) { return supabaseRpc<MessageRow>('claim_organization_outbox', { p_limit: limit }); }
   recent(limit: number) { return supabaseSelect<MessageRow>('organization_messages', `select=*&order=created_at.desc&limit=${limit}`); }
   async sentSince(sinceIso: string, audience: Audience) {
     return (await supabaseSelect<{ id: string }>('organization_messages', `select=id&direction=eq.out&status=eq.sent&audience=eq.${audience}&sent_at=gte.${encodeURIComponent(sinceIso)}&limit=1000`)).length;
@@ -66,7 +67,7 @@ export class InMemoryMessageStore implements MessageStore {
   async add(row: Omit<MessageRow, 'id'>) { const r = { ...row, id: randomUUID() }; this.rows.push(r); return r; }
   async update(id: string, patch: Partial<MessageRow>) { const r = this.rows.find((x) => x.id === id); if (r) Object.assign(r, patch); }
   async byId(id: string) { return this.rows.find((r) => r.id === id) ?? null; }
-  async queued(limit: number) { return this.rows.filter((r) => r.direction === 'out' && r.status === 'queued').slice(0, limit); }
+  async queued(limit: number) { const rows = this.rows.filter((r) => r.direction === 'out' && r.status === 'queued').slice(0, limit); for (const row of rows) { row.status = 'sending'; row.claimed_at = new Date().toISOString(); } return rows; }
   async recent(limit: number) { return [...this.rows].reverse().slice(0, limit); }
   async sentSince(sinceIso: string, audience: Audience) { return this.rows.filter((r) => r.direction === 'out' && r.status === 'sent' && r.audience === audience && (r.sent_at ?? '') >= sinceIso).length; }
   async duplicateSince(number: string, text: string, sinceIso: string) { return this.rows.some((r) => r.direction === 'out' && r.number === number && r.text === text && r.created_at >= sinceIso && ['pending_approval', 'queued', 'sent'].includes(r.status)); }

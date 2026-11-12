@@ -9,7 +9,7 @@ import { getOrganizationSnapshot, routeOrganizationObjective } from './organizat
 import { requireConfiguredRuntime, resolveExecutionRoute, type ExecutionRoute, type RoutedCapability } from './organization/execution-router.js';
 import { runtimeConfig } from './config/runtime.js';
 import { ApprovalError, decideApproval } from './organization/workforce/approvals-service.js';
-import { assignWork, deleteCustomDutyById, runDutiesOnce, saveDutyConfig } from './organization/workforce/duty-service.js';
+import { assignWork, clarifyTaskRoom, deleteCustomDutyById, runDutiesOnce, saveDutyConfig } from './organization/workforce/duty-service.js';
 import { DutyConfigError } from './organization/workforce/duty-config.js';
 import { HandoffError } from './organization/workforce/handoffs.js';
 import { verifySignature } from './organization/workforce/sign-work.js';
@@ -28,10 +28,36 @@ import { handleHealth, handleNotFound } from './http/health.js';
 import { isAuthorized, unauthorized } from './http/auth.js';
 import { advanceTrackedTask, beginTrackedTask, failTrackedTask } from './organization/task-tracking.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo, type AgentName } from './services/ai.js';
+import { hasResearchSourceUrls } from './services/web-research.js';
+import { supabaseSelect } from './lib/supabase.js';
+import { getCompactCompanyContext, isExcluded } from './services/ai/context.js';
+import { buildProspectingSearchQueries } from './services/web-research.js';
+import { isCompanyStatusRequest, runCompanyStatusReport } from './channels/founder-execution.js';
 
 const nodeHandler = toNodeHandler(mcpHandler);
-const chatAgents = ['orchestrator', 'outreach', 'followup', 'research', 'marketing', 'content', 'finance', 'payments', 'engineering'] as const;
-type ChatAgent = typeof chatAgents[number];
+const chatAgents = Object.keys(AGENT_DIRECTORY) as AgentName[];
+type ChatAgent = AgentName;
+const organizationRoleByAgent: Record<AgentName, string> = {
+  orchestrator: 'ceo',
+  outreach: 'director-sales-business-development',
+  followup: 'director-customer-relations',
+  research: 'director-research-intelligence',
+  marketing: 'director-marketing-brand',
+  content: 'director-media-content',
+  finance: 'director-finance-accounting',
+  payments: 'leader-fintech-ventures',
+  engineering: 'director-technology-engineering',
+  strategy: 'director-strategy-planning',
+  product: 'director-product-innovation',
+  security: 'director-cybersecurity-it',
+  operations: 'director-operations-administration',
+  people: 'director-people-agent-management',
+  legal: 'director-legal-risk-compliance',
+  procurement: 'director-procurement-resources',
+  executive: 'director-executive-management',
+  rnd: 'director-research-development',
+  governance: 'director-board-governance',
+};
 
 type ExecutionStage = 'ceo_delegate' | 'specialist_execute' | 'ceo_complete';
 
@@ -92,7 +118,7 @@ function errorStatus(message: string): number {
 }
 
 function taskNeedsWebResearch(text: string): boolean {
-  return /\b(research|investigate|look\s*up|find|identify|current|latest|market|competitor|prospect|hotel|lodge|tourism|association|statistics|report)\b/i.test(text);
+  return /\b(research|investigate|look\s*up|find|identify|web\s+search|search\s+the\s+web|online\s+search|internet\s+search|public\s+information|official\s+information|check\s+online|current|latest|market|competitor|prospect|hotel|lodge|tourism|association|statistics|report)\b/i.test(text);
 }
 
 async function researchQueryFromObjective(objective: string): Promise<string> {
@@ -123,6 +149,53 @@ function compactResearchEvidence(value: unknown): string {
   if (!value) return 'No web research evidence was returned.';
   const raw = JSON.stringify(value);
   return truncateForModel(raw, 4500);
+}
+
+/** Resolve explicit entity mentions against Tambala's own client/project records before web search. */
+async function resolveInternalEntityContext(objective: string): Promise<{ context: string; researchSubject: string | null }> {
+  const tokens = new Set(objective.toLowerCase().match(/[a-z0-9]{4,}/g) ?? []);
+  if (!tokens.size) return { context: 'No matching internal client or project record was found.', researchSubject: null };
+  try {
+    const [clients, projects] = await Promise.all([
+      supabaseSelect<Record<string, unknown>>('clients', 'select=id,name,business_name,status&order=created_at.desc&limit=100'),
+      supabaseSelect<Record<string, unknown>>('projects', 'select=id,name,status,client_id&order=created_at.desc&limit=100'),
+    ]);
+    const matches = [
+      ...clients.filter((row) => !isExcluded(row)).map((row) => ({ kind: 'client', row })),
+      ...projects.filter((row) => !isExcluded(row)).map((row) => ({ kind: 'project', row })),
+    ].filter(({ row }) => {
+      const names = [row.name, row.business_name].filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+      return names.some((name) => {
+        const normalized = name.toLowerCase();
+        if (normalized.length >= 4 && objective.toLowerCase().includes(normalized)) return true;
+        return (normalized.match(/[a-z0-9]{4,}/g) ?? []).some((token) => tokens.has(token));
+      });
+    }).slice(0, 8);
+    if (!matches.length) return { context: 'No matching internal client or project record was found. Do not guess an entity identity.', researchSubject: null };
+    const entities = matches.map(({ kind, row }) => ({
+      record_type: kind,
+      name: typeof row.name === 'string' ? row.name : null,
+      business_name: typeof row.business_name === 'string' ? row.business_name : null,
+      status: typeof row.status === 'string' ? row.status : null,
+      client_id: typeof row.client_id === 'string' ? row.client_id : null,
+    }));
+    const clientNames = entities
+      .filter((item) => item.record_type === 'client')
+      .map((item) => item.business_name || item.name)
+      .filter((value): value is string => Boolean(value));
+    const projectNames = entities
+      .filter((item) => item.record_type === 'project')
+      .map((item) => item.name)
+      .filter((value): value is string => Boolean(value));
+    const distinctNames = [...new Set(clientNames.length ? clientNames : projectNames)];
+    return {
+      context: JSON.stringify({ source: 'Tambala internal CRM/project records', entities }),
+      researchSubject: distinctNames.length === 1 ? distinctNames[0] : null,
+    };
+  } catch (error) {
+    console.warn('Internal entity context lookup unavailable:', error instanceof Error ? error.message : error);
+    return { context: 'Internal CRM/project lookup was unavailable. Do not guess an entity identity.', researchSubject: null };
+  }
 }
 
 function validStage(value: unknown): value is ExecutionStage {
@@ -171,9 +244,14 @@ const server = createHttpServer(async (req, res) => {
   }
 
   if (requestPath === '/api/chat-test/status' && req.method === 'GET') {
-    const agents = chatAgents.map((agent) => getAgentOperationalInfo(agent));
+    const runtimeAgents = chatAgents.map((agent) => getAgentOperationalInfo(agent));
     try {
       const snapshot = await getOrganizationSnapshot();
+      const agents = runtimeAgents.map((agent) => {
+        const roleId = organizationRoleByAgent[agent.agent];
+        const role = snapshot.organization.roles.find((candidate) => candidate.id === roleId);
+        return { ...agent, roleId: role?.id ?? roleId, roleStatus: role?.activation ?? 'unassigned' };
+      });
       json(res, 200, {
         agents,
         organization: {
@@ -198,7 +276,7 @@ const server = createHttpServer(async (req, res) => {
       const message = error instanceof Error ? error.message : 'Organization snapshot could not be loaded.';
       console.error('Chat test status could not load organization snapshot:', message);
       json(res, 503, {
-        agents,
+        agents: runtimeAgents,
         organization: {
           status: 'unavailable',
           note: 'The configured persistent organization snapshot could not be loaded; routing should not be treated as live-verified.',
@@ -212,7 +290,7 @@ const server = createHttpServer(async (req, res) => {
     if (!req.headers['content-type']?.toLowerCase().includes('application/json')) { json(res, 415, { error: 'Content-Type must be application/json.' }); return; }
     try {
       const body = await readJsonBody(req) as { agent?: unknown; request?: unknown };
-      if (!body || typeof body !== 'object' || !chatAgents.includes(body.agent as ChatAgent)) { json(res, 400, { error: 'Choose one of the available agents: orchestrator, outreach, followup, research, marketing, content, finance, payments, or engineering.' }); return; }
+      if (!body || typeof body !== 'object' || !chatAgents.includes(body.agent as ChatAgent)) { json(res, 400, { error: 'Choose an agent from the configured organization directory.' }); return; }
       if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 10_000) { json(res, 400, { error: 'Provide a prompt between 1 and 10,000 characters.' }); return; }
       const agent = body.agent as ChatAgent;
       if (taskNeedsWebResearch(body.request)) {
@@ -240,6 +318,33 @@ const server = createHttpServer(async (req, res) => {
       if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 8_000) { json(res, 400, { error: 'Provide a task between 1 and 8,000 characters.' }); return; }
       const founderMessage = body.request.trim();
 
+      // Company status reports use the dedicated four-department executor, not the
+      // generic single-specialist chat flow. It returns only after each department
+      // has completed or is explicitly marked outstanding.
+      if (body.stage === 'ceo_delegate' && isCompanyStatusRequest(founderMessage)) {
+        const receivedAt = new Date().toISOString();
+        const message = await runCompanyStatusReport({
+          message_id: 'chat-test-' + receivedAt.replace(/[^0-9]/g, '').slice(0, 14),
+          channel: 'whatsapp',
+          direction: 'inbound',
+          sender: { name: 'Founder / Bless', phone: 'chat-test' },
+          recipient: { role_id: 'ceo', title: 'Chief Executive Officer' },
+          message_type: 'founder_instruction',
+          priority: 'normal',
+          content: { text: founderMessage, attachments: [] },
+          routing: { assigned_by: 'inbound_gateway', department: null, capability_id: null },
+          status: 'received',
+          received_at: receivedAt,
+        });
+        const completed = message.startsWith('**Prepared for Founder / Bless —');
+        return json(res, 200, {
+          stage: body.stage,
+          workflow: 'four_department_status_report',
+          status: completed ? 'completed' : 'waiting_for_departments',
+          message,
+        });
+      }
+
       let stepTaskId: unknown = (body as { taskId?: unknown }).taskId;
       try {
       if (body.stage === 'ceo_delegate') {
@@ -248,8 +353,9 @@ const server = createHttpServer(async (req, res) => {
         await advanceTrackedTask(begun.taskId, [{ status: 'ceo_analyzing', stage: 'ceo', eventType: 'ceo_analysis_started' }]);
         const routing = await routeOrganizationObjective(founderMessage);
         const execution = resolveConfiguredExecutionRoute(routing[0]);
+        const companyContext = await getCompactCompanyContext().catch(() => ({ company: { name: 'Tambala Technologies', country: 'Malawi', base: 'Lilongwe, Malawi', description: 'Software, websites, and digital products' }, services: [], prospecting_defaults: { geographic_scope: 'Malawi-wide', first_batch_target: 20, market_approach: 'Cross-sector; qualify prospects against active Tambala services.', clarification_rule: 'Do not ask obvious scoping questions; use defaults unless a genuine blocker remains.' } }));
         const routingContext = routing.slice(0, 3).map((match) => `${match.department ?? 'unassigned'} / ${match.role ?? 'unassigned'} (score ${match.score}); role status: ${match.roleActivation ?? 'unknown'}; research keywords: ${match.researchQuery}`).join('\n');
-        const delegation = await askTambalaAI('orchestrator', `Founder / Bless has given you this objective:\n\n${founderMessage}\n\nAct as the CEO. Own this objective from start to finish. Use the organization's capability routing below as the source of truth for departmental responsibilities:\n${routingContext || 'No capability match was found; choose an existing department and state why.'}\n\nDelegate only the specialist work. Create a precise execution brief containing ALL of these fields: task, deliverable, constraints, and short researchQuery. researchQuery must be a short keyword-style query, never a copy of the Founder objective or CEO prompt. Deterministic executor decision: ${JSON.stringify(execution)}. If status is not_activated, do not pretend a department agent is available; clearly mark the proposed handoff and what agent/configuration is missing. Do not complete the department's work yourself. The department must return the actual requested deliverable, not merely advice about how to do it. Do not invent facts, locations, countries, services, or requirements that are not in the Founder objective. If something is ambiguous, instruct the department to verify it with research.`, { communicationType: 'Founder -> CEO', sender: 'Founder / Bless', recipient: 'Chief Executive Officer (CEO)', routing });
+        const delegation = await askTambalaAI('orchestrator', `Founder / Bless has given you this objective:\n\n${founderMessage}\n\nAct as the CEO. Own this objective from start to finish. Use the organization's capability routing below as the source of truth for departmental responsibilities:\n${routingContext || 'No capability match was found; choose an existing department and state why.'}\n\nVERIFIED TAMBALA OPERATING CONTEXT:\n${JSON.stringify(companyContext).slice(0, 10000)}\n\nPROSPECTING DEFAULTS: For potential-client research, default to Malawi-wide, cross-sector prospecting based on active Tambala services. Prepare a first batch of 20 qualified prospects. Infer reasonable decision-maker titles from public evidence. Do not ask the Founder to choose a market type, industry, company size, revenue range, job title, or number. Exclude existing CRM leads and clients.\n\nDelegate only the specialist work. Create a precise execution brief containing ALL of these fields: task, deliverable, constraints, and short researchQuery. researchQuery must be a short keyword-style query, never a copy of the Founder objective or CEO prompt. Deterministic executor decision: ${JSON.stringify(execution)}. If status is not_activated, do not pretend a department agent is available; clearly mark the proposed handoff and what agent/configuration is missing. Do not complete the department's work yourself. The department must return the actual requested deliverable, not merely advice about how to do it. Do not invent facts, locations, countries, services, or requirements that are not in the Founder objective. If something is ambiguous, resolve it through company records or research before asking the Founder.`, { communicationType: 'Founder -> CEO', sender: 'Founder / Bless', recipient: 'Chief Executive Officer (CEO)', routing, companyContext });
         const tracking = await advanceTrackedTask(begun.taskId, execution.status === 'ready'
           ? [{ status: 'delegated', stage: 'ceo', eventType: 'delegated_to_department', researchQuery: execution.researchQuery, payload: { capabilityId: execution.capabilityId, agent: execution.agent, role: execution.role } }]
           : [{ status: 'needs_more_work', stage: 'ceo', eventType: 'execution_blocked', payload: { reason: execution.reason } }]);
@@ -263,14 +369,25 @@ const server = createHttpServer(async (req, res) => {
         if (execution.status !== 'ready') { return json(res, 409, { error: execution.reason, execution, routing }); }
         const specialist = execution.agent;
         await advanceTrackedTask(stepTaskId, [{ status: 'executing', stage: 'department', eventType: 'department_execution_started', roleId: null }]);
-        const researchQuery = execution.researchQuery || await researchQueryFromObjective(founderMessage);
-        const specialistTask = `CEO execution brief:\n\n${truncateForModel(body.delegation, 7000)}\n\nExecute this task now. Produce the requested deliverable itself. Do not merely describe what should be done, do not delegate it back, and do not stop at process recommendations. Respect every constraint, but verify factual assumptions against research evidence rather than blindly trusting the brief. If research is required, use the web research evidence and preserve source URLs. Return completed work to the CEO, including genuine blockers only if they prevent completion.`;
-        if (taskNeedsWebResearch(`${founderMessage}\n${body.delegation}`)) {
-          const researched = await askTambalaAIWithWebResearch(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: body.delegation }, researchQuery);
+        const entityContext = await resolveInternalEntityContext(founderMessage);
+        const companyContext = await getCompactCompanyContext().catch(() => ({ company: { name: 'Tambala Technologies', country: 'Malawi', base: 'Lilongwe, Malawi', description: 'Software, websites, and digital products' }, services: [], prospecting_defaults: { geographic_scope: 'Malawi-wide', first_batch_target: 20, market_approach: 'Cross-sector; qualify prospects against active Tambala services.' } }));
+        const activeServices = Array.isArray(companyContext.services) ? companyContext.services as Array<Record<string, unknown>> : [];
+        const isProspecting = execution.capabilityId === 'sales_prospecting';
+        const routedResearchQuery = isProspecting
+          ? buildProspectingSearchQueries(activeServices.map((service) => String(service.name ?? '')))
+          : execution.researchQuery || await researchQueryFromObjective(founderMessage);
+        const researchQuery = isProspecting
+          ? routedResearchQuery
+          : entityContext.researchSubject
+            ? `${entityContext.researchSubject} Malawi official sources verified information`.slice(0, 500)
+            : routedResearchQuery;
+        const specialistTask = `CEO execution brief:\n\n${truncateForModel(body.delegation, 7000)}\n\nVERIFIED TAMBALA OPERATING CONTEXT:\n${JSON.stringify(companyContext).slice(0, 10000)}\n\nINTERNAL ENTITY CONTEXT (trusted CRM/project records; use this to disambiguate the subject before searching):\n${entityContext.context}\n\n${isProspecting ? 'PROSPECTING RULES: Return up to 20 individual, named Malawi-wide organisations across relevant sectors. Use active Tambala services to establish fit. Do not list generic directories, competitor websites, or industry summaries as prospects; directories may only be discovery clues. A prospect qualifies when its existence and at least one plausible service-fit signal are evidenced. Do not require a URL for every field: cite the source(s) supporting each material claim and mark unavailable fields unknown. DECISION-MAKER VERIFICATION: For each prospect, identify one appropriate decision-maker and verify the decision-maker name, title, public email, and public phone using explicit source URLs. These four fields are required for FULLY VERIFIED status. If any field cannot be verified, retain the organisation as an INCOMPLETE CANDIDATE, mark the missing field UNKNOWN, and cite the evidence that was found. Never invent a person or contact detail. Continue candidate-specific research before marking a field unknown. Exclude existing CRM leads/clients. Rank prospects by evidence strength and include business name, location, sector, fit signal, current website if found, public contact if found, and source URLs. Do not stop because contact details are unavailable.' : ''}\n\nExecute this task now. Produce the requested deliverable itself. Do not merely describe what should be done, do not delegate it back, and do not stop at process recommendations. Respect every constraint, but verify factual assumptions against research evidence rather than blindly trusting the brief. If research is required, use the web research evidence and preserve source URLs. Return completed work to the CEO, including genuine blockers only if they prevent completion.`;
+        if (isProspecting || taskNeedsWebResearch(`${founderMessage}\n${body.delegation}`)) {
+          const researched = await askTambalaAIWithWebResearch(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: body.delegation, companyContext }, researchQuery, isProspecting ? { maxResults: 4, searchDepth: 'advanced', country: 'Malawi' } : { maxResults: 8, searchDepth: 'advanced' });
           const tracking = await advanceTrackedTask(stepTaskId, [{ status: 'returned_to_ceo', stage: 'review', eventType: 'department_work_returned', result: { summary: researched.response.slice(0, 4000) } }]);
           return json(res, 200, { stage: body.stage, tracking, message: researched.response, researchQuery, researchEvidence: researched.research });
         }
-        const result = await askTambalaAI(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: body.delegation });
+        const result = await askTambalaAI(specialist, specialistTask, { communicationType: 'CEO -> Department Head', sender: 'Chief Executive Officer (CEO)', recipient: getAgentOperationalInfo(specialist).title, delegation: body.delegation, companyContext });
         const tracking = await advanceTrackedTask(stepTaskId, [{ status: 'returned_to_ceo', stage: 'review', eventType: 'department_work_returned', result: { summary: result.slice(0, 4000) } }]);
         return json(res, 200, { stage: body.stage, tracking, message: result, researchQuery: null, researchEvidence: null });
       }
@@ -279,10 +396,16 @@ const server = createHttpServer(async (req, res) => {
       const delegationContext = truncateForModel(body.delegation, 3500);
       const specialistContext = truncateForModel(body.specialistResult, 6000);
       const researchContext = compactResearchEvidence(body.researchEvidence);
+      if (taskNeedsWebResearch(founderMessage) && !hasResearchSourceUrls(body.researchEvidence)) {
+        const message = 'INCONCLUSIVE — this task requires web research, but no usable source URLs were returned. The CEO cannot finalize or add factual claims until the specialist supplies verifiable evidence or the Founder clarifies the entity.';
+        const tracking = await advanceTrackedTask(stepTaskId, [{ status: 'needs_more_work', stage: 'review', eventType: 'research_evidence_missing', result: { reason: message } }]);
+        return json(res, 422, { stage: body.stage, tracking, status: 'inconclusive', message, researchEvidence: researchContext });
+      }
       const finalPrompt = `Complete the Founder objective end-to-end.\n\nORIGINAL FOUNDER OBJECTIVE:\n${founderMessage}\n\nCEO DELEGATION (may contain mistakes; do not treat its factual assumptions as truth):\n${delegationContext}\n\nDEPARTMENT COMPLETED WORK:\n${specialistContext}\n\nWEB RESEARCH EVIDENCE:\n${researchContext}\n\nYou are accountable for the final result. Evaluate the department work against the original objective and every constraint. Evidence and the original Founder objective take precedence over unsupported claims in the delegation or report. Correct factual errors when the supplied evidence supports the correction. Do not merely summarize or relay the department report. Produce the actual final deliverable requested by the Founder. If research was requested, present the researched findings and preserve source URLs. If the evidence is insufficient, clearly state what remains unknown rather than fabricating it.`;
       const finalResult = await askTambalaAI('orchestrator', finalPrompt, { communicationType: 'CEO -> Founder', sender: 'Chief Executive Officer (CEO)', recipient: 'Founder / Bless', founderObjective: founderMessage, delegation: delegationContext, specialistResult: specialistContext, researchEvidence: researchContext });
-      const tracking = await advanceTrackedTask(stepTaskId, [{ status: 'completed', stage: 'complete', eventType: 'ceo_completed_objective', result: { final: finalResult.slice(0, 8000) }, completedAt: new Date().toISOString() }]);
-      return json(res, 200, { stage: body.stage, tracking, message: finalResult });
+      const completionHasEvidence = !taskNeedsWebResearch(founderMessage) || hasResearchSourceUrls(body.researchEvidence);
+      const tracking = await advanceTrackedTask(stepTaskId, [{ status: completionHasEvidence ? 'completed' : 'needs_more_work', stage: completionHasEvidence ? 'complete' : 'review', eventType: completionHasEvidence ? 'ceo_completed_objective' : 'research_evidence_missing', result: { final: finalResult.slice(0, 8000) }, ...(completionHasEvidence ? { completedAt: new Date().toISOString() } : {}) }]);
+      return json(res, completionHasEvidence ? 200 : 422, { stage: body.stage, tracking, status: completionHasEvidence ? 'completed' : 'inconclusive', message: finalResult });
       } catch (stageError) {
         await failTrackedTask(stepTaskId, stageError instanceof Error ? stageError.message : 'Stage failed.');
         throw stageError;
@@ -347,7 +470,12 @@ const server = createHttpServer(async (req, res) => {
   if (requestPath.startsWith('/api/dashboard/') && req.method === 'POST' && requestPath !== '/api/dashboard/approvals/decide') {
     try {
       const body = await readJsonBody(req, 60_000) as Record<string, unknown>;
-      if (requestPath === '/api/dashboard/signatures/verify') {
+      const roomReply = requestPath.match(/^\/api\/dashboard\/rooms\/([0-9a-fA-F-]{36})\/reply$/);
+      if (roomReply) {
+        const clarification = typeof body.clarification === 'string' ? body.clarification : '';
+        const handoff = await clarifyTaskRoom(roomReply[1], clarification);
+        json(res, 200, { ok: true, handoffId: handoff.id, roomId: handoff.room_id, status: handoff.status });
+      } else if (requestPath === '/api/dashboard/signatures/verify') {
         json(res, 200, await verifySignature({ fingerprint: typeof body.fingerprint === 'string' ? body.fingerprint : undefined, id: typeof body.id === 'string' ? body.id : undefined }));
       } else if (requestPath === '/api/dashboard/handoffs/assign') {
         const agent = String(body.agent ?? '');
@@ -411,6 +539,19 @@ const server = createHttpServer(async (req, res) => {
     return;
   }
 
+  // External cron endpoint for Render's free/sleeping instances. The dedicated scheduler token
+  // is separate from the chat-test token and never grants access to dashboard actions.
+  if (requestPath === '/api/channels/outbox/run' && req.method === 'POST') {
+    if (!schedulerTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized.' }); return; }
+    try {
+      json(res, 200, { ok: true, results: await runOutbox() });
+    } catch (error) {
+      console.error('Scheduled WhatsApp outbox run failed:', error instanceof Error ? error.message : error);
+      json(res, 500, { error: 'WhatsApp outbox could not be processed.' });
+    }
+    return;
+  }
+
   if (requestPath === '/api/duties/run' && req.method === 'POST') {
     if (!chatTokenMatches(bearerToken(req)) && !schedulerTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized.' }); return; }
     try {
@@ -469,6 +610,24 @@ const server = createHttpServer(async (req, res) => {
 });
 
 startDutyScheduler();
+
+// Keep the WhatsApp outbox moving on an always-on host. Atomic database claims make
+// overlapping ticks / multiple Render instances safe; stale uncertain sends are not replayed.
+if (process.env.TAMBALA_WHATSAPP_OUTBOX_SCHEDULER === 'true') {
+  const intervalMinutes = Math.max(1, Number(process.env.TAMBALA_WHATSAPP_OUTBOX_INTERVAL_MINUTES) || 1);
+  const tickOutbox = async () => {
+    try {
+      const results = await runOutbox();
+      if (results.length) console.log('WhatsApp outbox cycle:', JSON.stringify(results));
+    } catch (error) {
+      console.error('WhatsApp outbox cycle failed:', error instanceof Error ? error.message : error);
+    }
+  };
+  console.log(`WhatsApp outbox scheduler on: checking every ${intervalMinutes} min.`);
+  setTimeout(() => void tickOutbox(), 15_000).unref();
+  setInterval(() => void tickOutbox(), intervalMinutes * 60_000).unref();
+}
+
 startRevocationSync();
 server.listen(runtimeConfig.port, runtimeConfig.host, () => {
   console.log(`Tambala MCP HTTP server listening on ${runtimeConfig.host}:${runtimeConfig.port}`);

@@ -27,6 +27,25 @@ export async function section<T>(load: () => Promise<T>): Promise<Section<T>> {
 
 const OPEN_STATUSES = new Set(['created', 'ceo_analyzing', 'delegated', 'executing', 'waiting_for_tool', 'department_review', 'returned_to_ceo', 'needs_more_work']);
 
+/** Merge task-stage events with actual duty-run records for the dashboard activity feed. */
+export function mergeRecentActivity(taskEvents: Row[], dutyRuns: Row[]): Row[] {
+  const duties = dutyRuns.map((run) => ({
+    event_type: `duty_${String(run.status ?? 'unknown')}`,
+    stage: 'duty',
+    department_id: null,
+    created_at: run.completed_at ?? run.started_at,
+    summary: run.summary ?? null,
+    error: run.error ?? null,
+    role_id: run.role_id ?? null,
+    duty_id: run.duty_id ?? null,
+    attempts: run.attempts ?? null,
+    source: 'duty_run',
+  }));
+  return [...taskEvents, ...duties]
+    .sort((a, b) => Date.parse(String(b.created_at ?? '')) - Date.parse(String(a.created_at ?? '')))
+    .slice(0, 40);
+}
+
 export function summarizeTasks(tasks: Row[]) {
   const byStatus: Record<string, number> = {};
   const byDepartment: Record<string, number> = {};
@@ -72,7 +91,7 @@ export async function buildDashboard() {
     return supabaseSelect<T>(path, query);
   };
 
-  const [organization, tasks, events, approvals, decisions, audit, bindings, runs, actions, workforce, signatures, channel, messages, documents, prices, invoices, payments] = await Promise.all([
+  const [organization, tasks, events, approvals, decisions, audit, bindings, runs, actions, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents] = await Promise.all([
     section(async () => {
       const snap = await getOrganizationSnapshot();
       return {
@@ -84,7 +103,7 @@ export async function buildDashboard() {
       };
     }),
     section(() => db<Row>('organization_tasks', 'select=id,objective,status,current_stage,assigned_department_id,assigned_role_id,error_message,created_at,updated_at,completed_at&order=created_at.desc&limit=100')),
-    section(() => db<Row>('organization_task_events', 'select=id,task_id,event_type,stage,actor_role_id,department_id,created_at&order=created_at.desc&limit=40')),
+    section(async () => { const [taskEvents, dutyRuns] = await Promise.all([db<Row>('organization_task_events', 'select=id,task_id,event_type,stage,actor_role_id,department_id,created_at&order=created_at.desc&limit=40'), db<Row>('organization_duty_runs', 'select=id,duty_id,role_id,status,attempts,summary,error,started_at,completed_at&order=started_at.desc&limit=40')]); return mergeRecentActivity(taskEvents, dutyRuns); }),
     section(() => db<Row>('organization_approval_requests', 'select=id,action_type,summary,requested_by_role_id,required_authority,status,risk_level,task_id,content,created_at&status=eq.pending&order=created_at.asc&limit=50')),
     section(() => db<Row>('organization_decisions', 'select=id,title,status,required_authority,proposed_by_role_id,created_at,decided_at&order=created_at.desc&limit=15')),
     section(() => db<Row>('organization_audit_events', 'select=id,actor_role_id,action,target_type,target_id,outcome,reason,created_at&order=created_at.desc&limit=40')),
@@ -100,6 +119,8 @@ export async function buildDashboard() {
     section(() => documentStore().prices()),
     section(() => invoiceStore().recent(30)),
     section(() => payHealthCached()),
+    section(() => db<Row>('organization_task_rooms', 'select=id,handoff_id,parent_task_id,owner_role_id,owner_agent,opened_by_role_id,objective,status,deliverable,blocker,opened_at,updated_at,closed_at&order=updated_at.desc&limit=100')),
+    section(() => db<Row>('organization_task_room_events', 'select=id,room_id,event_type,actor_role_id,payload,created_at&order=created_at.desc&limit=100')),
   ]);
 
   const agents = (Object.keys(AGENT_DIRECTORY) as AgentName[]).map((name) => {
@@ -127,7 +148,7 @@ export async function buildDashboard() {
       deniedRecent,
     },
     organization, tasks, taskSummary: taskSummary ? { ok: true as const, data: taskSummary } : { ok: false as const, error: tasks.ok ? '' : tasks.error },
-    events, approvals, decisions, audit, bindings, workforce, signatures, channel, messages, documents, prices, invoices, payments, automation: { runs, pendingActions: actions }, agents,
+    events, approvals, decisions, audit, bindings, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, automation: { runs, pendingActions: actions }, agents,
     config: {
       database: dbConfigured,
       oauth: flag('TAMBALA_OAUTH_SECRET') && flag('TAMBALA_OAUTH_APPROVAL_CODE'),

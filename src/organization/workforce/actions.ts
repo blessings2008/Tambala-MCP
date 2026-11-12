@@ -4,7 +4,7 @@ import { itemInputSchema, partySchema, DOC_KINDS } from '../../documents/model.j
 
 /**
  * Real-world actions an employee can request at the end of their work. They are validated strictly and checked against
- * the employee's permissions. Anything customer-facing is held for the Founder's approval by the messaging layer.
+ * the employee's permissions. Customer-facing WhatsApp is held for Founder approval except a first-contact outreach message from the Sales & Business Development director, which may be sent autonomously only when the shared outbox verifies the destination as a CRM lead and enforces the Founder-approved daily cap, cooldown and opt-out rules.
  */
 const phone = z.string().trim().min(8).max(30);
 const msg = z.string().trim().min(2).max(1500);
@@ -47,20 +47,94 @@ export function mayDo(agent: string, action: Action): string | null {
 
 export interface ParsedActions { clean: string; actions: Action[]; rejected: string[] }
 
-/** One JSON object per line inside the ACTIONS block. Bad lines are reported, never silently dropped. */
+/**
+ * Extract complete JSON values from the ACTIONS block. Models sometimes wrap
+ * actions in Markdown fences, emit pretty-printed multi-line objects, or return
+ * a JSON array. Accept those harmless formatting variations while keeping the
+ * action schema and per-agent permission checks strict.
+ */
+function extractActionValues(source: string): { values: unknown[]; rejected: string[] } {
+  const text = source
+    .replace(/^﻿/, '')
+    .replace(/^```(?:json)?\s*$/gim, '')
+    .trim();
+  const values: unknown[] = [];
+  const rejected: string[] = [];
+  const spans: Array<[number, number]> = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    while (cursor < text.length && !'{['.includes(text[cursor])) cursor += 1;
+    if (cursor >= text.length) break;
+    const start = cursor;
+    const stack: string[] = [];
+    let quoted = false;
+    let escaped = false;
+    for (; cursor < text.length; cursor += 1) {
+      const ch = text[cursor];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') quoted = false;
+        continue;
+      }
+      if (ch === '"') { quoted = true; continue; }
+      if (ch === '{' || ch === '[') stack.push(ch);
+      else if (ch === '}' || ch === ']') {
+        const open = stack.pop();
+        if ((open === '{' && ch !== '}') || (open === '[' && ch !== ']')) break;
+        if (stack.length === 0) {
+          const raw = text.slice(start, cursor + 1);
+          spans.push([start, cursor + 1]);
+          try {
+            const parsed: unknown = JSON.parse(raw);
+            if (Array.isArray(parsed)) values.push(...parsed);
+            else values.push(parsed);
+          } catch {
+            rejected.push(`Invalid JSON: ${raw.slice(0, 60)}`);
+          }
+          cursor += 1;
+          break;
+        }
+      }
+    }
+    if (cursor >= text.length && stack.length > 0) {
+      spans.push([start, text.length]);
+      rejected.push(`Invalid JSON: ${text.slice(start, start + 60)}`);
+      break;
+    }
+  }
+  let residueText = text;
+  for (const [start, end] of spans.sort((a, b) => b[0] - a[0])) {
+    residueText = residueText.slice(0, start) + residueText.slice(end);
+  }
+  const residueLines = residueText.split('\n')
+    .map((line) => line.replace(/^[\s,;:_*\-\x60]+|[\s,;:_*\-\x60]+$/g, '').trim())
+    .filter((line) => line && !/^(?:none|no actions?)(?:\.|!)?$/i.test(line));
+  for (const line of residueLines) rejected.push(`Not JSON: ${line.slice(0, 60)}`);
+  return { values, rejected };
+}
+
+/** Accept one object per line, pretty JSON, fenced JSON and arrays; invalid entries remain visible. */
 export function parseActions(body: string): ParsedActions {
   const { clean, blocks } = splitBlocks(body);
-  const actions: Action[] = []; const rejected: string[] = [];
-  for (const line of (blocks.ACTIONS ?? '').split('\n')) {
-    const raw = line.trim().replace(/^[-*]\s*/, '');
-    if (!raw || raw.toLowerCase() === 'none') continue;
-    if (!raw.startsWith('{')) { rejected.push(`Not JSON: ${raw.slice(0, 60)}`); continue; }
-    let json: unknown;
-    try { json = JSON.parse(raw); } catch { rejected.push(`Invalid JSON: ${raw.slice(0, 60)}`); continue; }
-    const parsed = actionSchema.safeParse(json);
-    if (!parsed.success) { rejected.push(`${(json as { type?: string }).type ?? 'action'}: ${parsed.error.issues[0]?.message ?? 'invalid'}`.slice(0, 120)); continue; }
-    if (actions.length >= MAX_ACTIONS_PER_RUN) { rejected.push(`Over the limit of ${MAX_ACTIONS_PER_RUN} actions per run.`); continue; }
-    actions.push(parsed.data);
+  const actions: Action[] = [];
+  const rejected: string[] = [];
+  if (blocks.ACTIONS !== undefined) {
+    const extracted = extractActionValues(blocks.ACTIONS);
+    rejected.push(...extracted.rejected);
+    for (const json of extracted.values) {
+      const parsed = actionSchema.safeParse(json);
+      if (!parsed.success) {
+        const type = json && typeof json === 'object' && 'type' in json ? String((json as { type?: unknown }).type) : 'action';
+        rejected.push(`${type}: ${parsed.error.issues[0]?.message ?? 'invalid'}`.slice(0, 120));
+        continue;
+      }
+      if (actions.length >= MAX_ACTIONS_PER_RUN) {
+        rejected.push(`Over the limit of ${MAX_ACTIONS_PER_RUN} actions per run.`);
+        continue;
+      }
+      actions.push(parsed.data);
+    }
   }
   const hasBlocks = blocks.ACTIONS !== undefined || blocks.HANDOFFS !== undefined;
   return { clean: hasBlocks ? clean : body, actions, rejected };
@@ -70,11 +144,13 @@ export function parseActions(body: string): ParsedActions {
 export function actionHelp(agent: string): string {
   const allowed = allowedActionTypes(agent);
   const lines = [
-    'You can request real actions by ending your answer with a heading line ACTIONS: followed by one JSON object per line (no code fences). Customer-facing items are held for the Founder to approve; nothing reaches a customer without that.',
+    'You can request real actions by ending your answer with a heading line ACTIONS: followed by one JSON object per line; fenced JSON and a JSON array are also accepted. First-contact outreach may be sent autonomously only for the Sales & Business Development director and only after the shared outbox verifies the destination as a CRM lead. All follow-ups, replies, invoice reminders and other customer-facing messages remain subject to Founder approval.',
     'Use only phone numbers, names, prices and links that appear in the supplied data. Never invent them. If something you need is missing, say so in your answer instead of guessing.',
+    'Never send unresolved placeholders such as [Name], [Company], {{name}} or the literal word Name as a recipient. If no verified person name is supplied, address the organisation by its exact verified business name followed by team. For first-contact outreach, finish with ACTIONS: on its own line and one valid WhatsApp JSON action; a draft without an ACTIONS block is not an executed action.',
+    'Do not claim Tambala has served similar businesses, delivered past results, has testimonials, or guarantees outcomes unless the exact claim is supported by approved portfolio evidence in the supplied context.',
   ];
   if (allowed.includes('notify_founder')) lines.push('- Message the Founder: {"type":"notify_founder","text":"..."}  (only when he genuinely needs to know or decide something).');
-  if (allowed.includes('whatsapp')) lines.push('- WhatsApp a customer: {"type":"whatsapp","to":"+265...","purpose":"outreach|followup","contact":"Name","text":"..."}  (short, polite, specific; no pressure).');
+  if (allowed.includes('whatsapp')) lines.push('- WhatsApp a customer: {"type":"whatsapp","to":"+265...","purpose":"outreach|followup","text":"..."}  (short, polite, specific; no pressure; include contact only when a real name is verified).');
   if (allowed.includes('document')) lines.push('- Prepare a PDF: {"type":"document","kind":"quotation|invoice|letter|receipt","client":{"name":"...","phone":"..."},"items":[{"sku":"PRICE-LIST-SKU","quantity":1}],"subject":"...","notes":"...","sendTo":"+265...","message":"covering note"}  (items come from the price list by sku; a custom line needs {"description","quantity","unitPrice"} and is flagged for review; letters use "body" instead of items).');
   if (allowed.includes('invoice_link')) lines.push('- Create a payment link: {"type":"invoice_link","client":{"name":"...","phone":"..."},"description":"...","amount":0,"withPdf":true,"sendTo":"+265...","message":"..."}  (amount in MWK, from verified records only).');
   return lines.join('\n');

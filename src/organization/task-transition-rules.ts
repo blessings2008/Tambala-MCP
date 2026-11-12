@@ -4,7 +4,7 @@ export const ORGANIZATION_TASK_TRANSITIONS: Readonly<Record<OrganizationTaskStat
   created: ['ceo_analyzing', 'failed'],
   ceo_analyzing: ['delegated', 'needs_more_work', 'failed'],
   delegated: ['executing', 'needs_more_work', 'failed'],
-  executing: ['waiting_for_tool', 'department_review', 'returned_to_ceo', 'failed'],
+  executing: ['waiting_for_tool', 'department_review', 'returned_to_ceo', 'needs_more_work', 'failed'],
   waiting_for_tool: ['executing', 'failed'],
   department_review: ['returned_to_ceo', 'needs_more_work', 'failed'],
   returned_to_ceo: ['completed', 'needs_more_work', 'failed'],

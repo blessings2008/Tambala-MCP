@@ -164,6 +164,8 @@ export function registerOrganizationTools(server: McpServer): void {
       if (!identity.authenticated) {
         return text({
           authenticated: false,
+          principalType: identity.principalType,
+          clientId: identity.clientId,
           role: null,
           reason: identity.reason,
           nextStep: 'An authorized administrator must bind this OAuth client to an active organization role in organization_actor_bindings.',

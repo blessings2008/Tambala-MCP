@@ -1,4 +1,4 @@
-import { AGENT_DIRECTORY } from '../../services/ai/models.js';
+import { AGENT_DIRECTORY, type AgentName } from '../../services/ai/models.js';
 import type { ContextKind, StandingDuty } from './duties.js';
 import { actionHelp, parseActions, type Action } from './actions.js';
 import { colleagueList, extractHandoffs, MAX_HANDOFFS_PER_DUTY } from './handoffs.js';
@@ -6,6 +6,7 @@ import { roleIdFor } from './profiles.js';
 import { localTime, OFFICE_TZ, periodKey, runsToday, timeReached, type LocalTime } from './schedule.js';
 import type { DutyRun, DutyStore } from './duty-store.js';
 import type { OrganizationTaskTransition } from '../task-lifecycle.js';
+import { persistDiscoveredProspects } from './lead-discovery-persistence.js';
 
 export type DutyOutcomeStatus = 'completed' | 'awaiting_approval' | 'skipped' | 'failed' | 'not_due' | 'already_running';
 export interface DutyOutcome { dutyId: string; status: DutyOutcomeStatus; reason?: string; taskId?: string; runId?: string; handoffs?: number }
@@ -30,7 +31,7 @@ export interface DutyDeps {
   tasks: {
     begin(objective: string): Promise<{ taskId: string; tracking: 'recorded' | 'unavailable' }>;
     advance(taskId: string, transitions: OrganizationTaskTransition[]): Promise<unknown>;
-    fail(taskId: string, message: string): Promise<void>;
+    fail(taskId: string, message: string, sourceAgent?: AgentName): Promise<void>;
   };
   approvals: { create(input: { actionType: string; summary: string; requestedByRoleId: string; riskLevel: 'low' | 'medium'; taskId: string; content: string }): Promise<void> };
   reports: { save(input: { kind: 'daily_briefing'; periodKey: string; title: string; body: string; taskId: string }): Promise<void> };
@@ -38,7 +39,7 @@ export interface DutyDeps {
 
 const MAX_ATTEMPTS = 3;
 const STALE_RUNNING_MS = 15 * 60_000;
-const RULES = 'Use ONLY the supplied data. If a source is empty or unavailable, say so plainly and list what you could not check. Never invent leads, clients, amounts, dates or results. Do not sign or add a sign-off: the system signs your work with your employee number. Anything addressed to a customer is a DRAFT for Founder approval; never claim it was sent or posted.';
+const RULES = 'Use ONLY the supplied data. If a source is empty or unavailable, say so plainly and list what you could not check. Never invent leads, clients, amounts, dates or results. Do not sign or add a sign-off: the system signs your work with your employee number. Customer-facing messages are drafts for Founder approval except first-contact WhatsApp outreach by the Sales & Business Development director, which may be sent autonomously only when the shared outbox verifies a CRM lead and applies the configured cap, cooldown and opt-out rules. Never claim a message was sent unless the outbox confirms it.';
 
 export function buildDutyPrompt(duty: StandingDuty, lt: LocalTime, who?: { employeeNumber: string; title: string }): string {
   const parts = [
@@ -50,6 +51,12 @@ export function buildDutyPrompt(duty: StandingDuty, lt: LocalTime, who?: { emplo
     `DELIVERABLE: ${duty.deliverable}`,
     'Keep it under 350 words, plain and scannable.',
   ];
+  if (duty.id === 'daily-lead-discovery') {
+    parts.push('STRUCTURED OUTPUT CONTROL: The DISCOVERED_PROSPECTS block is machine-parsed and must be complete valid JSON inside the exact fenced wrapper. The JSON block is excluded from the 350-word narrative limit. Do not truncate fields, add comments, or place prose inside the JSON array. Use [] when no prospects meet the evidence standard.');
+  }
+  if (duty.id === 'morning-board-minutes') {
+    parts.push('BOARD MINUTES CONTROL: The supplied context.boardMeeting object is the authoritative attendance and department-report matrix. Include the Chair opening and all four departmentUpdates. Use its status exactly: mark the minutes COMPLETE only when boardMeeting.status is COMPLETE; otherwise mark PARTIAL and name every entry in missingItems. Quote findings only from boardMeeting.opening.report and each departmentUpdates.report. Do not infer a missing report from another department’s summary.');
+  }
   if (!duty.report) {
     parts.push(actionHelp(duty.agent));
     parts.push(`If part of this work genuinely belongs to a colleague, end your answer with a block exactly like:\nHANDOFFS:\n- to: <colleague key> | task: <one clear sentence of what you need from them>\nColleagues: ${colleagueList(duty.agent)}.\nUse at most ${MAX_HANDOFFS_PER_DUTY}. If nothing needs handing off, omit the block entirely.`);
@@ -61,8 +68,9 @@ function dueNow(duty: StandingDuty, lt: LocalTime, existing: DutyRun | null, now
   if (!runsToday(duty.cadence, lt) || !timeReached(duty.time, lt)) return false;
   if (!existing) return true;
   if (existing.status === 'skipped') return true;
-  if (existing.status === 'failed') return existing.attempts < MAX_ATTEMPTS;
-  if (existing.status === 'running') return nowMs - Date.parse(existing.started_at) > STALE_RUNNING_MS && existing.attempts < MAX_ATTEMPTS;
+  const maxAttempts = duty.id === 'daily-lead-discovery' ? 5 : MAX_ATTEMPTS;
+  if (existing.status === 'failed') return existing.attempts < maxAttempts;
+  if (existing.status === 'running') return nowMs - Date.parse(existing.started_at) > STALE_RUNNING_MS && existing.attempts < maxAttempts;
   return false;
 }
 
@@ -117,6 +125,10 @@ export async function runDuty(deps: DutyDeps, duty: StandingDuty, opts: { force?
       const who = await deps.employee(duty.agent);
       body = (await deps.ask(duty, buildDutyPrompt(duty, lt, who), context)).trim();
       if (!body) throw new Error('The employee returned no work product.');
+      if (duty.id === 'daily-lead-discovery') {
+        const persisted = await persistDiscoveredProspects(body);
+        body = `${persisted.cleanBody}\n\nDatabase result: ${persisted.saved} prospect(s) saved to the discovery queue; ${persisted.duplicates} duplicate(s) skipped; ${persisted.rejected} item(s) rejected.\n${persisted.details.join('\n')}`;
+      }
       if (!duty.report) {
         const parsed = extractHandoffs(body, duty.agent);
         const acted = parseActions(body);
@@ -142,7 +154,7 @@ export async function runDuty(deps: DutyDeps, duty: StandingDuty, opts: { force?
     return { dutyId: duty.id, status, taskId, runId: run.id, handoffs: pendingHandoffs.length };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Duty failed.';
-    await deps.tasks.fail(taskId, message);
+    await deps.tasks.fail(taskId, message, duty.agent);
     await deps.store.update(run.id, { status: 'failed', error: message.slice(0, 500), completed_at: new Date().toISOString() });
     return { dutyId: duty.id, status: 'failed', reason: message, taskId, runId: run.id };
   }
