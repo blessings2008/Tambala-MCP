@@ -5,11 +5,17 @@ import { formatMoney } from '../../documents/model.js';
 import { DocumentError } from '../../documents/service.js';
 import { InvoiceError } from '../../payments/invoices.js';
 import { mayDo, type Action } from './actions.js';
+import { addSupportTicketNote, createSupportTicket, updateSupportTicket } from '../../customer-support/service.js';
 
 export interface ActionResult { type: string; ok: boolean; detail: string }
 
 export interface ActionExecDeps {
   outbox: OutboxDeps;
+  support: {
+    createTicket: typeof createSupportTicket;
+    updateTicket: typeof updateSupportTicket;
+    addNote: typeof addSupportTicketNote;
+  };
   founderNumber: () => string | null;
   createDocument: (input: unknown, roleId: string) => Promise<{ id: string; number: string; total_minor: number; hasCustomLines: boolean }>;
   createInvoice: (input: { roleId: string; clientName: string; clientPhone?: string; clientEmail?: string; description: string; amount: number }) => Promise<{ invoice: InvoiceRow; created: boolean }>;
@@ -39,6 +45,24 @@ export async function executeActions(deps: ActionExecDeps, ctx: ActionContext, a
       } else if (action.type === 'whatsapp') {
         const r = await queueMessage(deps.outbox, { ...base, to: action.to, text: action.text, purpose: action.purpose, contactLabel: action.contact ?? null });
         results.push(r.status === 'blocked' ? fail('whatsapp', `Not sent to ${maskNumber(action.to)}: ${r.reason}`) : r.status === 'pending_approval' ? { type: 'whatsapp', ok: true, detail: `Message to ${action.contact ?? maskNumber(action.to)} is awaiting Founder approval.` } : { type: 'whatsapp', ok: true, detail: `Message to ${action.contact ?? maskNumber(action.to)} was queued for sending; delivery is not confirmed yet.` });
+
+      } else if (action.type === 'create_support_ticket') {
+        const ticket = await deps.support.createTicket({
+          phone: action.phone, subject: action.subject, description: action.description,
+          category: action.category, priority: action.priority, source_channel: 'whatsapp', actor_role_id: ctx.roleId,
+        });
+        results.push({ type: 'create_support_ticket', ok: true, detail: `Ticket ${ticket.id} created for ${action.phone} and assigned to Customer Relations.` });
+
+      } else if (action.type === 'update_support_ticket') {
+        const ticket = await deps.support.updateTicket({
+          id: action.id, status: action.status, priority: action.priority,
+          assigned_role_id: action.assigned_role_id, note: action.note, actor_role_id: ctx.roleId,
+        });
+        results.push({ type: 'update_support_ticket', ok: true, detail: `Ticket ${ticket.id} updated: ${ticket.status}, priority ${ticket.priority}.` });
+
+      } else if (action.type === 'add_support_note') {
+        await deps.support.addNote(action.ticket_id, action.note, ctx.roleId);
+        results.push({ type: 'add_support_note', ok: true, detail: `Internal note added to ticket ${action.ticket_id}.` });
 
       } else if (action.type === 'document') {
         const doc = await deps.createDocument({ kind: action.kind, client: action.client, items: action.items, subject: action.subject, body: action.body, notes: action.notes, terms: action.terms, validityDays: action.validityDays }, ctx.roleId);

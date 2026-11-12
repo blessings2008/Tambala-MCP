@@ -94,7 +94,7 @@ test('permissions: only the right roles may message customers, make documents an
 });
 
 function harness(over: Partial<ActionExecDeps> & { founder?: string | null } = {}) {
-  const store = new InMemoryMessageStore(); const approvals: any[] = []; const docs: any[] = []; const invoices: any[] = [];
+  const store = new InMemoryMessageStore(); const approvals: any[] = []; const docs: any[] = []; const invoices: any[] = []; const support: any[] = [];
   const outbox: OutboxDeps = {
     store, now: () => new Date('2026-11-09T08:00:00Z'), founderNumber: () => (over.founder === undefined ? FOUNDER : over.founder),
     transport: { configured: () => true, sendText: async () => ({ id: 'x' }), sendDocument: async () => ({ id: 'x' }) },
@@ -105,11 +105,16 @@ function harness(over: Partial<ActionExecDeps> & { founder?: string | null } = {
     outbox, founderNumber: outbox.founderNumber,
     createDocument: async (input) => { docs.push(input); return { id: `doc-${docs.length}`, number: `TT-Q-2026-000${docs.length}`, total_minor: 79802500, hasCustomLines: JSON.stringify(input).includes('unitPrice') }; },
     createInvoice: async (input) => { invoices.push(input); return { created: true, invoice: { id: 'i1', idempotency_key: 'k', pay_invoice_id: 'inv_1', link: 'https://pay.example/c/1', amount_minor: Math.round(input.amount * 100), currency: 'MWK', client_name: input.clientName, client_phone: null, client_email: null, description: input.description, status: 'unpaid', created_by_role_id: input.roleId, signature: null, created_at: '', status_checked_at: null } }; },
+    support: {
+      createTicket: async (input) => { support.push({ type: 'create', input }); return { id: 'ticket-1', status: 'open', priority: input.priority ?? 'normal' } as any; },
+      updateTicket: async (input) => { support.push({ type: 'update', input }); return { id: input.id, status: input.status ?? 'in_progress', priority: input.priority ?? 'normal' } as any; },
+      addNote: async (id, note, actor) => { support.push({ type: 'note', id, note, actor }); return { saved: true, ticket_id: id }; },
+    },
     ...over,
   };
-  return { deps, store, approvals, docs, invoices };
+  return { deps, store, approvals, docs, invoices, support };
 }
-const ctx = (agent: string) => ({ agent, roleId: agent === 'finance' ? 'director-finance-accounting' : 'director-sales-business-development', taskId: 't1' });
+const ctx = (agent: string) => ({ agent, roleId: agent === 'finance' ? 'director-finance-accounting' : agent === 'followup' ? 'director-customer-relations' : 'director-sales-business-development', taskId: 't1' });
 const parse = (...lines: string[]) => parseActions(`ACTIONS:\n${lines.join('\n')}`).actions;
 
 test('a whatsapp action waits for approval, and an unauthorised role is refused', async () => {
@@ -131,6 +136,27 @@ test('first-contact outreach action reports queued status, not Founder approval'
   assert.match(r.detail, /queued for sending; delivery is not confirmed yet/i);
   assert.doesNotMatch(r.detail, /waiting for the Founder|awaiting Founder approval/i);
   assert.equal(h.store.rows.find((m) => m.number === '265888123456')?.status, 'queued');
+});
+
+test('only Customer Relations can create, update and annotate support tickets', async () => {
+  assert.ok(allowedActionTypes('followup').includes('create_support_ticket'));
+  assert.ok(allowedActionTypes('followup').includes('update_support_ticket'));
+  assert.ok(allowedActionTypes('followup').includes('add_support_note'));
+  assert.ok(!allowedActionTypes('outreach').includes('create_support_ticket'));
+  assert.match(actionHelp('followup'), /create_support_ticket/);
+  const h = harness();
+  const actions = parse(
+    '{"type":"create_support_ticket","phone":"+265888123456","subject":"Login issue","description":"Customer cannot access their account.","category":"technical","priority":"high"}',
+    '{"type":"update_support_ticket","id":"22222222-2222-4222-8222-222222222222","status":"in_progress","priority":"urgent","note":"Investigating."}',
+    '{"type":"add_support_note","ticket_id":"22222222-2222-4222-8222-222222222222","note":"Customer supplied more detail."}',
+  );
+  assert.deepEqual(actions.map((a) => a.type), ['create_support_ticket', 'update_support_ticket', 'add_support_note']);
+  const results = await executeActions(h.deps, ctx('followup'), actions);
+  assert.equal(results.every((result) => result.ok), true);
+  assert.deepEqual(h.support.map((item) => item.type), ['create', 'update', 'note']);
+  const [denied] = await executeActions(h.deps, ctx('outreach'), [actions[0]]);
+  assert.equal(denied.ok, false);
+  assert.match(denied.detail, /not allowed/);
 });
 
 test('notify_founder reaches the Founder immediately, and says so honestly when no number is set', async () => {

@@ -8,6 +8,7 @@ import { createApprovalRequest, registerApprovalHook, type ApprovalRow } from '.
 import type { AgentName } from '../../services/ai/models.js';
 import { setRuntimeIncidentHandler, type RuntimeIncident } from './incident-events.js';
 import { type ContextKind, type StandingDuty } from './duties.js';
+import { addSupportTicketNote, createSupportTicket, customerSupportMetrics, listCustomerConversations, listSupportTickets, updateSupportTicket } from '../../customer-support/service.js';
 import { dbConfigured as dbOn } from './db-util.js';
 import { loadDuties, requireConfigStore, saveBuiltinOverride, saveCustomDuty, SupabaseDutyConfigStore, type DutyConfigStore } from './duty-config.js';
 import { InMemoryHandoffStore, SupabaseHandoffStore, processHandoffs, queueHandoff, resumeFounderTaskRoom, type Handoff, type HandoffDeps, type HandoffOutcome, type HandoffStore } from './handoffs.js';
@@ -579,6 +580,7 @@ const actionDeps = (): ActionExecDeps => ({
   outbox: productionOutboxDeps(), founderNumber,
   createDocument: (input, roleId) => createDocument(input, roleId),
   createInvoice: (input) => createClientInvoice(input),
+  support: { createTicket: createSupportTicket, updateTicket: updateSupportTicket, addNote: addSupportTicketNote },
 });
 
 async function runActions(ctx: { agent: AgentName; roleId: string; taskId: string | null }, actions: Action[], rejected: string[]): Promise<string> {
@@ -724,6 +726,35 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
         if (kind === 'catalog') out.catalog = await catalogContext();
         if (kind === 'invoices') out.invoices = await invoicesContext(at);
         if (kind === 'discovery') out.discovery = { note: 'Research-only queue. New entries await Sales review; do not create CRM leads or contact prospects.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status&processing_status=in.(new,reviewing)&order=research_date.desc,created_at.desc&limit=50') };
+        if (kind === 'customer_support') {
+          const [conversations, tickets] = await Promise.all([
+            listCustomerConversations(8), listSupportTickets(undefined, 8),
+          ]);
+          const metrics = await customerSupportMetrics(conversations);
+          out.customer_support = {
+            metrics: {
+              tickets_open: metrics.tickets_open,
+              tickets_resolved: metrics.tickets_resolved,
+              conversations_needing_reply: metrics.conversations_needing_reply,
+            },
+            inbox: conversations.map((item) => ({
+              phone: item.phone, contact_name: item.contact_name, company_name: item.company_name,
+              last_message: item.last_message.slice(0, 240), last_message_at: item.last_message_at,
+              recent_messages: item.recent_messages, needs_reply: item.needs_reply, reply_state: item.reply_state, blocked: item.blocked,
+              message_count: item.message_count,
+            })),
+            tickets: tickets.map((ticket) => ({
+              id: ticket.id, subject: ticket.subject, description: ticket.description.slice(0, 240),
+              category: ticket.category, priority: ticket.priority, status: ticket.status,
+              assigned_role_id: ticket.assigned_role_id, last_activity_at: ticket.last_activity_at,
+              contact: ticket.contact ? {
+                phone: ticket.contact.phone, display_name: ticket.contact.display_name,
+                company_name: ticket.contact.company_name, do_not_contact: ticket.contact.do_not_contact,
+              } : null,
+            })),
+            note: 'Only the latest 8 conversations and tickets are included. Pending approvals are not counted as delivered replies.',
+          };
+        }
       }
       return out;
     },

@@ -32,6 +32,19 @@ test('routes client prospecting to sales', () => {
   assert.equal(matches[0]?.unit?.id, 'sales');
 });
 
+test('routes inbox and support-ticket work to Customer Relations', () => {
+  const objectives = [
+    'Review the shared customer inbox and reply to unresolved conversations',
+    'Create support tickets for customer complaints',
+    'Resolve an open customer support issue',
+  ];
+  for (const objective of objectives) {
+    const matches = routeObjective(initialOrganization, objective);
+    assert.equal(matches[0]?.capability.id, 'customer_relations', objective);
+    assert.equal(matches[0]?.unit?.id, 'customer-relations', objective);
+  }
+});
+
 test('routes natural-language new potential client requests to Sales & Business Development', () => {
   const objectives = [
     'Identify new potential clients for Tambala Technologies',

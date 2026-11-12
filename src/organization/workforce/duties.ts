@@ -1,7 +1,7 @@
 import type { AgentName } from '../../services/ai/models.js';
 import type { Cadence } from './schedule.js';
 
-export type ContextKind = 'crm' | 'crm_detail' | 'company' | 'organization' | 'briefing' | 'catalog' | 'invoices' | 'discovery';
+export type ContextKind = 'crm' | 'crm_detail' | 'company' | 'organization' | 'briefing' | 'catalog' | 'invoices' | 'discovery' | 'customer_support';
 
 export interface StandingDuty {
   id: string;
@@ -59,10 +59,10 @@ export const STANDING_DUTIES: readonly StandingDuty[] = [
     deliverable: 'Pipeline snapshot, the one prospect selected, the message actually queued or sent, delivery outcome, replies received, and any blockers. Clearly separate messages queued, sent, failed, blocked and drafts awaiting approval using the action results; never describe an autonomous first-contact message as awaiting approval when it was queued or sent, and never claim delivery unless the outbox confirms it.',
   },
   {
-    id: 'customer-followups', agent: 'followup', title: 'Daily customer follow-ups',
-    cadence: { kind: 'weekdays' }, time: '09:00', contexts: ['crm', 'crm_detail', 'company'],
-    job: 'Find leads and clients whose next follow-up is due or overdue, and open client tasks. Prepare a short check-in WhatsApp message (whatsapp action) for each due contact who has a number in the records, using only facts in the supplied records.',
-    deliverable: 'Who is due and why, then one draft per person. Say clearly if nobody is due.',
+    id: 'customer-followups', agent: 'followup', title: 'Daily customer follow-ups and support inbox review',
+    cadence: { kind: 'weekdays' }, time: '09:00', contexts: ['crm', 'crm_detail', 'company', 'customer_support'],
+    job: `Review the supplied customer_support inbox and ticket board before CRM follow-ups. Prioritise real customer issues and complaints, identify conversations needing replies, and distinguish replies awaiting Founder approval from messages actually delivered. Do not reply to blocked or opted-out contacts. Create a support ticket for a genuine unresolved issue when one does not already exist; use create_support_ticket with the customer's verified number and evidence-based summary. Update existing ticket status/priority only when the supplied conversation or ticket evidence justifies it; add concise internal notes for important developments. Prepare customer replies using the whatsapp action with purpose "reply"; every reply remains in the Founder approval queue. Do not claim delivery. Then review CRM leads/clients whose follow-up is due or overdue and prepare a short, relevant check-in using purpose "followup". Avoid duplicate tickets and duplicate messages. If no customer messages or follow-ups need action, say so plainly.`,
+    deliverable: 'Inbox status, unresolved conversations, support tickets created/updated, replies prepared and awaiting approval, blocked contacts, and due CRM follow-ups. Clearly separate queued drafts from delivered messages.',
     approval: { actionType: 'prepared_followups', riskLevel: 'low', summary: 'Prepared customer follow-up drafts awaiting Founder approval' },
   },
   {

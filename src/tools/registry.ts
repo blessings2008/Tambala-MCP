@@ -15,6 +15,7 @@ import { registerOrganizationTools } from './organization.js';
 import { registerAutomationActionTools } from './automation-actions.js';
 import { registerWorkforceTools } from './workforce.js';
 import { registerChannelTools } from './channels.js';
+import { registerCustomerSupportTools } from './customer-support.js';
 import { withWriteGuard } from '../organization/write-guard.js';
 
 /** Register all MCP tool groups. Keep transport/bootstrap code out of tool modules. */
@@ -31,6 +32,7 @@ export function registerAllTools(server: McpServer): void {
     registerAutomationActionTools,
     registerWorkforceTools,
     registerChannelTools,
+    registerCustomerSupportTools,
     registerTambalaPayTools,
     registerTambalaTools,
     registerActivityTools,

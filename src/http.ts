@@ -33,6 +33,7 @@ import { supabaseSelect } from './lib/supabase.js';
 import { getCompactCompanyContext, isExcluded } from './services/ai/context.js';
 import { buildProspectingSearchQueries } from './services/web-research.js';
 import { isCompanyStatusRequest, runCompanyStatusReport } from './channels/founder-execution.js';
+import { addSupportTicketNote, createSupportTicket, customerSupportMetrics, getCustomerConversation, listCustomerConversations, listSupportTickets, updateCustomerContact, updateSupportTicket } from './customer-support/service.js';
 
 const nodeHandler = toNodeHandler(mcpHandler);
 const chatAgents = Object.keys(AGENT_DIRECTORY) as AgentName[];
@@ -239,7 +240,7 @@ const server = createHttpServer(async (req, res) => {
   }
 
 
-  if ((requestPath === '/api/chat-test/status' || requestPath === '/api/chat-test' || requestPath === '/api/chat-test/collaborate' || requestPath === '/api/chat-test/step' || requestPath === '/api/dashboard' || requestPath === '/api/dashboard/approvals/decide' || requestPath.startsWith('/api/dashboard/')) && (req.method === 'GET' || req.method === 'POST')) {
+  if ((requestPath === '/api/chat-test/status' || requestPath === '/api/chat-test' || requestPath === '/api/chat-test/collaborate' || requestPath === '/api/chat-test/step' || requestPath === '/api/dashboard' || requestPath === '/api/dashboard/approvals/decide' || requestPath.startsWith('/api/dashboard/') || requestPath.startsWith('/api/customer-relations/')) && (req.method === 'GET' || req.method === 'POST' || req.method === 'PATCH')) {
     if (!chatTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized. Check the chat test token.' }); return; }
   }
 
@@ -565,9 +566,105 @@ const server = createHttpServer(async (req, res) => {
     return;
   }
 
+  if (requestPath.startsWith('/api/customer-relations/')) {
+    try {
+      if (requestPath === '/api/customer-relations/overview' && req.method === 'GET') {
+        const [conversations, tickets] = await Promise.all([
+          listCustomerConversations(60), listSupportTickets(undefined, 60),
+        ]);
+        const metrics = await customerSupportMetrics(conversations);
+        json(res, 200, { metrics, conversations, tickets });
+        return;
+      }
+      if (requestPath === '/api/customer-relations/conversations' && req.method === 'GET') {
+        const url = new URL(req.url ?? '/', 'http://localhost');
+        const limit = Math.max(1, Math.min(100, Number(url.searchParams.get('limit')) || 40));
+        const search = url.searchParams.get('search') ?? undefined;
+        json(res, 200, { conversations: await listCustomerConversations(limit, search) });
+        return;
+      }
+      if (requestPath.startsWith('/api/customer-relations/conversations/') && req.method === 'GET') {
+        const phone = decodeURIComponent(requestPath.slice('/api/customer-relations/conversations/'.length));
+        json(res, 200, await getCustomerConversation(phone));
+        return;
+      }
+      if (requestPath === '/api/customer-relations/tickets' && req.method === 'GET') {
+        const url = new URL(req.url ?? '/', 'http://localhost');
+        const status = url.searchParams.get('status') ?? undefined;
+        json(res, 200, { tickets: await listSupportTickets(status as import('./customer-support/service.js').TicketStatus | undefined, Number(url.searchParams.get('limit')) || 40) });
+        return;
+      }
+      if (requestPath === '/api/customer-relations/tickets' && req.method === 'POST') {
+        const body = await readJsonBody(req) as { phone?: string; subject?: string; description?: string; category?: string; priority?: string; source_channel?: string };
+        const ticket = await createSupportTicket({
+          phone: String(body.phone ?? ''), subject: String(body.subject ?? ''), description: String(body.description ?? ''),
+          category: body.category as import('./customer-support/service.js').TicketCategory,
+          priority: body.priority as import('./customer-support/service.js').TicketPriority,
+          source_channel: body.source_channel, actor_role_id: 'founder',
+        });
+        json(res, 201, { ticket });
+        return;
+      }
+      if (requestPath === '/api/customer-relations/reply' && req.method === 'POST') {
+        const body = await readJsonBody(req) as { phone?: string; message?: string; purpose?: string };
+        const phone = String(body.phone ?? '');
+        const message = String(body.message ?? '').trim();
+        if (message.length < 2 || message.length > 1500) { json(res, 400, { error: 'Reply must be 2–1,500 characters.' }); return; }
+        const conversation = await getCustomerConversation(phone, 1);
+        if (conversation.blocked || conversation.contact?.do_not_contact) { json(res, 403, { error: 'This customer is blocked from outbound contact.' }); return; }
+        const queued = await queueWhatsApp({
+          roleId: 'director-customer-relations', agent: 'followup', to: phone, text: message,
+          purpose: body.purpose === 'followup' ? 'followup' : 'reply',
+          contactLabel: conversation.contact?.display_name ?? conversation.contact?.company_name ?? undefined,
+        });
+        if (queued.status === 'blocked' || queued.status === 'rejected') { json(res, 403, { queued: false, blocked: true, sent: false, reason: queued.reason ?? 'The message was blocked by channel policy.' }); return; }
+        if (queued.status !== 'pending_approval' && queued.status !== 'queued') { json(res, 409, { queued: false, sent: false, reason: queued.reason ?? 'The message could not be queued.' }); return; }
+        json(res, 202, { queued: true, approval_required: queued.status === 'pending_approval', sent: false, result: queued });
+        return;
+      }
+      const ticketMatch = /^\/api\/customer-relations\/tickets\/([0-9a-f-]{36})$/.exec(requestPath);
+      if (ticketMatch && req.method === 'PATCH') {
+        const body = await readJsonBody(req) as { status?: string; priority?: string; assigned_role_id?: string; note?: string };
+        const ticket = await updateSupportTicket({
+          id: ticketMatch[1], status: body.status as import('./customer-support/service.js').TicketStatus,
+          priority: body.priority as import('./customer-support/service.js').TicketPriority,
+          assigned_role_id: body.assigned_role_id, note: body.note, actor_role_id: 'founder',
+        });
+        json(res, 200, { ticket });
+        return;
+      }
+      const noteMatch = /^\/api\/customer-relations\/tickets\/([0-9a-f-]{36})\/notes$/.exec(requestPath);
+      if (noteMatch && req.method === 'POST') {
+        const body = await readJsonBody(req) as { note?: string };
+        json(res, 201, await addSupportTicketNote(noteMatch[1], String(body.note ?? ''), 'founder'));
+        return;
+      }
+      const contactMatch = /^\/api\/customer-relations\/contacts\/([0-9a-f-]{36})$/.exec(requestPath);
+      if (contactMatch && req.method === 'PATCH') {
+        const body = await readJsonBody(req) as { display_name?: string; email?: string; company_name?: string; notes?: string };
+        json(res, 200, { contact: await updateCustomerContact({ id: contactMatch[1], ...body }) });
+        return;
+      }
+      json(res, 404, { error: 'Customer Relations endpoint not found.' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Customer Relations request failed.';
+      json(res, /not found/i.test(message) ? 404 : /required|valid|between|must be|provide|opted out|automatically|does not exist|not active/i.test(message) ? 400 : 500, { error: message.slice(0, 300) });
+    }
+    return;
+  }
+
   if (requestPath === '/api/dashboard' && req.method === 'GET') {
     try { json(res, 200, await buildDashboard()); }
     catch (error) { console.error('Dashboard build failed:', error instanceof Error ? error.message : error); json(res, 500, { error: 'Dashboard data could not be built.' }); }
+    return;
+  }
+
+  if (requestPath === '/customer-relations' && req.method === 'GET') {
+    try {
+      const html = await readFile(new URL('../public/customer-relations.html', import.meta.url));
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'" });
+      res.end(html);
+    } catch (error) { console.error('Unable to load Customer Relations desk:', error); json(res, 500, { error: 'Customer Relations desk is unavailable.' }); }
     return;
   }
 
