@@ -616,7 +616,8 @@ const server = createHttpServer(async (req, res) => {
           purpose: body.purpose === 'followup' ? 'followup' : 'reply',
           contactLabel: conversation.contact?.display_name ?? conversation.contact?.company_name ?? undefined,
         });
-        json(res, 202, { queued, approval_required: true, sent: false });
+        if (queued.status === 'blocked' || queued.status === 'rejected') { json(res, 403, { queued: false, blocked: true, sent: false, reason: queued.reason ?? 'The message was blocked by channel policy.' }); return; }
+        json(res, 202, { queued: true, approval_required: queued.status === 'pending_approval', sent: false, result: queued });
         return;
       }
       const ticketMatch = /^\/api\/customer-relations\/tickets\/([0-9a-f-]{36})$/.exec(requestPath);
