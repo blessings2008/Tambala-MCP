@@ -283,7 +283,7 @@ function renderDepartmentOffice(){
     taskBox.append(lane)
    });
   };
-  ['input','change'].forEach(evt=>{$('officeTaskSearch').addEventListener(evt,draw);$('officeTaskFilter').addEventListener(evt,draw);$('officeTaskSort').addEventListener(evt,draw)});
+  if(!taskBox.dataset.controlsBound){$('officeTaskSearch').addEventListener('input',draw);$('officeTaskFilter').addEventListener('change',draw);$('officeTaskSort').addEventListener('change',draw);taskBox.dataset.controlsBound='1'}
   draw();
  }
  const dutyBox=$('officeDuties');dutyBox.replaceChildren();if(!d.workforce.ok)dutyBox.append(h('div','err-box','Workforce data unavailable.'));else if(!duties.length)dutyBox.append(h('div','office-empty','No standing duties are assigned to this department.'));duties.forEach(x=>{const r=h('div','duty');const c=h('div','dc');c.append(h('b','',x.title),h('small','',x.employee.employeeNumber+' · '+x.schedule+(x.lastRun?' · last '+x.lastRun.status.replaceAll('_',' ')+' '+ago(x.lastRun.at):'')));r.append(c,badge(DUTY_LABEL[x.state]||x.state,DUTY_KIND[x.state]));dutyBox.append(r)});
