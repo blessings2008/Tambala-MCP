@@ -206,6 +206,7 @@ export async function updateSupportTicket(input: {
   const current = await getById<SupportTicket>('customer_service_tickets', input.id);
   if (!current) throw new Error('Support ticket not found.');
   if (input.status && !ticketStatuses.includes(input.status)) throw new Error('Invalid support ticket status.');
+  if (input.status === 'waiting_customer') throw new Error('This status is set automatically only after an approved customer reply is delivered.');
   if (input.priority && !ticketPriorities.includes(input.priority)) throw new Error('Invalid support ticket priority.');
   const actor = input.actor_role_id ?? 'director-customer-relations';
   const patch: Record<string, unknown> = { last_activity_at: nowIso() };
