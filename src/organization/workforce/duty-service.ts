@@ -727,9 +727,10 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
         if (kind === 'invoices') out.invoices = await invoicesContext(at);
         if (kind === 'discovery') out.discovery = { note: 'Research-only queue. New entries await Sales review; do not create CRM leads or contact prospects.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status&processing_status=in.(new,reviewing)&order=research_date.desc,created_at.desc&limit=50') };
         if (kind === 'customer_support') {
-          const [metrics, conversations, tickets] = await Promise.all([
-            customerSupportMetrics(), listCustomerConversations(8), listSupportTickets(undefined, 8),
+          const [conversations, tickets] = await Promise.all([
+            listCustomerConversations(8), listSupportTickets(undefined, 8),
           ]);
+          const metrics = await customerSupportMetrics(conversations);
           out.customer_support = {
             metrics: {
               tickets_open: metrics.tickets_open,
