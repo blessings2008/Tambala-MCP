@@ -116,8 +116,7 @@ test('Founder-approved first-contact handoffs may execute WhatsApp and accept a 
   });
   const out = await processHandoffs(deps);
   assert.equal(out[0].status, 'completed');
-  assert.match(prompts[0], /Exception: this exact Founder-approved first-contact/i);
-  assert.match(prompts[1], /accept when the action result confirms the WhatsApp message was queued or sent/i);
+  assert.equal(prompts.length, 0, 'approved first-contact is assembled deterministically from the verified prospect record');
   assert.match(store.rows[0].result ?? '', /queued for sending/);
 });
 
@@ -144,8 +143,7 @@ test('approved first-contact handoffs convert the legacy WhatsApp action shape a
   });
   const out = await processHandoffs(deps);
   assert.equal(out[0].status, 'completed');
-  assert.match(prompts[0], /MANDATORY FIRST-CONTACT ACTION/);
-  assert.match(prompts[0], /\+265 994 136 898/);
+  assert.equal(prompts.length, 0, 'legacy model action text is not needed when the verified prospect record supplies the message inputs');
   assert.match(store.rows[0].result ?? '', /queued for sending/);
 });
 
@@ -161,11 +159,11 @@ test('approved first-contact handoffs cannot complete on a draft without an acti
     toAgent: 'outreach',
     sourceDutyId: 'approved-prospect-first-contact',
     request: 'Founder-approved first contact for AgriTrust',
-    contextSummary: JSON.stringify({ prospect: { organisation_name: 'AgriTrust', service_fit: ['web_development'] }, crm_lead: { phone: '+265 994 136 898' } }),
+    contextSummary: JSON.stringify({ prospect: { organisation_name: 'AgriTrust' }, crm_lead: { phone: '+265 994 136 898' } }),
   });
   const out = await processHandoffs(deps);
   assert.equal(out[0].status, 'retry');
-  assert.match(store.rows[0].error ?? '', /exactly one executable WhatsApp outreach action/i);
+  assert.match(store.rows[0].error ?? '', /no safe message or supported service fit/i);
 });
 
 test('approved first contacts resume WhatsApp-registration clarifications without resuming other Founder approvals', async () => {
@@ -203,7 +201,7 @@ test('approved first contacts resume WhatsApp-registration clarifications withou
   });
   const out = await processHandoffs(deps);
   assert.equal(out[0].status, 'completed');
-  assert.match(prompts[0], /PREVIOUS ATTEMPT FEEDBACK: System resumed/i);
+  assert.equal(prompts.length, 0, 'resumed first-contact uses the same deterministic outbox path');
   assert.equal(store.rows.find((row) => row.id === other.id)?.status, 'awaiting_founder');
 });
 
