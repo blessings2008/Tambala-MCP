@@ -569,9 +569,10 @@ const server = createHttpServer(async (req, res) => {
   if (requestPath.startsWith('/api/customer-relations/')) {
     try {
       if (requestPath === '/api/customer-relations/overview' && req.method === 'GET') {
-        const [metrics, conversations, tickets] = await Promise.all([
-          customerSupportMetrics(), listCustomerConversations(60), listSupportTickets(undefined, 60),
+        const [conversations, tickets] = await Promise.all([
+          listCustomerConversations(60), listSupportTickets(undefined, 60),
         ]);
+        const metrics = await customerSupportMetrics(conversations);
         json(res, 200, { metrics, conversations, tickets });
         return;
       }
