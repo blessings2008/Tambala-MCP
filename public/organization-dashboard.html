@@ -30,6 +30,46 @@ details.emp{border:1px solid var(--line);background:#121e31;border-radius:10px;p
 
 /* Metrics and department office upgrade */
 .metric-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 15px}.metric-tile{border:1px solid var(--line);background:linear-gradient(145deg,#17263b,#111b2c);border-radius:11px;padding:13px;min-width:0}.metric-tile small{display:block;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em}.metric-tile strong{display:block;font-size:23px;letter-spacing:-.7px;margin:5px 0 2px}.metric-tile span{font-size:9px;color:#9eafc5}.dept{cursor:pointer;transition:transform .16s,border-color .16s,background .16s;position:relative}.dept:hover,.dept:focus-visible{transform:translateY(-2px);border-color:#8ebaff;background:#172840;outline:none}.dept-open{display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:9px;border-top:1px solid #2a3b54;color:var(--lime);font-size:9px;font-weight:800;letter-spacing:.04em}.office-back{border:1px solid var(--line);background:#152238;color:var(--soft);border-radius:8px;padding:8px 11px;font-size:10px}.office-team{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.office-person{border:1px solid #2b3b55;background:#121f33;border-radius:10px;padding:12px;min-width:0}.office-person b{font-size:10px}.office-person small{display:block;color:var(--muted);font-size:9px;margin:4px 0 8px}.office-person textarea{width:100%;min-height:54px;background:#0e192a;color:var(--text);border:1px solid #34465f;border-radius:7px;padding:8px;font:inherit;font-size:10px;resize:vertical}.office-bars{display:grid;gap:11px}.office-bar{display:grid;grid-template-columns:minmax(90px,1fr) 2fr 34px;gap:9px;align-items:center;font-size:9px;color:var(--soft)}.office-bar .bar{margin:0;height:7px}.office-bar .bar i{width:var(--pct)}.office-section{margin-top:14px}.office-task{padding:10px 0;border-bottom:1px solid #223149}.office-task b{font-size:10px;display:block}.office-task small{color:var(--muted);font-size:9px}.office-empty{padding:14px;color:var(--muted);font-size:10px;border:1px dashed #34465f;border-radius:9px}@media(max-width:900px){.metric-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:700px){.office-team{grid-template-columns:1fr}.metric-tile strong{font-size:20px}}
+
+/* Interaction and navigation polish */
+:focus-visible{outline:2px solid var(--lime);outline-offset:3px}
+button:disabled{opacity:.55;cursor:not-allowed}
+.nav,.icon-btn,.outline-btn,.primary,.office-back,.sm,.dept,.card{transition:background .18s ease,border-color .18s ease,transform .18s ease,box-shadow .18s ease}
+.nav:active,.icon-btn:active,.outline-btn:active,.primary:active,.sm:active{transform:translateY(1px)}
+.layout{min-height:100dvh}
+.sidebar{overscroll-behavior:contain}
+.topbar{min-width:0}
+.search-wrap{position:relative;width:min(270px,30vw)}
+.search-wrap .search{width:100%;padding-left:34px}
+.search-wrap:before{content:"⌕";position:absolute;left:12px;top:5px;color:#8193ad;font-size:18px;pointer-events:none}
+.search-results{position:absolute;top:calc(100% + 9px);right:0;width:min(360px,88vw);max-height:min(430px,65vh);overflow:auto;padding:6px;background:#111d30;border:1px solid #344963;border-radius:12px;box-shadow:0 18px 50px #0008;z-index:30;display:none}
+.search-results.open{display:block;animation:dropIn .14s ease-out}
+.search-results button{width:100%;display:flex;align-items:center;gap:10px;text-align:left;border:0;border-radius:8px;padding:10px;background:transparent;color:var(--text);font-size:11px}
+.search-results button:hover,.search-results button[aria-selected=true]{background:#22344c}
+.search-results button small{display:block;color:var(--muted);font-size:9px;margin-top:2px}
+.search-results .sr-icon{width:26px;height:26px;border-radius:7px;background:#263850;display:grid;place-items:center;color:var(--lime);flex:none}
+.search-hint{padding:9px 10px;color:var(--muted);font-size:9px;border-top:1px solid var(--line);margin-top:4px}
+.sidebar-scrim{display:none}
+.view.active{animation:viewIn .2s ease-out}
+.card:hover{border-color:#344a67}
+.dept:focus-visible{box-shadow:0 0 0 3px #8ebaff22}
+.toast{max-width:min(520px,calc(100vw - 28px));text-align:center;box-shadow:0 12px 35px #0008;opacity:0;transform:translate(-50%,12px);transition:opacity .18s ease,transform .18s ease;pointer-events:none}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+@keyframes viewIn{from{opacity:.55;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+@keyframes dropIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:700px){
+ .sidebar{z-index:15}
+ .sidebar-scrim{position:fixed;inset:0;background:#020711a8;z-index:14;backdrop-filter:blur(2px)}
+ .sidebar-scrim.open{display:block}
+ .search-wrap{width:min(190px,48vw)}
+ .search-results{position:fixed;top:58px;right:12px;width:min(360px,calc(100vw - 24px))}
+ .top-actions{gap:7px}
+ .topbar{gap:8px}
+}
+@media(prefers-reduced-motion:reduce){
+ *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+
 </style>
 </head>
 <body>
@@ -55,8 +95,9 @@ details.emp{border:1px solid var(--line);background:#121e31;border-radius:10px;p
  <button class="nav" data-view="settings"><span class="ico">⚙</span>Configuration</button>
  <div class="sidebar-bottom"><div class="founder"><b><span class="dot"></span>Founder workspace</b><p>Reserved authority · Organization-wide visibility</p></div></div>
 </aside>
+<div class="sidebar-scrim" id="sidebarScrim" aria-hidden="true"></div>
 <main class="main">
- <header class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="icon-btn mobile-toggle" id="menu">☰</button><div><div class="crumb">Tambala Organization / <span id="crumb">Overview</span></div><div style="font-size:12px;font-weight:750">Control Centre</div></div></div><div class="top-actions"><input class="search" id="globalSearch" placeholder="Search workspace…"><button class="icon-btn" id="notifications" title="Notifications">♧</button><div class="avatar">B</div></div></header>
+ <header class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="icon-btn mobile-toggle" id="menu">☰</button><div><div class="crumb">Tambala Organization / <span id="crumb">Overview</span></div><div style="font-size:12px;font-weight:750">Control Centre</div></div></div><div class="top-actions"><div class="search-wrap"><input class="search" id="globalSearch" type="search" placeholder="Search workspace…" autocomplete="off" role="combobox" aria-label="Search workspace" aria-controls="searchResults" aria-expanded="false"><div class="search-results" id="searchResults" role="listbox" aria-label="Search results"></div></div><button class="icon-btn" id="notifications" title="Notifications" aria-label="Notifications">♧</button><div class="avatar">B</div></div></header>
  <div class="content">
 <section class="view active" id="view-overview"><div class="page-head"><div><div class="eyebrow">FOUNDER COMMAND</div><h1>Organization overview</h1><div class="sub">Live operating picture. <span class="sync" id="syncNote">Not loaded yet.</span></div></div><div class="actions"><button class="outline-btn" id="runDuties">Run due duties</button><button class="outline-btn" id="refresh">Refresh</button><button class="primary" id="openTaskConsole">＋ Create objective</button></div></div><div id="banner"></div>
 <div class="grid stats"><article class="card"><div class="stat-top">Active roles <span class="stat-icon">♙</span></div><div class="stat-value" id="sRoles">—</div><div class="stat-foot" id="sRolesFoot"></div></article><article class="card"><div class="stat-top">Ready agents <span class="stat-icon">◈</span></div><div class="stat-value" id="sAgents">—</div><div class="stat-foot" id="sAgentsFoot"></div></article><article class="card"><div class="stat-top">Open tasks <span class="stat-icon">▤</span></div><div class="stat-value" id="sTasks">—</div><div class="stat-foot" id="sTasksFoot"></div></article><article class="card"><div class="stat-top">Pending approvals <span class="stat-icon">✓</span></div><div class="stat-value" id="sApprovals">—</div><div class="stat-foot" id="sApprovalsFoot"></div></article></div>
@@ -92,9 +133,9 @@ details.emp{border:1px solid var(--line);background:#121e31;border-radius:10px;p
 </div>
 
 <div class="gate" id="gate"><form id="gateForm"><h2>Control Centre</h2><p>Enter the dashboard token (the same value as TAMBALA_CHAT_TEST_TOKEN).</p><input id="gateToken" type="password" autocomplete="off" placeholder="Token" required><button type="submit">Open</button><div class="err" id="gateErr"></div></form></div>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
-const KEY='tambala_chat_test_token';let data=null,timer=null,selectedDepartmentId=null;
+const KEY='tambala_chat_test_token';let data=null,timer=null,toastTimer=null,selectedDepartmentId=null,searchIndex=[];
 const $=id=>document.getElementById(id);
 function h(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined&&text!==null)e.textContent=text;return e}
 function badge(text,kind){return h('span','badge '+(kind||''),text)}
@@ -221,7 +262,7 @@ function renderDepartmentOffice(){
 
 function authHeaders(){return {Authorization:'Bearer '+sessionStorage.getItem(KEY),'content-type':'application/json'}}
 async function post(path,body){const r=await fetch(path,{method:'POST',headers:authHeaders(),body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.error||('Server returned '+r.status));return j}
-function notify(msg){const t=$('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',4200)}
+function notify(msg){const t=$('toast');t.textContent=msg;t.style.display='block';t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>{t.classList.remove('show');setTimeout(()=>{if(!t.classList.contains('show'))t.style.display='none'},200)},4200)}
 
 function sigil(mark,keyed){
  const NS='http://www.w3.org/2000/svg';const svg=document.createElementNS(NS,'svg');svg.setAttribute('viewBox','0 0 50 50');svg.setAttribute('class','sigil'+(keyed?'':' unkeyed'));
@@ -276,8 +317,8 @@ function renderApprovals(section){
   const row2=h('div','btn-row');row2.append(note,ok,no);box.append(row2);el.append(box)});
 }
 
-const EMP_KIND={on_duty:'good',off_hours:'info',unequipped:'pending',inactive:'pending'};
-const EMP_LABEL={on_duty:'Available',off_hours:'Off hours',unequipped:'No model',inactive:'Inactive'};
+const EMP_KIND={available:'good',on_duty:'good',off_hours:'info',unequipped:'pending',inactive:'pending'};
+const EMP_LABEL={available:'Available',on_duty:'Available',off_hours:'Off hours',unequipped:'No model',inactive:'Inactive'};
 const DUTY_KIND={done:'good',awaiting_approval:'info',running:'info',scheduled:'info',overdue:'bad',failed:'bad',skipped:'pending',not_today:'',off:''};
 const DUTY_LABEL={done:'Done',awaiting_approval:'Awaiting you',running:'Running',scheduled:'Scheduled',overdue:'Overdue',failed:'Failed',skipped:'Skipped',not_today:'Not today',off:'Switched off'};
 
@@ -332,7 +373,7 @@ function renderWorkforce(d){
  const w=d.workforce.data;
  const openIds=new Set([...document.querySelectorAll('details.emp[open]')].map(x=>x.dataset.role));
  $('staffNote').textContent='Office time '+w.office.time+' · '+(w.office.workingHours?'working hours':'outside working hours')+(w.persistence==='memory'?' · records kept in memory only':'');
- const on=w.employees.filter(e=>e.status==='on_duty').length;
+ const on=w.employees.filter(e=>e.status==='available').length;
  val('wfOn',on,'of '+w.employees.length+' staff · availability only, not proof of active work');
  val('wfDone',w.today.done,'of '+w.today.scheduled+' scheduled today');
  val('wfBad',w.today.overdue+w.today.failed,w.today.overdue+' overdue · '+w.today.failed+' failed');
@@ -406,7 +447,7 @@ function renderMessages(d){
   row('WhatsApp connection',x.error||(x.state?'State: '+x.state:'Unknown'),badge(x.state==='open'?'Connected':x.configured?'Check phone':'—',x.state==='open'?'good':'pending')),
   row('Your number',x.founderConfigured?x.founderNumber:'Set TAMBALA_FOUNDER_WHATSAPP so employees can reach you',badge(x.founderConfigured?'Set':'Missing',x.founderConfigured?'good':'pending')),
   row('Webhook (replies, STOP, YES/NO)',x.webhookTokenSet?'Point Evolution at /webhooks/evolution?token=…':'Set EVOLUTION_WEBHOOK_TOKEN (16+ characters)',badge(x.webhookTokenSet?'Token set':'Missing',x.webhookTokenSet?'good':'pending'))]);
- fill('chRules',[row('Customers need your approval','Every message to a customer waits for you. Reply YES <code> on WhatsApp or approve here.'),row('Sending window','Mon–Sat 07:30–19:30, Malawi time. Anything else waits.'),row('Opt-out','Outreach ends with “Reply STOP to opt out.” A bare STOP blocks the number for good.'),row('Pacing','A few seconds between customer messages, daily caps, no repeats within 24 hours.'),row('Risk','Unofficial WhatsApp connections can be banned for bulk cold messaging. Keep volume low and personal.')]);
+ fill('chRules',[row('Customers need your approval','Every message to a customer waits for you. Reply YES <code> on WhatsApp or approve here.'),row('Sending window','Mon–Sat 07:30–19:30, Malawi time. Anything else waits.'),row('Opt-out','Explicit stop requests are recorded as do-not-contact. Opted-out contacts are excluded from future outreach.'),row('Pacing','No daily customer-send cap. A 90-second cooldown and one customer message per worker pass are retained.'),row('Risk','Unofficial WhatsApp connections can be banned for bulk cold messaging. Keep volume low and personal.')]);
  $('msgNote').textContent=x.configured?'':'Not configured yet. Messages queue and wait.';
  const ml=$('msgList');ml.replaceChildren();
  if(!d.messages.ok){ml.append(h('div','err-box','Could not load: '+d.messages.error));return}
@@ -491,14 +532,38 @@ async function load(){
  catch(e){$('syncNote').textContent='Refresh failed: '+e.message+(data?' (showing last data)':'')}
 }
 $('gateForm').addEventListener('submit',e=>{e.preventDefault();sessionStorage.setItem(KEY,$('gateToken').value.trim());$('gateErr').textContent='';load()});
-function showView(name){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+name));document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.view===name));const a=document.querySelector('.nav[data-view="'+name+'"]');$('crumb').textContent=a?a.textContent.replace(/[—\d]+$/,'').trim():(name==='office'?'Department office':name);$('sidebar').classList.remove('open')}
+function showView(name){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+name));document.querySelectorAll('.nav').forEach(n=>{const active=n.dataset.view===name;n.classList.toggle('active',active);if(active)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current')});const a=document.querySelector('.nav[data-view="'+name+'"]');$('crumb').textContent=a?a.textContent.replace(/[—\d]+$/,'').trim():(name==='office'?'Department office':name);closeMobileNav();closeSearch()}
+function closeMobileNav(){$('sidebar').classList.remove('open');$('sidebarScrim').classList.remove('open')}
+function closeSearch(){$('searchResults').classList.remove('open');$('globalSearch').setAttribute('aria-expanded','false')}
 document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.view)));
-$('menu').addEventListener('click',()=>$('sidebar').classList.toggle('open'));
+$('menu').addEventListener('click',()=>{$('sidebar').classList.toggle('open');$('sidebarScrim').classList.toggle('open')});
+$('sidebarScrim').addEventListener('click',closeMobileNav);
 $('refresh').addEventListener('click',load);$('officeBack').addEventListener('click',()=>showView('departments'));
 $('openTaskConsole').addEventListener('click',()=>{window.location.href='/chat-live'});
-$('notifications').addEventListener('click',()=>{const n=data&&data.headline?(data.headline.pendingApprovals||0)+(data.headline.deniedRecent||0):0;const t=$('toast');t.textContent=n?n+' item(s) need attention (approvals and denied calls).':'Nothing needs attention.';t.style.display='block';setTimeout(()=>t.style.display='none',2800)});
-const gs=$('globalSearch');gs.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const q=gs.value.trim().toLowerCase();const m=[...document.querySelectorAll('.nav[data-view]')].find(n=>n.textContent.toLowerCase().includes(q));if(m)showView(m.dataset.view);else if(q){showView('departments');[...$('departmentGrid').children].forEach(c=>c.hidden=!c.textContent.toLowerCase().includes(q))}});
-gs.addEventListener('input',()=>{if(!gs.value.trim())[...$('departmentGrid').children].forEach(c=>c.hidden=false)});
+$('notifications').addEventListener('click',()=>{const n=data&&data.headline?(data.headline.pendingApprovals||0)+(data.headline.deniedRecent||0):0;notify(n?n+' item(s) need attention (approvals and denied calls).':'Nothing needs attention.')});
+function buildSearchIndex(){
+ searchIndex=[];
+ document.querySelectorAll('.nav[data-view]').forEach(n=>searchIndex.push({label:n.textContent.trim().replace(/[—\d]+$/,'').trim(),meta:'Workspace section',type:'section',target:n.dataset.view,icon:'↗'}));
+ if(!data)return;
+ if(data.organization.ok)data.organization.data.units.filter(u=>u.kind!=='division').forEach(u=>searchIndex.push({label:u.name,meta:'Department office',type:'department',target:u.id,icon:'▦'}));
+ if(data.tasks.ok)data.tasks.data.forEach(t=>searchIndex.push({label:t.objective,meta:'Task · '+(t.status||'unknown').replaceAll('_',' '),type:'task',target:'tasks',icon:'▤'}));
+ if(data.workforce.ok)data.workforce.data.employees.forEach(e=>searchIndex.push({label:e.title,meta:e.employeeNumber+' · '+e.unitName,type:'person',target:'people',icon:'♙'}));
+ if(data.approvals.ok)data.approvals.data.forEach(a=>searchIndex.push({label:a.summary,meta:'Approval · '+a.risk_level+' risk',type:'approval',target:'approvals',icon:'✓'}));
+}
+function renderSearch(q){
+ const box=$('searchResults');box.replaceChildren();
+ if(!q){closeSearch();return}
+ const matches=searchIndex.filter(x=>(x.label+' '+x.meta).toLowerCase().includes(q)).slice(0,8);
+ if(!matches.length){box.append(h('div','search-hint','No matching sections, departments, staff, tasks or approvals.'))}
+ matches.forEach((m,i)=>{const b=h('button','');b.type='button';b.setAttribute('role','option');b.setAttribute('aria-selected',i===0?'true':'false');const ico=h('span','sr-icon',m.icon);const txt=h('span','');txt.append(h('span','',m.label),h('small','',m.meta));b.append(ico,txt);b.addEventListener('click',()=>{if(m.type==='department'){openDepartmentOffice(m.target)}else showView(m.target);gs.value='';closeSearch()});box.append(b)});
+ if(matches.length)box.append(h('div','search-hint','Enter to open the first result · Esc to close'));
+ box.classList.add('open');gs.setAttribute('aria-expanded','true');
+}
+const gs=$('globalSearch');
+gs.addEventListener('input',()=>renderSearch(gs.value.trim().toLowerCase()));
+gs.addEventListener('focus',()=>{if(gs.value.trim())renderSearch(gs.value.trim().toLowerCase())});
+gs.addEventListener('keydown',e=>{const options=[...$('searchResults').querySelectorAll('button')];const selected=options.findIndex(x=>x.getAttribute('aria-selected')==='true');if(e.key==='Escape'){closeSearch();gs.blur();return}if(e.key==='ArrowDown'||e.key==='ArrowUp'){if(!options.length)return;e.preventDefault();const next=e.key==='ArrowDown'?(selected+1)%options.length:(selected<=0?options.length-1:selected-1);options.forEach((x,i)=>x.setAttribute('aria-selected',i===next?'true':'false'));return}if(e.key==='Enter'&&options.length){e.preventDefault();(options[Math.max(0,selected)]||options[0]).click()}});
+document.addEventListener('click',e=>{if(!e.target.closest('.search-wrap'))closeSearch()});
 load();timer=setInterval(()=>{if(!document.hidden)load()},30000);
 </script>
 </body></html>
