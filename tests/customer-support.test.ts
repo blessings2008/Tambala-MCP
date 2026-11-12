@@ -85,6 +85,7 @@ test('ticket updates record status and priority changes in the event timeline', 
     const updated = await updateSupportTicket({ id: TICKET_ID, status: 'in_progress', priority: 'urgent', note: 'Investigating login failure.' });
     assert.equal(updated.status, 'in_progress');
     assert.equal(updated.priority, 'urgent');
+    await assert.rejects(updateSupportTicket({ id: TICKET_ID, status: 'waiting_customer' }), /set automatically only after an approved customer reply is delivered/);
     assert.deepEqual(db.tables.customer_service_ticket_events.map((event) => event.event_type), ['status_changed', 'priority_changed', 'note']);
   } finally { db.restore(); }
 });
