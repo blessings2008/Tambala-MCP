@@ -163,6 +163,28 @@ export async function createSupportTicket(input: {
   return ticket;
 }
 
+export async function recordCustomerInbound(phoneInput: string): Promise<void> {
+  const phone = normalizePhone(phoneInput);
+  if (!phone || phone === normalizePhone(process.env.TAMBALA_FOUNDER_WHATSAPP ?? '')) return;
+  const contacts = await supabaseSelect<CustomerContact>('customer_service_contacts', { select: 'id', phone: `eq.${phone}`, limit: '1' });
+  if (!contacts[0]) return;
+  const tickets = await supabaseSelect<SupportTicket>('customer_service_tickets', {
+    select: 'id,status', contact_id: `eq.${contacts[0].id}`,
+    status: 'in.(open,in_progress,waiting_customer,waiting_internal)', order: 'last_activity_at.desc', limit: '1',
+  });
+  if (!tickets[0]) return;
+  const previousStatus = tickets[0].status;
+  const nextStatus = previousStatus === 'waiting_customer' || previousStatus === 'waiting_internal' ? 'in_progress' : previousStatus;
+  await updateRow<SupportTicket>('customer_service_tickets', tickets[0].id, { status: nextStatus, last_activity_at: nowIso() });
+  if (nextStatus !== previousStatus) {
+    await insertRow('customer_service_ticket_events', {
+      ticket_id: tickets[0].id, event_type: 'status_changed', actor_role_id: 'system',
+      body: 'Customer sent a new WhatsApp message; ticket returned to in progress.',
+      metadata: { from: previousStatus, to: nextStatus, source: 'whatsapp_inbound' },
+    });
+  }
+}
+
 export async function recordCustomerResponse(phoneInput: string): Promise<void> {
   const phone = normalizePhone(phoneInput);
   if (!phone) return;
