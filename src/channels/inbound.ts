@@ -109,10 +109,12 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
     });
     summary.stored += 1;
     if (!number) { summary.unresolved += 1; continue; }
-    // Keep the Customer Relations contact directory in sync without allowing a CRM lookup failure to reject inbound delivery.
-    await syncCustomerContact(number, pushName, label).catch((error) => {
-      console.warn('Customer profile sync failed for inbound WhatsApp message:', error instanceof Error ? error.message : error);
-    });
+    // Keep customer contacts in sync, but never register the Founder as a customer.
+    if (number !== founder) {
+      await syncCustomerContact(number, pushName, label).catch((error) => {
+        console.warn('Customer profile sync failed for inbound WhatsApp message:', error instanceof Error ? error.message : error);
+      });
+    }
 
     if (number !== founder && OPT_OUT_PATTERN.test(text)) {
       await deps.store.addBlock(number, 'Customer replied STOP');
