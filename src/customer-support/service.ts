@@ -25,6 +25,10 @@ export interface ConversationMessage extends DbRow {
 const nowIso = () => new Date().toISOString();
 const clean = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 const activeStatuses = ['open', 'in_progress', 'waiting_customer', 'waiting_internal'];
+const ticketStatuses = ['open', 'in_progress', 'waiting_customer', 'waiting_internal', 'resolved', 'closed'];
+const ticketPriorities = ['low', 'normal', 'high', 'urgent'];
+const ticketCategories = ['general', 'billing', 'technical', 'sales', 'complaint', 'other'];
+const ticketChannels = ['whatsapp', 'email', 'phone', 'website', 'manual', 'other'];
 
 export async function syncCustomerContact(phoneInput: string, displayName?: string | null, contactLabel?: string | null): Promise<CustomerContact | null> {
   const phone = normalizePhone(phoneInput);
@@ -39,7 +43,7 @@ export async function syncCustomerContact(phoneInput: string, displayName?: stri
   const lead = client ? undefined : leads.find(matches);
   const crmName = clean(client?.business_name || client?.name || lead?.business_name || lead?.name);
   const suppliedName = clean(displayName) || clean(contactLabel);
-  const name = crmName || suppliedName || null;
+  const name = crmName || clean(existing[0]?.display_name) || suppliedName || null;
   const patch: Record<string, unknown> = {
     ...(name ? { display_name: name } : {}),
     ...(clean(client?.business_name || lead?.business_name) ? { company_name: clean(client?.business_name || lead?.business_name) } : {}),
@@ -128,6 +132,9 @@ export async function createSupportTicket(input: {
 }): Promise<SupportTicket> {
   const phone = normalizePhone(input.phone);
   if (!phone) throw new Error('A valid customer phone number is required.');
+  if (input.category && !ticketCategories.includes(input.category)) throw new Error('Invalid support ticket category.');
+  if (input.priority && !ticketPriorities.includes(input.priority)) throw new Error('Invalid support ticket priority.');
+  if (input.source_channel && !ticketChannels.includes(input.source_channel)) throw new Error('Invalid support ticket source channel.');
   const subject = input.subject.trim(); const description = input.description.trim();
   if (subject.length < 3 || subject.length > 180) throw new Error('Ticket subject must be 3–180 characters.');
   if (!description || description.length > 5000) throw new Error('Ticket description must be 1–5,000 characters.');
@@ -167,6 +174,8 @@ export async function updateSupportTicket(input: {
 }): Promise<SupportTicket> {
   const current = await getById<SupportTicket>('customer_service_tickets', input.id);
   if (!current) throw new Error('Support ticket not found.');
+  if (input.status && !ticketStatuses.includes(input.status)) throw new Error('Invalid support ticket status.');
+  if (input.priority && !ticketPriorities.includes(input.priority)) throw new Error('Invalid support ticket priority.');
   const actor = input.actor_role_id ?? 'director-customer-relations';
   const patch: Record<string, unknown> = { last_activity_at: nowIso() };
   const events: { event_type: string; body: string; metadata: Record<string, unknown> }[] = [];
