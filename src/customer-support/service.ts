@@ -113,6 +113,7 @@ export async function listCustomerConversations(limit = 50, search?: string) {
       key, phone, contact, contact_name: label, company_name: contact?.company_name ?? null,
       last_message: latest.text.slice(0, 500), last_message_at: latest.created_at,
       last_direction: latest.direction, message_count: rows.length, unread_count: unreadCount,
+      recent_messages: rows.slice(0, 4).reverse().map((message) => ({ direction: message.direction, text: message.text.slice(0, 220), status: message.status, created_at: message.created_at })),
       needs_reply: needsReply, reply_state: replyState,
       blocked: Boolean(phone && (blocked.has(phone) || contact?.do_not_contact)),
       channel: 'whatsapp' as const,
