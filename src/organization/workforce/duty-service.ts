@@ -739,7 +739,7 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
             inbox: conversations.map((item) => ({
               phone: item.phone, contact_name: item.contact_name, company_name: item.company_name,
               last_message: item.last_message.slice(0, 240), last_message_at: item.last_message_at,
-              needs_reply: item.needs_reply, reply_state: item.reply_state, blocked: item.blocked,
+              recent_messages: item.recent_messages, needs_reply: item.needs_reply, reply_state: item.reply_state, blocked: item.blocked,
               message_count: item.message_count,
             })),
             tickets: tickets.map((ticket) => ({
