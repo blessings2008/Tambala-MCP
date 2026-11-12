@@ -665,6 +665,15 @@ const server = createHttpServer(async (req, res) => {
     return;
   }
 
+  if (requestPath === '/customer-relations' && req.method === 'GET') {
+    try {
+      const html = await readFile(new URL('../public/customer-relations.html', import.meta.url));
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'" });
+      res.end(html);
+    } catch (error) { console.error('Unable to load Customer Relations desk:', error); json(res, 500, { error: 'Customer Relations desk is unavailable.' }); }
+    return;
+  }
+
   if (requestPath === '/dashboard' && req.method === 'GET') {
     try {
       const html = await readFile(new URL('../public/organization-dashboard.html', import.meta.url));
