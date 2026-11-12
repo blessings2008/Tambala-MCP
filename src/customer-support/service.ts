@@ -147,6 +147,21 @@ export async function createSupportTicket(input: {
   return ticket;
 }
 
+export async function recordCustomerResponse(phoneInput: string): Promise<void> {
+  const phone = normalizePhone(phoneInput);
+  if (!phone) return;
+  const contacts = await supabaseSelect<CustomerContact>('customer_service_contacts', { select: 'id', phone: `eq.${phone}`, limit: '1' });
+  if (!contacts[0]) return;
+  const tickets = await supabaseSelect<SupportTicket>('customer_service_tickets', {
+    select: 'id,first_response_at,status', contact_id: `eq.${contacts[0].id}`,
+    status: 'in.(open,in_progress,waiting_customer,waiting_internal)', order: 'last_activity_at.desc', limit: '1',
+  });
+  if (!tickets[0]) return;
+  await updateRow<SupportTicket>('customer_service_tickets', tickets[0].id, {
+    status: 'waiting_customer', first_response_at: tickets[0].first_response_at ?? nowIso(), last_activity_at: nowIso(),
+  });
+}
+
 export async function updateSupportTicket(input: {
   id: string; status?: TicketStatus; priority?: TicketPriority; assigned_role_id?: string; note?: string; actor_role_id?: string;
 }): Promise<SupportTicket> {
@@ -159,7 +174,6 @@ export async function updateSupportTicket(input: {
     patch.status = input.status;
     if (input.status === 'resolved') { patch.resolved_at = nowIso(); patch.closed_at = null; }
     else if (input.status === 'closed') { patch.closed_at = nowIso(); patch.resolved_at = current.resolved_at ?? nowIso(); }
-    else if (input.status === 'waiting_customer' && !current.first_response_at) { patch.first_response_at = nowIso(); }
     else if (current.status === 'resolved' || current.status === 'closed') { patch.resolved_at = null; patch.closed_at = null; }
     events.push({ event_type: input.status === 'resolved' ? 'resolved' : (current.status === 'resolved' || current.status === 'closed') ? 'reopened' : 'status_changed', body: `Status changed from ${current.status} to ${input.status}.`, metadata: { from: current.status, to: input.status } });
   }
@@ -187,6 +201,7 @@ export async function addSupportTicketNote(id: string, bodyInput: string, actor 
   const ticket = await getById<SupportTicket>('customer_service_tickets', id);
   if (!ticket) throw new Error('Support ticket not found.');
   await insertRow('customer_service_ticket_events', { ticket_id: id, event_type: 'note', actor_role_id: actor, body, metadata: {} });
+  await updateRow<SupportTicket>('customer_service_tickets', id, { last_activity_at: nowIso() });
   return { saved: true, ticket_id: id };
 }
 
