@@ -48,11 +48,11 @@ export const AGENT_DIRECTORY = {
   },
   followup: {
     title: 'Head of Customer Relations & Support',
-    responsibility: 'Follow-up analysis, relationship continuity, customer communication drafts, and next-step recommendations',
+    responsibility: 'Shared WhatsApp inbox, customer profiles, support ticket management, issue resolution, relationship continuity and customer follow-ups',
     unitId: 'customer-relations',
     unitName: 'Customer Relations & Support',
     reportsTo: 'Chief Executive Officer (CEO)',
-    manages: ['Customer follow-up work assigned by the CEO'],
+    manages: ['Customer inbox and support work assigned by the CEO', 'Customer follow-up and ticket resolution'],
     roleId: null,
     roleStatus: 'planned',
   },
