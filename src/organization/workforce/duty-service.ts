@@ -8,7 +8,7 @@ import { createApprovalRequest, registerApprovalHook, type ApprovalRow } from '.
 import type { AgentName } from '../../services/ai/models.js';
 import { setRuntimeIncidentHandler, type RuntimeIncident } from './incident-events.js';
 import { type ContextKind, type StandingDuty } from './duties.js';
-import { customerSupportMetrics, listCustomerConversations, listSupportTickets } from '../../customer-support/service.js';
+import { addSupportTicketNote, createSupportTicket, customerSupportMetrics, listCustomerConversations, listSupportTickets, updateSupportTicket } from '../../customer-support/service.js';
 import { dbConfigured as dbOn } from './db-util.js';
 import { loadDuties, requireConfigStore, saveBuiltinOverride, saveCustomDuty, SupabaseDutyConfigStore, type DutyConfigStore } from './duty-config.js';
 import { InMemoryHandoffStore, SupabaseHandoffStore, processHandoffs, queueHandoff, resumeFounderTaskRoom, type Handoff, type HandoffDeps, type HandoffOutcome, type HandoffStore } from './handoffs.js';
@@ -580,6 +580,7 @@ const actionDeps = (): ActionExecDeps => ({
   outbox: productionOutboxDeps(), founderNumber,
   createDocument: (input, roleId) => createDocument(input, roleId),
   createInvoice: (input) => createClientInvoice(input),
+  support: { createTicket: createSupportTicket, updateTicket: updateSupportTicket, addNote: addSupportTicketNote },
 });
 
 async function runActions(ctx: { agent: AgentName; roleId: string; taskId: string | null }, actions: Action[], rejected: string[]): Promise<string> {
