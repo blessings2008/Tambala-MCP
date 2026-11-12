@@ -33,8 +33,15 @@ const ticketChannels = ['whatsapp', 'email', 'phone', 'website', 'manual', 'othe
 export async function syncCustomerContact(phoneInput: string, displayName?: string | null, contactLabel?: string | null): Promise<CustomerContact | null> {
   const phone = normalizePhone(phoneInput);
   if (!phone || phone === normalizePhone(process.env.TAMBALA_FOUNDER_WHATSAPP ?? '')) return null;
-  const [existing, clients, leads] = await Promise.all([
-    supabaseSelect<CustomerContact>('customer_service_contacts', { select: '*', phone: `eq.${phone}`, limit: '1' }),
+  const existing = await supabaseSelect<CustomerContact>('customer_service_contacts', { select: '*', phone: `eq.${phone}`, limit: '1' });
+  const suppliedName = clean(displayName) || clean(contactLabel);
+  if (existing[0]) {
+    const patch: Record<string, unknown> = { last_seen_at: nowIso() };
+    // Preserve a curated profile name; only fill it from WhatsApp when it is blank.
+    if (!clean(existing[0].display_name) && suppliedName) patch.display_name = suppliedName;
+    return updateRow<CustomerContact>('customer_service_contacts', existing[0].id, patch);
+  }
+  const [clients, leads] = await Promise.all([
     supabaseSelect<DbRow>('clients', { select: 'id,name,business_name,email,phone,whatsapp', limit: '2000' }),
     supabaseSelect<DbRow>('leads', { select: 'id,name,business_name,email,phone,whatsapp', limit: '2000' }),
   ]);
@@ -42,16 +49,7 @@ export async function syncCustomerContact(phoneInput: string, displayName?: stri
   const client = clients.find(matches);
   const lead = client ? undefined : leads.find(matches);
   const crmName = clean(client?.business_name || client?.name || lead?.business_name || lead?.name);
-  const suppliedName = clean(displayName) || clean(contactLabel);
-  const name = crmName || clean(existing[0]?.display_name) || suppliedName || null;
-  const patch: Record<string, unknown> = {
-    ...(name ? { display_name: name } : {}),
-    ...(clean(client?.business_name || lead?.business_name) ? { company_name: clean(client?.business_name || lead?.business_name) } : {}),
-    ...(clean(client?.email || lead?.email) ? { email: clean(client?.email || lead?.email) } : {}),
-    ...(client ? { contact_type: 'client', client_id: client.id, lead_id: null } : lead ? { contact_type: 'prospect', lead_id: lead.id, client_id: null } : {}),
-    last_seen_at: nowIso(),
-  };
-  if (existing[0]) return updateRow<CustomerContact>('customer_service_contacts', existing[0].id, patch);
+  const name = crmName || suppliedName || null;
   return insertRow<CustomerContact>('customer_service_contacts', {
     phone, display_name: name, email: clean(client?.email || lead?.email) || null,
     company_name: clean(client?.business_name || lead?.business_name) || null,
