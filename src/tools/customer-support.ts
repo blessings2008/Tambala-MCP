@@ -1,6 +1,7 @@
 import * as z from 'zod/v4';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { queueWhatsApp } from '../channels/service.js';
+import { resolveOrganizationIdentity } from '../organization/identity-service.js';
 import {
   addSupportTicketNote, createSupportTicket, customerSupportMetrics, getCustomerConversation,
   listCustomerConversations, listSupportTickets, ticketEvents, updateCustomerContact, updateSupportTicket,
@@ -8,6 +9,7 @@ import {
 
 const text = (value: unknown, isError = false) => ({ ...(isError ? { isError: true } : {}), content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
 const phone = z.string().trim().min(8).max(30);
+const actorRoleId = async () => (await resolveOrganizationIdentity()).role?.id ?? 'director-customer-relations';
 
 export function registerCustomerSupportTools(server: McpServer): void {
   server.registerTool('list_customer_conversations', {
@@ -59,7 +61,7 @@ export function registerCustomerSupportTools(server: McpServer): void {
       priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
       source_channel: z.enum(['whatsapp', 'email', 'phone', 'website', 'manual', 'other']).default('whatsapp'),
     },
-  }, async (input) => text({ created: await createSupportTicket(input) }));
+  }, async (input) => text({ created: await createSupportTicket({ ...input, actor_role_id: await actorRoleId() }) }));
 
   server.registerTool('update_customer_support_ticket', {
     description: 'Update a support ticket status, priority or assigned active organization role. Optional note is saved to the ticket timeline. Does not contact the customer.',
@@ -70,12 +72,12 @@ export function registerCustomerSupportTools(server: McpServer): void {
       assigned_role_id: z.string().trim().min(2).max(120).optional(),
       note: z.string().trim().max(3000).optional(),
     },
-  }, async (input) => text({ updated: await updateSupportTicket(input) }));
+  }, async (input) => text({ updated: await updateSupportTicket({ ...input, actor_role_id: await actorRoleId() }) }));
 
   server.registerTool('add_customer_support_note', {
     description: 'Add an internal note to a support ticket timeline. The note is not sent to the customer.',
     inputSchema: { ticket_id: z.string().uuid(), note: z.string().trim().min(1).max(3000) },
-  }, async ({ ticket_id, note }) => text(await addSupportTicketNote(ticket_id, note)));
+  }, async ({ ticket_id, note }) => text(await addSupportTicketNote(ticket_id, note, await actorRoleId())));
 
   server.registerTool('prepare_customer_reply', {
     description: 'Prepare a WhatsApp reply for a customer and submit it to the existing Founder approval queue. It is NOT sent until approved. Opt-outs, blocked numbers, sending windows and cooldown rules remain enforced.',
