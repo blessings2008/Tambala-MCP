@@ -4,7 +4,7 @@ export interface ScheduledQueueMaintenanceDeps {
   dispatchNew: (maxCount: number) => Promise<number>;
   dispatchReviewing: (maxCount: number) => Promise<number>;
   dispatchApprovals: () => Promise<number>;
-  runDuties: (options: { skipDiscoveryQueue: true }) => Promise<{ outcomes: unknown[]; handoffs: unknown[] }>;
+  runDuties: (options: { skipDiscoveryQueue: true }) => Promise<{ outcomes: Array<{ dutyId: string; status: string }>; handoffs: Array<{ toAgent: string; status: string }> }>;
 }
 
 /** Keep recovery and intake within the five-handoff worker budget in every scheduler mode. */
