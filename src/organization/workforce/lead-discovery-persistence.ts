@@ -27,7 +27,9 @@ function optionalString(value: unknown, max: number): string | null {
 export function parseProspectBlock(body: string): { prospects: Row[]; cleanBody: string; parseIssue?: string } {
   const wrapped = body.match(/DISCOVERED_PROSPECTS:\s*\x60\x60\x60(?:json)?\s*([\s\S]*?)\x60\x60\x60\s*END_DISCOVERED_PROSPECTS/i);
   const fenced = wrapped ? null : body.match(/\x60\x60\x60json\s*([\s\S]*?)\x60\x60\x60/i);
-  const source = wrapped?.[1] ?? fenced?.[1] ?? '';
+  const markerIndex = body.search(/DISCOVERED_PROSPECTS\s*:/i);
+  const markerEnd = markerIndex >= 0 ? body.indexOf(':', markerIndex) + 1 : -1;
+  const source = wrapped?.[1] ?? fenced?.[1] ?? (markerEnd > 0 ? body.slice(markerEnd) : '');
   const arrayStart = source.indexOf('[');
   if (arrayStart < 0) {
     return {
@@ -78,7 +80,7 @@ export function parseProspectBlock(body: string): { prospects: Row[]; cleanBody:
       : 'DISCOVERED_PROSPECTS JSON was malformed or truncated; no complete prospect records could be recovered.';
   }
 
-  const removed = wrapped?.[0] ?? fenced?.[0] ?? source.slice(arrayStart);
+  const removed = wrapped?.[0] ?? fenced?.[0] ?? (markerIndex >= 0 ? body.slice(markerIndex) : source.slice(arrayStart));
   return {
     prospects,
     cleanBody: removed ? body.replace(removed, '').trim() : body.trim(),
@@ -88,6 +90,9 @@ export function parseProspectBlock(body: string): { prospects: Row[]; cleanBody:
 
 export async function persistDiscoveredProspects(body: string): Promise<{ cleanBody: string; saved: number; duplicates: number; rejected: number; details: string[] }> {
   const { prospects, cleanBody, parseIssue } = parseProspectBlock(body);
+  if (!prospects.length) {
+    return { cleanBody, saved: 0, duplicates: 0, rejected: parseIssue ? 1 : 0, details: parseIssue ? [parseIssue] : [] };
+  }
   const [queueRows, leads, clients] = await Promise.all([
     supabaseSelect<Row>('lead_discovery_queue', { select: 'id,organisation_name', limit: '5000' }),
     supabaseSelect<Row>('leads', { select: 'id,name,business_name', limit: '5000' }),
