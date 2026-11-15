@@ -168,14 +168,13 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
   try {
     const systemPrompt = boundText(AGENT_PROMPT_RULES[agent], agent === 'outreach' && input.includes('WEB RESEARCH RESULT') ? 4_200 : MAX_SYSTEM_PROMPT_CHARS);
     const researchHeavyOutreach = agent === 'outreach' && input.includes('WEB RESEARCH RESULT');
-    const userInputLimit = researchHeavyOutreach ? 5_500 : queueOnlyResearch ? 2_000 : MAX_USER_INPUT_CHARS;
     const queueOnlyResearch = agent === 'research' && /STANDING DUTY: Daily prospect queue intelligence|STANDING DUTY: Research department queue assessment/i.test(input);
     const securityReview = agent === 'security' && input.includes('STANDING DUTY: Daily incident monitoring and security review');
+    const userInputLimit = researchHeavyOutreach ? 5_500 : queueOnlyResearch ? 2_000 : MAX_USER_INPUT_CHARS;
     const contextLimit = researchHeavyOutreach ? 250 : queueOnlyResearch ? 3_500 : securityReview ? 3_000 : MAX_CONTEXT_CHARS;
     const userInput = boundText(input, userInputLimit);
     const contextText = context === undefined ? '' : '\n\nTambala business context:\n' + serializeBoundedContext(context, contextLimit);
     const userMessage = boundText(userInput + contextText, userInputLimit + contextLimit + 40);
-    const queueOnlyResearch = agent === 'research' && /STANDING DUTY: Daily prospect queue intelligence|STANDING DUTY: Research department queue assessment/i.test(input);
     const completionBudget = queueOnlyResearch ? 900 : agent === 'operations' ? 1_200 : researchHeavyOutreach ? (input.includes('discovery pass') ? 700 : 1_100) : agent === 'research' ? 1_100 : MAX_COMPLETION_TOKENS;
     const requestPayload = {
       model: config.model,
