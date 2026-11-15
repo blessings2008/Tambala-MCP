@@ -114,6 +114,25 @@ function extractActionValues(source: string): { values: unknown[]; rejected: str
   return { values, rejected };
 }
 
+/**
+ * Convert the exact legacy Founder notification shape to the current schema.
+ * executeActions still applies the requesting employee's permission checks.
+ */
+function normalizeLegacyAction(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const item = value as Record<string, unknown>;
+  const payload = item.payload && typeof item.payload === 'object' && !Array.isArray(item.payload)
+    ? item.payload as Record<string, unknown>
+    : null;
+  if (item.action === 'notify_founder' && payload) {
+    const subject = typeof payload.subject === 'string' ? payload.subject.trim() : '';
+    const message = typeof payload.message === 'string' ? payload.message.trim() : '';
+    const text = [subject, message].filter(Boolean).join(' — ');
+    return text ? { type: 'notify_founder', text } : value;
+  }
+  return value;
+}
+
 /** Accept one object per line, pretty JSON, fenced JSON and arrays; invalid entries remain visible. */
 export function parseActions(body: string): ParsedActions {
   const { clean, blocks } = splitBlocks(body);
@@ -123,7 +142,7 @@ export function parseActions(body: string): ParsedActions {
     const extracted = extractActionValues(blocks.ACTIONS);
     rejected.push(...extracted.rejected);
     for (const json of extracted.values) {
-      const parsed = actionSchema.safeParse(json);
+      const parsed = actionSchema.safeParse(normalizeLegacyAction(json));
       if (!parsed.success) {
         const type = json && typeof json === 'object' && 'type' in json ? String((json as { type?: unknown }).type) : 'action';
         rejected.push(`${type}: ${parsed.error.issues[0]?.message ?? 'invalid'}`.slice(0, 120));
