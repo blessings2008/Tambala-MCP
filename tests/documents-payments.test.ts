@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage } from 'node:http';
 import { createHash } from 'node:crypto';
 import { computeTotals, formatMoney, lineAmountMinor, toMinor } from '../src/documents/model.ts';
 import { createDocument, DocumentError, loadPdfForSending } from '../src/documents/service.ts';
+import { recordQuotationAcceptance } from '../src/documents/acceptance.ts';
 import { InMemoryDocumentStore } from '../src/documents/store.ts';
 import { pdfSafe, renderDocument } from '../src/documents/renderer.ts';
 import { loadDesign } from '../src/documents/design.ts';
@@ -63,6 +64,28 @@ test('quotations: price-list lines, custom lines, totals, numbering, signature a
     assert.deepEqual((await loadPdfForSending(q2.id, store))!.fileName, 'TT-Q-2026-0002.pdf');
     assert.equal(await loadPdfForSending('nope', store), null);
     void ledger;
+  });
+});
+
+test('quotation acceptance is recorded only for a sent quotation and is idempotent', async () => {
+  await withEnv({ TAMBALA_SIGNING_SECRET: SIGNING }, async () => {
+    const store = new InMemoryDocumentStore();
+    const quote = await createDocument({ kind: 'quotation', client: { name: 'Lakeview Lodge' }, items: [{ description: 'Website development', unitPrice: 100000 }] }, SALES, { store, now: () => new Date('2026-11-15T08:00:00Z') });
+    assert.equal(await recordQuotationAcceptance(quote.id, {
+      messageId: 'inbound-1', acceptedAt: '2026-11-15T09:00:00Z', customerText: 'We accept the quotation.',
+    }, store), false);
+    await store.update(quote.id, { status: 'sent' });
+    assert.equal(await recordQuotationAcceptance(quote.id, {
+      messageId: 'inbound-1', acceptedAt: '2026-11-15T09:00:00Z', customerText: 'We accept the quotation.',
+    }, store), true);
+    const accepted = await store.byId(quote.id);
+    assert.equal(accepted?.status, 'accepted');
+    assert.equal(accepted?.accepted_at, '2026-11-15T09:00:00Z');
+    assert.equal(accepted?.accepted_by_message_id, 'inbound-1');
+    assert.equal(accepted?.acceptance_text, 'We accept the quotation.');
+    assert.equal(await recordQuotationAcceptance(quote.id, {
+      messageId: 'inbound-2', acceptedAt: '2026-11-15T10:00:00Z', customerText: 'We accept again.',
+    }, store), false);
   });
 });
 
