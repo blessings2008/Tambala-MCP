@@ -358,6 +358,15 @@ test('inbound: customer replies are stored, matched to the CRM and forwarded to 
   assert.equal((await handleEvolutionWebhook(h.deps, evt('265888123456@s.whatsapp.net', 'Yes please send the quote'))).duplicates, 1);
 });
 
+test('inbound: customer complaints trigger trust demotion and Founder escalation', async () => {
+  const demotions: Array<{ number: string; reason: string }> = [];
+  const h = inboundHarness({ demoteTrustForNumber: async (number, reason) => { demotions.push({ number, reason }); } });
+  const result = await handleEvolutionWebhook(h.deps, evt('265888123456@s.whatsapp.net', 'I want to make a complaint about your service', 'COMPLAINT-1'));
+  assert.equal(result.forwarded, 1);
+  assert.deepEqual(demotions, [{ number: '265888123456', reason: 'Customer complaint or spam report' }]);
+  assert.ok(h.told.some((message) => /complaint or spam-related message/.test(message)));
+});
+
 test('inbound: STOP opts the customer out, confirms, and tells the Founder', async () => {
   const h = inboundHarness();
   for (const word of ['STOP', ' stop. ', 'Unsubscribe', 'Please stop messaging me.', 'Do not contact me again', 'Remove me from your list']) {
