@@ -459,3 +459,25 @@ test('inbound: only the verified Founder can pause and resume the organization b
   assert.equal(result.forwarded, 1);
   assert.equal(stranger.replies.length, 0);
 });
+
+
+test('outbox: global pause blocks new queues and stops already queued delivery', async () => {
+  const previousPause = process.env.TAMBALA_PAUSE_ALL;
+  const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.TAMBALA_PAUSE_ALL = 'true';
+  try {
+    const h = outboxHarness();
+    await assert.rejects(
+      queueMessage(h.deps, { roleId: 'ceo', agent: 'orchestrator', to: FOUNDER, text: 'Should not queue while paused', purpose: 'notify_founder' }),
+      /paused/i,
+    );
+    assert.deepEqual(await processOutbox(h.deps), []);
+    assert.equal(h.sent.length, 0);
+  } finally {
+    if (previousPause === undefined) delete process.env.TAMBALA_PAUSE_ALL;
+    else process.env.TAMBALA_PAUSE_ALL = previousPause;
+    if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
+  }
+});
