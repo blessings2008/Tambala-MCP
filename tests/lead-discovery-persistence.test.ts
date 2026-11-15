@@ -10,9 +10,9 @@ const prospect = (name: string) => ({
 });
 
 test('parses the complete documented prospect wrapper', () => {
-  const body = 'Research notes.\nDISCOVERED_PROSPECTS:\n\`\`\`json\n' +
+  const body = 'Research notes.\nDISCOVERED_PROSPECTS:\n```json\n' +
     JSON.stringify([prospect('One Malawi Limited')]) +
-    '\n\`\`\`\nEND_DISCOVERED_PROSPECTS\nClosing note.';
+    '\n```\nEND_DISCOVERED_PROSPECTS\nClosing note.';
   const result = parseProspectBlock(body);
   assert.equal(result.prospects.length, 1);
   assert.equal(result.prospects[0].organisation_name, 'One Malawi Limited');
@@ -22,7 +22,7 @@ test('parses the complete documented prospect wrapper', () => {
 });
 
 test('accepts a fenced JSON array even when the wrapper labels are missing', () => {
-  const body = 'Summary.\n\`\`\`json\n' + JSON.stringify([prospect('Two Malawi Limited')]) + '\n\`\`\`';
+  const body = 'Summary.\n```json\n' + JSON.stringify([prospect('Two Malawi Limited')]) + '\n```';
   const result = parseProspectBlock(body);
   assert.equal(result.prospects.length, 1);
   assert.equal(result.prospects[0].organisation_name, 'Two Malawi Limited');
@@ -31,7 +31,7 @@ test('accepts a fenced JSON array even when the wrapper labels are missing', () 
 test('salvages complete records before a truncated final record', () => {
   const first = prospect('Three Malawi Limited');
   const second = prospect('Four Malawi Limited');
-  const body = 'DISCOVERED_PROSPECTS:\n\`\`\`json\n[' + JSON.stringify(first) + ',' + JSON.stringify(second).slice(0, 55);
+  const body = 'DISCOVERED_PROSPECTS:\n```json\n[' + JSON.stringify(first) + ',' + JSON.stringify(second).slice(0, 55);
   const result = parseProspectBlock(body);
   assert.equal(result.prospects.length, 1);
   assert.equal(result.prospects[0].organisation_name, 'Three Malawi Limited');
@@ -39,7 +39,7 @@ test('salvages complete records before a truncated final record', () => {
 });
 
 test('salvages complete records when the closing JSON fence is truncated', () => {
-  const body = 'DISCOVERED_PROSPECTS:\n\`\`\`json\n[' + JSON.stringify(prospect('Five Malawi Limited')) + ',{"organisation_name":"unfinished';
+  const body = 'DISCOVERED_PROSPECTS:\n```json\n[' + JSON.stringify(prospect('Five Malawi Limited')) + ',{"organisation_name":"unfinished';
   const result = parseProspectBlock(body);
   assert.equal(result.prospects.length, 1);
   assert.equal(result.prospects[0].organisation_name, 'Five Malawi Limited');
