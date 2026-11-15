@@ -4,6 +4,8 @@ import { acquireAgentRequestSlot, getAgentLimitInfo } from './ai/limits.js';
 import { AGENT_PROMPT_RULES } from './ai/rules.js';
 import { reportRuntimeIncident } from '../organization/workforce/incident-events.js';
 import { assertRuntimeActive } from '../organization/runtime-control.js';
+import { dbConfigured } from '../organization/workforce/db-util.js';
+import { recordAIUsage } from './ai/spend.js';
 import { formatResearchContext, webResearch, webResearchMany } from './web-research.js';
 
 const clients = new Map<AgentName, OpenAI>();
@@ -254,6 +256,18 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
       });
       throw new Error(`${agent} agent ${config.provider} request failed${status ? ` (HTTP ${status})` : ''}: ${detail}`);
     }
+    const recordUsage = async (usage: typeof response.usage) => {
+      if (!dbConfigured() || !usage) return;
+      try {
+        await recordAIUsage({
+          agent, provider: config.provider, model: config.model,
+          promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens,
+        });
+      } catch (error) {
+        console.error('AI usage ledger write failed; cost visibility is incomplete:', error instanceof Error ? error.message : error);
+      }
+    };
+    await recordUsage(response.usage);
     let content = response.choices[0]?.message?.content;
     const firstChoice = response.choices[0];
     const firstFinishReason = firstChoice?.finish_reason ?? null;
@@ -275,6 +289,7 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
       }));
       const retryPayload = { ...requestPayload, max_completion_tokens: retryCompletionBudget };
       response = await requestWithRateLimitRetry(() => getClient(agent).chat.completions.create(retryPayload), agent, config.model);
+      await recordUsage(response.usage);
       content = response.choices[0]?.message?.content;
     }
     if (typeof content !== 'string' || !content.trim()) {
