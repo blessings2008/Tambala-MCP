@@ -14,7 +14,7 @@ const proposal = {
   deliverable: 'A concise report of verified issues, evidence, recommendations and unavailable data.',
   requiresApproval: true,
   enabled: true,
-  evidence: [{ type: 'duty_run', reference: 'organization_duty_runs:recent', summary: 'Recent duty history shows this recurring quality review is not currently assigned.' }],
+  evidence: [{ type: 'duty_run' as const, reference: 'organization_duty_runs:recent', summary: 'Recent duty history shows this recurring quality review is not currently assigned.' }],
 };
 
 test('duty proposals reject employees outside HR and Strategy', async () => {
