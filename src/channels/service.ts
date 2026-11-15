@@ -1,7 +1,8 @@
 import { supabaseSelect } from '../lib/supabase.js';
 import { createApprovalRequest, decideApproval, listPendingApprovals, registerApprovalHook } from '../organization/workforce/approvals-service.js';
 import { dbConfigured } from '../organization/workforce/db-util.js';
-import { labelForRole } from '../organization/workforce/profiles.js';
+import { identityForRole, labelForRole } from '../organization/workforce/profiles.js';
+import { demoteEmployeeTrust } from '../organization/workforce/trust-ledger.js';
 import { getOrganizationSnapshot, routeOrganizationObjective } from '../organization/service.js';
 import { requireConfiguredRuntime, resolveExecutionRoute } from '../organization/execution-router.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../services/ai.js';
@@ -310,6 +311,16 @@ export function productionInboundDeps(store: MessageStore = messageStore()): Inb
       await runOutbox();
     },
     contactLookup: contactLabel,
+    demoteTrustForNumber: async (number, reason) => {
+      if (!dbConfigured()) return;
+      const rows = await supabaseSelect<{ from_role_id: string | null }>(
+        'organization_messages',
+        `select=from_role_id&direction=eq.out&audience=eq.client&number=eq.${encodeURIComponent(number)}&status=eq.sent&order=sent_at.desc&limit=1`,
+      );
+      const roleId = rows[0]?.from_role_id;
+      const identity = roleId ? identityForRole(roleId) : null;
+      if (identity && identity.employeeNumber !== 'TT-000') await demoteEmployeeTrust(identity.employeeNumber, reason);
+    },
     handleFounderInstruction,
     runtimeControl: {
       get: async () => { const state = await getRuntimeControl(); return { paused: state.paused, reason: state.reason }; },
