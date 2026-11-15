@@ -101,6 +101,12 @@ export const STANDING_DUTIES: readonly StandingDuty[] = [
     deliverable: 'What moved, what stalled, three priorities, and the single biggest risk.',
   },
   {
+    id: 'ceo-weekly-operating-plan', agent: 'orchestrator', title: 'Weekly CEO operating plan',
+    cadence: { kind: 'weekly', day: 1 }, time: '08:00', contexts: ['crm', 'organization', 'invoices', 'company'],
+    job: 'You are the CEO. Prepare the company operating plan for the coming week using only the supplied CRM, invoice, organization and company records. Review real pipeline movement, quotations, payments, overdue work, duty outcomes, staffing readiness and risks. Set no financial commitments, prices or regulatory positions. Do not assign work outside active employee duties or change anyone’s permissions. Separate verified metrics from unavailable data and recommendations. Escalate any decision requiring Founder authority.',
+    deliverable: 'A signed weekly operating plan with: measurable company targets based on the actual baseline; sales pipeline priorities; delivery and client commitments already on record; cash/invoice facts; department priorities and owners; risks and blockers; Founder decisions required; and what evidence will be reviewed next week. Label every unavailable metric explicitly.',
+  },
+  {
     id: 'ceo-daily-briefing', agent: 'orchestrator', title: 'Daily executive briefing',
     cadence: { kind: 'weekdays' }, time: '16:30', contexts: ['briefing'], report: 'daily_briefing',
     job: 'You are the CEO. Compile the end-of-day briefing for the Founder from today’s duty results: what each department did, what needs a Founder decision, what failed or was skipped, and tomorrow’s focus.',
