@@ -149,6 +149,12 @@ The dashboard's rolling 24-hour duty error budget is calculated from recorded du
 
 The CEO has a built-in weekly operating-plan duty scheduled for Monday at 08:00 Africa/Blantyre time. It reads the CRM, organization, invoice and company contexts and produces a signed duty result covering evidence-based targets, department priorities, existing commitments, risks and Founder decisions. It cannot change prices, make financial commitments, alter employee permissions or take regulatory positions. Duty scheduling still requires the always-on worker or external cron described above.
 
+### Governed growth proposals
+
+The MCP tool `propose_organization_duty` is restricted to a trusted OAuth-bound People/HR or Strategy role. It creates a signed-governance approval request; no duty is written to the active configuration at proposal time. Once the Founder approves, the approval hook validates the stored proposal and applies it through the existing duty configuration save path. Rejections leave the active configuration unchanged.
+
+New duties must be attached to an existing employee and require approval for prepared work. Proposals cannot change permissions, employee numbers, model budgets, pricing, financial authority or regulatory policy. Role-creation proposals are not yet implemented; do not treat a proposed role as an active appointment.
+
 ### Employee trust ledger
 
 Apply `supabase/migrations/20261115_employee_trust_ledger.sql` before using the trust ledger. It records approval history by frozen employee number and action type. A low-risk action type earns standing-approval eligibility only after 20 consecutive approvals with no Founder edits or rejection. The current eligible categories are prepared follow-ups, prepared work, prepared content and prepared internal tasks; financial, contractual, regulatory and new-customer-contact actions are excluded.
