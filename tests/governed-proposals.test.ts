@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { proposeDutyChange } from '../src/organization/workforce/governed-proposals.ts';
+import { activateApprovedDutyProposal, proposeDutyChange } from '../src/organization/workforce/governed-proposals.ts';
+import { InMemoryDutyConfigStore } from '../src/organization/workforce/duty-config.ts';
 import { roleIdFor } from '../src/organization/workforce/profiles.ts';
 
 const proposal = {
@@ -34,4 +35,16 @@ test('role proposals reject non-HR/Strategy proposers before accessing persisten
     reportsToRoleId: 'ceo',
     purpose: 'Coordinate office operations and internal administration.',
   }), /Only People\/HR or Strategy/);
+});
+
+
+test('approved duty activation uses validated config storage and is idempotent', async () => {
+  const store = new InMemoryDutyConfigStore();
+  const approval = { id: '12345678-1234-4123-8123-123456789abc', content: JSON.stringify({ version: 1, proposal }) };
+  const first = await activateApprovedDutyProposal(approval, store);
+  const second = await activateApprovedDutyProposal(approval, store);
+  assert.equal(first.id, second.id);
+  assert.match(first.id, /^founder-approved-/);
+  assert.equal((await store.customs()).length, 1);
+  assert.equal((await store.customs())[0].requires_approval, true);
 });
