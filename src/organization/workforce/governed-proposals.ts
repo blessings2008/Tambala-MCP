@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { supabaseInsert } from '../../lib/supabase.js';
+import { getPersistedOrganizationSnapshot } from '../persisted-service.js';
 import { createApprovalRequest, registerApprovalHook, type ApprovalRow } from './approvals-service.js';
 import { saveDutyConfig } from './duty-service.js';
 import { roleIdFor } from './profiles.js';
@@ -7,6 +9,7 @@ import { AGENT_DIRECTORY, type AgentName } from '../../services/ai/models.js';
 
 const PROPOSER_ROLES = new Set([roleIdFor('people'), roleIdFor('strategy')]);
 const SUBJECT = 'governed_duty_proposal';
+const ROLE_SUBJECT = 'governed_role_proposal';
 
 export interface DutyProposal {
   title: string;
@@ -60,4 +63,55 @@ registerApprovalHook(SUBJECT, async (approval: ApprovalRow, decision: 'approved'
     enabled: proposal.enabled,
   }, takenIds);
   await saveDutyConfig({ custom: validated });
+});
+
+export interface RoleProposal {
+  title: string;
+  kind: 'human' | 'shared_responsibility';
+  unitId: string;
+  reportsToRoleId: string;
+  purpose: string;
+}
+
+export async function proposeRoleChange(proposedByRoleId: string, proposal: RoleProposal): Promise<string> {
+  if (!PROPOSER_ROLES.has(proposedByRoleId)) throw new Error('Only People/HR or Strategy may propose a new organizational role.');
+  const snapshot = await getPersistedOrganizationSnapshot();
+  if (!snapshot.organization.units.some((unit) => unit.id === proposal.unitId)) throw new Error('The proposed role must belong to an existing organizational unit.');
+  if (!snapshot.organization.roles.some((role) => role.id === proposal.reportsToRoleId)) throw new Error('The proposed reporting line must reference an existing role.');
+  const id = `${proposal.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)}-${randomUUID().slice(0, 8)}`;
+  const content = JSON.stringify({ version: 1, id, proposal });
+  const approvalId = await createApprovalRequest({
+    actionType: 'governed_role_proposal',
+    summary: `Proposed organizational role: ${proposal.title}`,
+    requestedByRoleId: proposedByRoleId,
+    riskLevel: 'medium',
+    taskId: null,
+    content,
+    subjectType: ROLE_SUBJECT,
+    subjectId: id,
+  });
+  if (!approvalId) throw new Error('Role proposals require persistent approval storage. Configure Supabase first.');
+  return approvalId;
+}
+
+registerApprovalHook(ROLE_SUBJECT, async (approval: ApprovalRow, decision: 'approved' | 'rejected') => {
+  if (decision !== 'approved') return;
+  if (!approval.content) throw new Error('Approved role proposal has no stored content.');
+  const parsed = JSON.parse(approval.content) as { version?: unknown; id?: unknown; proposal?: unknown };
+  if (parsed.version !== 1 || typeof parsed.id !== 'string' || !parsed.proposal || typeof parsed.proposal !== 'object') throw new Error('Role proposal content version is invalid.');
+  const proposal = parsed.proposal as RoleProposal;
+  const snapshot = await getPersistedOrganizationSnapshot();
+  if (!snapshot.organization.units.some((unit) => unit.id === proposal.unitId) || !snapshot.organization.roles.some((role) => role.id === proposal.reportsToRoleId)) {
+    throw new Error('The organizational structure changed since this proposal was submitted; Founder review is required again.');
+  }
+  await supabaseInsert('organization_roles', {
+    id: parsed.id,
+    title: proposal.title,
+    kind: proposal.kind,
+    unit_id: proposal.unitId,
+    reports_to_role_id: proposal.reportsToRoleId,
+    purpose: proposal.purpose,
+    capabilities: [],
+    activation: 'active',
+  });
 });
