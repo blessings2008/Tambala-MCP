@@ -1,4 +1,5 @@
 import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../../lib/supabase.js';
+import { fetchAllPages, hasDiscoveryQueueHandoff } from './discovery-queue-utils.js';
 import { getBusinessSummary, getDetailedCRMContext, getVerifiedCompanyContext } from '../../services/ai/context.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../../services/ai.js';
 import { getOrganizationSnapshot } from '../service.js';
@@ -302,13 +303,13 @@ export async function dispatchReviewingDiscoveryQueue(): Promise<number> {
     ),
     supabaseSelect<{ request: string; status: string }>(
       'organization_handoffs',
-      'select=request,status&source_duty_id=eq.lead-discovery-queue-research-review&limit=5000',
+      'select=request,status&source_duty_id=in.(lead-discovery-queue-watcher,lead-discovery-queue-research-review)&limit=5000',
     ),
   ]);
   let dispatched = 0;
   for (const prospect of pending) {
     const marker = 'Queue record ID: ' + prospect.id + '.';
-    if (previous.some((item) => item.request.includes(marker))) continue;
+    if (hasDiscoveryQueueHandoff(prospect.id, previous)) continue;
     const contextSummary = JSON.stringify({
       source: 'public.lead_discovery_queue',
       instruction: 'Recovery review of an existing queue record. Use only the supplied evidence; no new web discovery while the engine is paused.',
@@ -799,7 +800,10 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
         if (kind === 'catalog') out.catalog = await catalogContext();
         if (kind === 'invoices') out.invoices = await invoicesContext(at);
         if (kind === 'discovery') {
-          const prospects = await supabaseSelect<Row>('lead_discovery_queue', 'select=organisation_name,verification_status,processing_status&order=created_at.asc&limit=500');
+          const prospects = await fetchAllPages((offset, limit) => supabaseSelect<Row>(
+            'lead_discovery_queue',
+            `select=organisation_name,verification_status,processing_status&order=created_at.asc&offset=${offset}&limit=${limit}`,
+          ));
           const processingCounts: Record<string, number> = {};
           const verificationCounts: Record<string, number> = {};
           for (const prospect of prospects) {
@@ -809,7 +813,7 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
             verificationCounts[verification] = (verificationCounts[verification] ?? 0) + 1;
           }
           out.discovery = {
-            note: 'Complete live lead_discovery_queue snapshot. Central Research & Intelligence owns review; CRM promotion and customer contact remain separately controlled.',
+            note: 'Complete paginated live lead_discovery_queue snapshot. Central Research & Intelligence owns review; CRM promotion and customer contact remain separately controlled.',
             total: prospects.length,
             processing_status_counts: processingCounts,
             verification_status_counts: verificationCounts,
