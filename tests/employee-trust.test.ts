@@ -21,7 +21,7 @@ test('financial, contractual and customer-contact actions are never eligible for
 
 test('earned standing approval is capped and never covers customers or reserved authority', () => {
   assert.deepEqual(STANDING_APPROVAL_DAILY_CAPS, { prepared_work: 5, prepared_content: 3, prepared_internal_task: 5 });
-  const base = { standingApproval: true, actionType: 'prepared_work', riskLevel: 'low' as const, customerFacing: false, reservedAuthority: false, usedToday: 0 };
+  const base: { standingApproval: boolean; actionType: string; riskLevel: 'low' | 'medium' | 'high' | 'critical'; customerFacing: boolean; reservedAuthority: boolean; usedToday: number } = { standingApproval: true, actionType: 'prepared_work', riskLevel: 'low', customerFacing: false, reservedAuthority: false, usedToday: 0 };
   assert.equal(mayUseStandingApproval(base).allowed, true);
   assert.equal(mayUseStandingApproval({ ...base, usedToday: 5 }).allowed, false);
   assert.equal(mayUseStandingApproval({ ...base, customerFacing: true }).allowed, false);
