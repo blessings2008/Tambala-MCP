@@ -11,7 +11,7 @@ import { buildProspectingSearchQueries } from '../services/web-research.js';
 import { signWork } from '../organization/workforce/sign-work.js';
 import { loadPdfForSending } from '../documents/service.js';
 import { documentStore } from '../documents/store.js';
-import { recordQuotationAcceptance } from '../documents/acceptance.js';
+import { markDocumentSent, recordQuotationAcceptance } from '../documents/acceptance.js';
 import { connectionState, evolutionConfig, evolutionConfigured, isWhatsAppNumber, sendDocument, sendText } from './evolution.js';
 import { handleEvolutionWebhook, type FounderMessageEnvelope, type InboundDeps, type InboundSummary } from './inbound.js';
 import { messageStore, type MessageStore } from './message-store.js';
@@ -32,6 +32,7 @@ export function productionOutboxDeps(store: MessageStore = messageStore(), now: 
     store, now, founderNumber,
     transport: { configured: evolutionConfigured, sendText, sendDocument },
     loadDocument: (id) => loadPdfForSending(id),
+    markDocumentSent: async (id, sentAt) => { await markDocumentSent(id, sentAt, documentStore()); },
     sign: (input) => signWork(input),
     approvals: { create: (input) => createApprovalRequest({ ...input }) },
     senderLabel: (roleId) => labelForRole(roleId),
