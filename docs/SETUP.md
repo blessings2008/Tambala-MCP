@@ -111,7 +111,14 @@ Add these variables to the Tambala MCP web service. Do not paste secrets into ch
 7. Reply to the business number from the Founder phone with `PENDING`; confirm the approvals list arrives. Use a test approval only if a harmless test approval is actually pending. Do not approve a real customer message just to test the channel.
 8. If a customer-facing test is necessary, use a test contact that has explicitly agreed to receive it. Create a draft through the normal approval path and verify it is not delivered before Founder approval.
 
-### Customer outcomes and quotation acceptance
+### Earned autonomy and trust limits
+
+- An employee/action-type trust record reaches the threshold after 20 consecutive, unedited Founder approvals. Only action types explicitly listed in `TRUST_ELIGIBLE_ACTIONS` and marked low-risk can earn it. Rejection, edits, medium/high/critical risk, customer complaints and STOP requests reset or demote trust.
+- Standing approval limits are action-specific: prepared internal work (5/day), prepared content drafts (3/day), and prepared internal tasks (5/day). The guard rejects actions over the cap, customer-facing actions, reserved Founder authority and any action not explicitly eligible.
+- **Important current limitation:** no current production action is wired to bypass its approval request using this standing-approval policy. WhatsApp/customer contact, CRM lead promotion, invoices, money movement, pricing, contracts and regulatory actions remain Founder-gated. The trust ledger and policy gate are safety infrastructure, not a claim that autonomous execution is already active.
+- Apply `supabase/migrations/20261115_trust_risk_gate.sql` after `20261115_employee_trust_ledger.sql` to make the database trust counter enforce the low-risk requirement.
+
+## Customer outcomes and quotation acceptance
 
 - Customer replies are linked to the latest sent customer message to that number within 90 days. The inbound record stores the linked outbound message ID and a deterministic intent label; the CEO metrics group replies by the originating employee.
 - `interested`, `question`, `not_interested` and `other` are reply categories, not sales. Only explicit wording such as “we accept the quotation” or “go ahead with the project” can trigger acceptance processing.
