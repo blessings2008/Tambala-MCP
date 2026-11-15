@@ -24,21 +24,70 @@ function optionalString(value: unknown, max: number): string | null {
   return result ? result.slice(0, max) : null;
 }
 
-function parseProspectBlock(body: string): { prospects: Row[]; cleanBody: string } {
-  const match = body.match(/DISCOVERED_PROSPECTS:\s*\x60\x60\x60(?:json)?\s*([\s\S]*?)\x60\x60\x60\s*END_DISCOVERED_PROSPECTS/i);
-  if (!match) throw new Error('Research output is missing the required DISCOVERED_PROSPECTS JSON block; no prospects were saved.');
-  let parsed: unknown;
-  try { parsed = JSON.parse(match[1].trim()); }
-  catch { throw new Error('The DISCOVERED_PROSPECTS block contains invalid JSON; no prospects were saved.'); }
-  if (!Array.isArray(parsed)) throw new Error('DISCOVERED_PROSPECTS must be a JSON array.');
+export function parseProspectBlock(body: string): { prospects: Row[]; cleanBody: string; parseIssue?: string } {
+  const wrapped = body.match(/DISCOVERED_PROSPECTS:\s*\x60\x60\x60(?:json)?\s*([\s\S]*?)\x60\x60\x60\s*END_DISCOVERED_PROSPECTS/i);
+  const fenced = wrapped ? null : body.match(/\x60\x60\x60json\s*([\s\S]*?)\x60\x60\x60/i);
+  const source = wrapped?.[1] ?? fenced?.[1] ?? '';
+  const arrayStart = source.indexOf('[');
+  if (arrayStart < 0) {
+    return {
+      prospects: [],
+      cleanBody: wrapped ? body.replace(wrapped[0], '').trim() : fenced ? body.replace(fenced[0], '').trim() : body.trim(),
+      parseIssue: 'No DISCOVERED_PROSPECTS JSON array was present; no prospects were saved.',
+    };
+  }
+
+  const jsonText = source.slice(arrayStart).trim();
+  let prospects: Row[] = [];
+  let parseIssue: string | undefined;
+  try {
+    const parsed: unknown = JSON.parse(jsonText);
+    if (Array.isArray(parsed)) prospects = parsed.filter((item): item is Row => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
+    else parseIssue = 'DISCOVERED_PROSPECTS must contain a JSON array.';
+  } catch {
+    // Recover every complete top-level object before a truncated final object.
+    let objectDepth = 0;
+    let objectStart = -1;
+    let inString = false;
+    let escaped = false;
+    for (let i = arrayStart + 1; i < source.length; i += 1) {
+      const ch = source[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') { inString = true; continue; }
+      if (ch === '{') {
+        if (objectDepth === 0) objectStart = i;
+        objectDepth += 1;
+      } else if (ch === '}') {
+        objectDepth -= 1;
+        if (objectDepth === 0 && objectStart >= 0) {
+          try {
+            const item: unknown = JSON.parse(source.slice(objectStart, i + 1));
+            if (item && typeof item === 'object' && !Array.isArray(item)) prospects.push(item as Row);
+          } catch { /* Ignore this malformed object and continue salvaging later complete objects. */ }
+          objectStart = -1;
+        }
+      } else if (ch === ']' && objectDepth === 0) break;
+    }
+    parseIssue = prospects.length
+      ? \`Research output was truncated or malformed; recovered \${prospects.length} complete prospect record(s).\`
+      : 'DISCOVERED_PROSPECTS JSON was malformed or truncated; no complete prospect records could be recovered.';
+  }
+
+  const removed = wrapped?.[0] ?? fenced?.[0] ?? source.slice(arrayStart);
   return {
-    prospects: parsed as Row[],
-    cleanBody: body.replace(match[0], '').trim(),
+    prospects,
+    cleanBody: removed ? body.replace(removed, '').trim() : body.trim(),
+    parseIssue,
   };
 }
 
 export async function persistDiscoveredProspects(body: string): Promise<{ cleanBody: string; saved: number; duplicates: number; rejected: number; details: string[] }> {
-  const { prospects, cleanBody } = parseProspectBlock(body);
+  const { prospects, cleanBody, parseIssue } = parseProspectBlock(body);
   const [queueRows, leads, clients] = await Promise.all([
     supabaseSelect<Row>('lead_discovery_queue', { select: 'id,organisation_name', limit: '5000' }),
     supabaseSelect<Row>('leads', { select: 'id,name,business_name', limit: '5000' }),
@@ -51,8 +100,8 @@ export async function persistDiscoveredProspects(body: string): Promise<{ cleanB
     }
   }
 
-  let saved = 0, duplicates = 0, rejected = 0;
-  const details: string[] = [];
+  let saved = 0, duplicates = 0, rejected = parseIssue ? 1 : 0;
+  const details: string[] = parseIssue ? [parseIssue] : [];
   for (const [index, row] of prospects.entries()) {
     const name = optionalString(row.organisation_name, 200);
     if (!name || !normaliseName(name)) { rejected++; details.push(`Item ${index + 1}: missing organisation_name.`); continue; }
@@ -95,7 +144,8 @@ export async function persistDiscoveredProspects(body: string): Promise<{ cleanB
       if (/23505|duplicate key|unique constraint/i.test(message)) {
         duplicates++; details.push(`${name}: duplicate blocked by database constraint.`);
       } else {
-        throw new Error(`Could not save ${name}: ${message.slice(0, 180)}`);
+        rejected++;
+        details.push(`${name}: could not be saved (${message.slice(0, 160)}). Other complete prospects will continue processing.`);
       }
     }
   }
