@@ -221,6 +221,21 @@ test('outbox: first-contact messages outside CRM still require explicit Founder 
   assert.equal(h.sent.some((item) => item.number === '265888123456'), false);
 });
 
+test('outbox: legacy queued customer messages without Founder approval are held', async () => {
+  const h = outboxHarness();
+  const row = await h.store.add({
+    direction: 'out', number: '265888123456', audience: 'client', purpose: 'outreach',
+    from_role_id: 'director-sales-business-development', text: 'Legacy first-contact message', document_id: null,
+    approval_id: null, status: 'queued', reason: null, provider_message_id: null, attempts: 0,
+    task_id: null, signature: 'AAAA-BBBB-CCCC-DDDD', contact_label: 'Legacy Prospect',
+    created_at: MON_10AM, sent_at: null,
+  });
+  const results = await processOutbox(h.deps);
+  assert.equal(results.find((item) => item.id === row.id)?.status, 'waiting');
+  assert.equal((await h.store.byId(row.id))?.status, 'pending_approval');
+  assert.equal(h.sent.some((item) => item.number === '265888123456'), false);
+});
+
 test('outbox: at most one customer message is attempted per scheduler pass', async () => {
   const h = outboxHarness();
   const first = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello first prospect.', purpose: 'outreach' });
