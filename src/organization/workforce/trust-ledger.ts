@@ -1,6 +1,12 @@
 import { supabaseRpc, supabaseSelect } from '../../lib/supabase.js';
 import { identityForRole } from './profiles.js';
 
+export const TRUST_APPROVAL_THRESHOLD = 20;
+
+export function earnsStandingApproval(consecutiveApprovals: number, actionType: string, approved: boolean, unedited: boolean): boolean {
+  return approved && unedited && TRUST_ELIGIBLE_ACTIONS.has(actionType) && consecutiveApprovals >= TRUST_APPROVAL_THRESHOLD;
+}
+
 export const TRUST_ELIGIBLE_ACTIONS = new Set([
   'prepared_followups',
   'prepared_work',
