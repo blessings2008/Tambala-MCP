@@ -27,7 +27,7 @@ export async function recordTrustOutcome(input: {
   requestedByRoleId: string;
   actionType: string;
   approved: boolean;
-  note?: string;
+  unedited: boolean;
   now?: Date;
 }): Promise<EmployeeTrust | null> {
   const identity = identityForRole(input.requestedByRoleId);
@@ -37,7 +37,7 @@ export async function recordTrustOutcome(input: {
     p_employee_number: identity.employeeNumber,
     p_action_type: input.actionType,
     p_approved: input.approved,
-    p_unedited: !Boolean(input.note?.trim()),
+    p_unedited: input.unedited,
     p_eligible: eligible,
     p_now: (input.now ?? new Date()).toISOString(),
   });
