@@ -1,7 +1,7 @@
 # Getting Tambala MCP fully functional
 
 1. **Run the migrations** in `supabase/migrations/` in filename order (SQL editor). They are idempotent. Apply `20261108_whatsapp_outbox_claims.sql` after `20261101_channels_documents_payments.sql` and before enabling the WhatsApp worker.
-2. **Activate the agents you want working:** review then run `supabase/manual/activate_agent_roles.sql`.
+2. Apply `supabase/migrations/20261115_runtime_reliability.sql` after the existing migrations. It creates the durable duty heartbeat and Founder-controlled global pause state. **Activate the agents you want working:** review then run `supabase/manual/activate_agent_roles.sql`.
    Execution only happens for `active` roles; this is deliberately not a migration.
 3. **Set environment variables** from `.env.example` (at minimum the Supabase key, the orchestrator and each
    specialist's key/base URL/model, and `TAMBALA_WEB_SEARCH_API_KEY` for research tasks).
@@ -17,6 +17,18 @@ Local dev without a database: `TAMBALA_DEV_ACTIVE_ROLES=true` treats agent roles
 Regenerate SQL after editing the seed: `npm run seed:sql`.
 
 ## Running the organization day to day
+
+### Reliability, watchdog and emergency pause
+
+- `GET /health` is a liveness check: it confirms the Node process is responding. `GET /ready` is the dependency check: it reports Supabase readiness and Evolution WhatsApp state separately. A disconnected WhatsApp channel is visible as a dependency warning; it does not make the application process appear dead.
+- The in-process duty scheduler records a durable heartbeat in `organization_runtime_heartbeat` after a completed duty cycle and records the latest failure. Configure `TAMBALA_HEARTBEAT_MAX_MINUTES` (default 30) and `TAMBALA_HEARTBEAT_ALERT_COOLDOWN_MINUTES` (default 60).
+- Configure an external cron to call `POST /api/runtime/watchdog` every minute with `Authorization: Bearer $TAMBALA_SCHEDULER_TOKEN`. It sends a signed Founder WhatsApp alert when the last completed duty cycle is overdue. It suppresses alerts while the global pause is active. This watchdog cron must run independently of the in-process scheduler.
+- The dashboard has a **Pause all / Resume all** control. The Founder can also send `PAUSE ALL [reason]`, `PAUSE STATUS`, or `RESUME ALL` from the verified Founder WhatsApp number. The MCP tools `get_global_runtime_control` and `set_global_runtime_pause` expose the same control; the write tool requires an OAuth client actively bound to the Founder role.
+- Every pause/resume action is signed as TT-000 and persisted with its signature fingerprint. AI requests, duty execution, and queued WhatsApp delivery are blocked while paused. The inbound Founder command remains available so the Founder can resume. Applying the migration and configuring a stable `TAMBALA_SIGNING_SECRET` are required before the switch can be changed.
+- The pause switch does not stop Render itself, database services, or external cron infrastructure. It stops organization execution paths inside this application.
+
+For a reliable 24/7 deployment, use an always-on Render web service/paid instance or a separate always-on worker. Do not rely on an in-process timer on a sleeping/free web-service plan. Run the watchdog and duty triggers from an independent external scheduler so they can wake/check the service even after an application process restart.
+
 
 Each role is a staff member with a job description, working hours (Mon-Fri 08:00-17:00, Africa/Blantyre) and
 standing duties (see `src/organization/workforce/duties.ts`). Examples: Security reviews the audit log at 07:30,
