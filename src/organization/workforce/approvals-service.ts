@@ -76,7 +76,9 @@ export async function decideApproval(input: {
       requestedByRoleId: current.requested_by_role_id,
       actionType: current.action_type,
       approved: input.decision === 'approved',
-      note: /^approved by whatsapp$/i.test(note) ? '' : note,
+      // Resolution notes explain the decision; they are not edits to the approved work.
+      // This decision endpoint has no content-edit field, so an approval is unedited.
+      unedited: input.decision === 'approved',
     });
     if (trust?.standing_approval) console.info('Employee earned standing approval for an eligible low-risk action type:', trust.employee_number, trust.action_type);
   } catch (error) {
