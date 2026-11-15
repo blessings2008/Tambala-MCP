@@ -43,6 +43,10 @@ create table if not exists public.organization_runtime_control (
   updated_at timestamptz not null default now()
 );
 
+alter table public.organization_runtime_control
+  add column if not exists signature_fingerprint text,
+  add column if not exists signature_record_id uuid;
+
 insert into public.organization_runtime_control (id, paused)
 values ('global', false)
 on conflict (id) do nothing;
