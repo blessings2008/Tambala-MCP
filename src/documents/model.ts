@@ -36,6 +36,13 @@ export const documentInputSchema = z.object({
   notes: text(1500).optional(),
   terms: text(2000).optional(),
   validityDays: z.number().int().min(1).max(365).optional(),
+  clientCode: text(24).regex(/^[A-Za-z0-9-]+$/).optional(),
+  project: text(240).optional(),
+  sections: z.array(z.object({ title: text(120).min(1), body: text(2400).optional() })).max(8).optional(),
+  milestones: z.array(z.object({ label: text(120).min(1), percentage: z.number().min(0).max(100) })).max(8).optional(),
+  recurringFees: z.array(z.object({ description: text(180).min(1), amountMinor: z.number().int().nonnegative().optional(), included: z.boolean().default(false) })).max(12).optional(),
+  termsBullets: z.array(text(600).min(1)).max(20).optional(),
+  closingLine: text(240).optional(),
   vatPercent: z.number().min(0).max(100).optional(),
   paymentLink: z.string().url().max(500).startsWith('https://').optional(),
   paidAt: z.string().max(40).optional(), // receipts
@@ -58,6 +65,10 @@ export interface StoredDocument {
   number: string; kind: DocKind; issuedAt: string; validUntil: string | null;
   client: z.infer<typeof partySchema>; items: ResolvedItem[]; totals: Totals; currency: string;
   reference?: string; subject?: string; body?: string; notes?: string; terms?: string; paymentLink?: string; paidAt?: string; paidVia?: string;
+  project?: string; sections?: Array<{ title: string; body?: string }>;
+  milestones?: Array<{ label: string; percentage: number }>;
+  recurringFees?: Array<{ description: string; amountMinor?: number; included: boolean }>;
+  termsBullets?: string[]; closingLine?: string;
 }
 
 export const defaultVat = (): number => {
