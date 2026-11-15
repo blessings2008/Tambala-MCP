@@ -4,7 +4,7 @@ import { buildBoardMeetingSnapshot } from '../src/organization/workforce/duty-se
 import { buildDutyPrompt } from '../src/organization/workforce/duty-runner.ts';
 import { localTime } from '../src/organization/workforce/schedule.ts';
 import type { DutyRun } from '../src/organization/workforce/duty-store.ts';
-import type { StandingDuty } from '../src/organization/workforce/duties.ts';
+import { STANDING_DUTIES, type StandingDuty } from '../src/organization/workforce/duties.ts';
 
 const ids = ['sales-board-update', 'operations-board-update', 'technology-board-update', 'finance-board-update'];
 const duties = [{ id: 'morning-board-opening', agent: 'orchestrator', title: 'Chair opening' }, ...ids.map((id) => ({ id, agent: 'outreach', title: id }))] as unknown as StandingDuty[];
@@ -41,4 +41,14 @@ test('CEO minutes prompt makes the report matrix authoritative', () => {
   const prompt = buildDutyPrompt(minutesDuty, localTime(new Date('2026-11-09T06:25:00Z')));
   assert.match(prompt, /context\.boardMeeting/);
   assert.match(prompt, /mark the minutes COMPLETE only when boardMeeting\.status is COMPLETE/);
+});
+
+test('CEO has a Monday 08:00 weekly operating plan duty with real company data sources', () => {
+  const duty = STANDING_DUTIES.find((item) => item.id === 'ceo-weekly-operating-plan');
+  assert.ok(duty);
+  assert.equal(duty.agent, 'orchestrator');
+  assert.deepEqual(duty.cadence, { kind: 'weekly', day: 1 });
+  assert.equal(duty.time, '08:00');
+  assert.deepEqual(duty.contexts, ['crm', 'organization', 'invoices', 'company']);
+  assert.match(duty.deliverable, /unavailable metric/i);
 });
