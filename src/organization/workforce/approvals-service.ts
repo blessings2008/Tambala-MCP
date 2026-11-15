@@ -76,6 +76,7 @@ export async function decideApproval(input: {
       requestedByRoleId: current.requested_by_role_id,
       actionType: current.action_type,
       approved: input.decision === 'approved',
+      riskLevel: current.risk_level,
       // Resolution notes explain the decision; they are not edits to the approved work.
       // This decision endpoint has no content-edit field, so an approval is unedited.
       unedited: input.decision === 'approved',
