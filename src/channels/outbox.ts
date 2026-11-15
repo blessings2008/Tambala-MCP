@@ -17,6 +17,7 @@ export interface OutboxDeps {
     sendDocument: (number: string, base64: string, fileName: string, caption: string) => Promise<{ id: string | null }>;
   };
   loadDocument: (id: string) => Promise<{ base64: string; fileName: string } | null>;
+  markDocumentSent?: (id: string, sentAt: string) => Promise<void>;
   sign: (input: { roleId: string; kind: 'message'; subjectId: string; content: string }) => Promise<{ block: string; fingerprint: string | null }>;
   approvals: { create: (input: { actionType: string; summary: string; requestedByRoleId: string; riskLevel: 'low' | 'medium'; taskId: string | null; content: string; subjectType: string; subjectId: string }) => Promise<string | null> };
   senderLabel: (roleId: string) => string;
@@ -180,9 +181,15 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
         if (!doc) throw new EvolutionError('The attached document could not be found.', false);
         result = await deps.transport.sendDocument(row.number, doc.base64, doc.fileName, row.text);
       } else result = await deps.transport.sendText(row.number, row.text);
-      await deps.store.update(row.id, { status: 'sent', claimed_at: null, provider_message_id: result.id, sent_at: deps.now().toISOString(), attempts: row.attempts + 1, reason: null });
+      const sentAt = deps.now().toISOString();
+      await deps.store.update(row.id, { status: 'sent', claimed_at: null, provider_message_id: result.id, sent_at: sentAt, attempts: row.attempts + 1, reason: null });
+      let documentWarning: string | undefined;
+      if (row.document_id && deps.markDocumentSent) {
+        try { await deps.markDocumentSent(row.document_id, sentAt); }
+        catch (error) { documentWarning = 'Message was sent, but the document status could not be updated: ' + (error instanceof Error ? error.message : 'unknown error'); }
+      }
       if (row.audience === 'client') sentClient += 1; else counts.founder += 1;
-      out.push({ id: row.id, status: 'sent' });
+      out.push({ id: row.id, status: 'sent', ...(documentWarning ? { reason: documentWarning } : {}) });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Send failed.';
       const retryable = error instanceof EvolutionError ? error.retryable : false;
