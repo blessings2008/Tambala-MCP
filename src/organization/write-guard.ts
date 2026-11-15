@@ -8,7 +8,7 @@ import { assertRuntimeActive } from './runtime-control.js';
 export const STANDARD_WRITE_TOOLS: ReadonlySet<string> = new Set([
   'create_client', 'update_client', 'create_project', 'update_project',
   'create_lead', 'update_lead', 'submit_prospect_for_review', 'update_prospect_review_status', 'create_task', 'update_task',
-  'record_activity', 'run_tambala_automation', 'run_due_organization_duties', 'assign_work_to_employee', 'create_document',
+  'record_activity', 'run_tambala_automation', 'run_due_organization_duties', 'assign_work_to_employee', 'create_document', 'propose_organization_duty',
 ]);
 
 /** Tools that move money, contact people, archive data or approve actions. Founder only. */
