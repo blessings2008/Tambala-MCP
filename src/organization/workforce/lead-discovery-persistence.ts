@@ -76,7 +76,7 @@ export function parseProspectBlock(body: string): { prospects: Row[]; cleanBody:
       } else if (ch === ']' && objectDepth === 0) break;
     }
     parseIssue = prospects.length
-      ? \`Research output was truncated or malformed; recovered \${prospects.length} complete prospect record(s).\`
+      ? 'Research output was truncated or malformed; recovered ' + prospects.length + ' complete prospect record(s).'
       : 'DISCOVERED_PROSPECTS JSON was malformed or truncated; no complete prospect records could be recovered.';
   }
 
