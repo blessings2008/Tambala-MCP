@@ -145,6 +145,10 @@ The global pause is a Founder-controlled runtime switch. Use the dashboard pause
 
 The dashboard's rolling 24-hour duty error budget is calculated from recorded duty-run rows only. No recorded runs means unavailable, not 100% success. Use an always-on Render paid web service or a VPS/container host with process supervision, restart policy, persistent secrets and external cron. Do not rely on Render free-instance in-process timers for 24/7 execution. Configure external cron for both duty execution and the watchdog; use the same scheduler token with HTTPS Bearer authentication.
 
+### Weekly CEO planning duty
+
+The CEO has a built-in weekly operating-plan duty scheduled for Monday at 08:00 Africa/Blantyre time. It reads the CRM, organization, invoice and company contexts and produces a signed duty result covering evidence-based targets, department priorities, existing commitments, risks and Founder decisions. It cannot change prices, make financial commitments, alter employee permissions or take regulatory positions. Duty scheduling still requires the always-on worker or external cron described above.
+
 ### Company outcomes
 
 The dashboard exposes a rolling 30-day `goals` section sourced from the discovery queue, quotation documents, invoice ledger and WhatsApp message ledger:
