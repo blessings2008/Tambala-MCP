@@ -272,6 +272,69 @@ export async function dispatchNewDiscoveryQueue(): Promise<number> {
   } finally {
     discoveryQueueDispatchRunning = false;
   }
+
+
+/**
+ * Re-review records already left in "reviewing" by the earlier Sales-owned
+ * workflow. A separate source duty ID makes this one-shot and idempotent:
+ * each record is sent to Research at most once by this recovery pass.
+ */
+export async function dispatchReviewingDiscoveryQueue(): Promise<number> {
+  if (!dbConfigured()) return 0;
+  const [pending, previous] = await Promise.all([
+    supabaseSelect<DiscoveryQueueRow>(
+      'lead_discovery_queue',
+      'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id&processing_status=eq.reviewing&order=created_at.asc&limit=100',
+    ),
+    supabaseSelect<{ request: string; status: string }>(
+      'organization_handoffs',
+      'select=request,status&source_duty_id=eq.lead-discovery-queue-research-review&limit=5000',
+    ),
+  ]);
+  let dispatched = 0;
+  for (const prospect of pending) {
+    const marker = \`Queue record ID: \${prospect.id}.\`;
+    if (previous.some((item) => item.request.includes(marker))) continue;
+    const contextSummary = JSON.stringify({
+      source: 'public.lead_discovery_queue',
+      instruction: 'Recovery review of an existing queue record. Use only the supplied evidence; no new web discovery while the engine is paused.',
+      prospect: {
+        id: prospect.id,
+        organisation_name: prospect.organisation_name,
+        website: prospect.website,
+        sector: prospect.sector,
+        service_fit: prospect.service_fit,
+        reason_for_fit: prospect.reason_for_fit?.slice(0, 800) ?? null,
+        decision_maker_name: prospect.decision_maker_name,
+        decision_maker_title: prospect.decision_maker_title,
+        public_email: prospect.public_email,
+        public_phone: prospect.public_phone,
+        source_urls: Array.isArray(prospect.source_urls) ? prospect.source_urls.filter((value): value is string => typeof value === 'string').slice(0, 8) : [],
+        verification_status: prospect.verification_status,
+        processing_status: prospect.processing_status,
+        crm_lead_id: prospect.crm_lead_id ?? null,
+      },
+    });
+    await queueHandoff(handoffStore(), {
+      fromRoleId: 'ceo',
+      toAgent: 'research',
+      sourceDutyId: 'lead-discovery-queue-research-review',
+      request: [
+        'Central Research & Intelligence: re-assess this existing queue record because the previous workflow left it in reviewing.',
+        'Use only the supplied record and its listed source URLs; do not run broad discovery and do not contact the organisation.',
+        'Return the exact organisation name, queue record ID, supported service fit, public organisational contact evidence, remaining verification gaps, and QUALIFY / INVESTIGATE / REJECT.',
+        'A named decision-maker is optional. Do not invent facts or upgrade partial verification without explicit evidence. If the supplied record is insufficient, state the exact missing evidence.',
+        marker,
+      ].join(' '),
+      contextSummary,
+      sign: signWork,
+    });
+    dispatched++;
+  }
+  if (dispatched) console.log('Discovery queue recovery handoffs sent to Research:', dispatched);
+  return dispatched;
+}
+
 }
 
 let discoveryApprovalDispatchRunning = false;
@@ -493,7 +556,7 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
       ),
       supabaseSelect<{ id: string; request: string; result: string | null; status: string }>(
         'organization_handoffs',
-        'select=id,request,result,status&source_duty_id=eq.lead-discovery-queue-watcher&status=eq.completed&order=created_at.desc&limit=300',
+        'select=id,request,result,status&source_duty_id=in.(lead-discovery-queue-watcher,lead-discovery-queue-research-review)&status=eq.completed&order=created_at.desc&limit=300',
       ),
       supabaseSelect<ApprovalRow>(
         'organization_approval_requests',
@@ -723,7 +786,7 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
         if (kind === 'briefing') out.briefing = await briefingContext(store, at);
         if (kind === 'catalog') out.catalog = await catalogContext();
         if (kind === 'invoices') out.invoices = await invoicesContext(at);
-        if (kind === 'discovery') out.discovery = { note: 'Research queue. Central Research & Intelligence reviews records; CRM promotion and customer contact remain separately controlled.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,service_fit,verification_status,processing_status,crm_lead_id&processing_status=in.(new,reviewing,qualified)&order=research_date.desc,created_at.desc&limit=100') };
+        if (kind === 'discovery') out.discovery = { note: 'Research queue. Central Research & Intelligence reviews records; CRM promotion and customer contact remain separately controlled.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,verification_status,processing_status&order=created_at.asc&limit=500') };
       }
       return out;
     },
@@ -766,7 +829,10 @@ export async function runDutiesOnce(opts: { dutyId?: string; force?: boolean; ha
   running = true;
   try {
     const outcomes = opts.handoffsOnly ? [] : await runDueDuties(productionDeps(), opts);
-    if (!opts.skipDiscoveryQueue) await dispatchNewDiscoveryQueue();
+    if (!opts.skipDiscoveryQueue) {
+      await dispatchNewDiscoveryQueue();
+      await dispatchReviewingDiscoveryQueue();
+    }
     try { await dispatchPromotedProspectsToSales(); }
     catch (error) { console.error('Promoted-prospect dispatch failed; existing handoffs will still be processed:', error); }
     const handoffs = await processHandoffs(productionHandoffDeps());
@@ -818,7 +884,7 @@ export async function buildWorkforce(now: Date = new Date()) {
   const store = dutyStore();
   const week = new Date(now.getTime() - 7 * 24 * 3_600_000).toISOString();
   const [runs, snapshot, duties, handoffRows] = await Promise.all([
-    store.recent(week).then((rows) => rows.slice(0, 25)), getOrganizationSnapshot(),
+    store.recent(week), getOrganizationSnapshot(),
     loadDuties(configStore()), handoffStore().recent(week).catch(() => [] as Handoff[]),
   ]);
   let tasks: Row[] = [];
