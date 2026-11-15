@@ -5,7 +5,7 @@ import { AGENT_PROMPT_RULES } from './ai/rules.js';
 import { reportRuntimeIncident } from '../organization/workforce/incident-events.js';
 import { assertRuntimeActive } from '../organization/runtime-control.js';
 import { dbConfigured } from '../organization/workforce/db-util.js';
-import { recordAIUsage } from './ai/spend.js';
+import { assertFreeAIModel, recordAIUsage } from './ai/spend.js';
 import { formatResearchContext, webResearch, webResearchMany } from './web-research.js';
 
 const clients = new Map<AgentName, OpenAI>();
@@ -168,6 +168,7 @@ export async function askTambalaAIWithWebResearch(agent: AgentName, input: strin
 async function askTambalaAIInternal(agent: AgentName, input: string, context?: unknown): Promise<string> {
   await assertRuntimeActive();
   const config = getAgentRuntimeConfig(agent);
+  assertFreeAIModel(config.provider, config.model);
   const releaseSlot = acquireAgentRequestSlot(agent);
   try {
     const systemPrompt = boundText(AGENT_PROMPT_RULES[agent], agent === 'outreach' && input.includes('WEB RESEARCH RESULT') ? 4_200 : MAX_SYSTEM_PROMPT_CHARS);
