@@ -114,7 +114,7 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
     summary.stored += 1;
     if (!number) { summary.unresolved += 1; continue; }
 
-    if (number !== founder && /\\b(complaint|complain|spam|report you|report this number|unprofessional|harassment)\\b/i.test(text)) {
+    if (number !== founder && /\b(complaint|complain|spam|report you|report this number|unprofessional|harassment)\b/i.test(text)) {
       await deps.demoteTrustForNumber?.(number, 'Customer complaint or spam report').catch(() => undefined);
       await deps.tellFounder(`${label ?? maskNumber(number)} sent a complaint or spam-related message. Employee standing approvals linked to the latest outbound contact have been demoted.`).catch(() => undefined);
     }
