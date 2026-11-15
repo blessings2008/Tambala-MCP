@@ -24,7 +24,7 @@ export function validateProposalEvidence(value: unknown): ProposalEvidence[] {
     if (typeof item.reference !== 'string' || item.reference.trim().length < 3 || item.reference.length > 300) throw new Error('Evidence needs a traceable record reference.');
     if (typeof item.summary !== 'string' || item.summary.trim().length < 10 || item.summary.length > 500) throw new Error('Evidence summaries must be 10 to 500 characters.');
     if (item.type === 'web_source' && (typeof item.sourceUrl !== 'string' || !item.sourceUrl.toLowerCase().startsWith('https://'))) throw new Error('Web evidence must include an HTTPS source URL.');
-    if (item.sourceUrl !== undefined && (typeof item.sourceUrl !== 'string' || !/^https:\\/\\//i.test(item.sourceUrl))) throw new Error('Evidence source URLs must use HTTPS.');
+    if (item.sourceUrl !== undefined && (typeof item.sourceUrl !== 'string' || !item.sourceUrl.toLowerCase().startsWith('https://'))) throw new Error('Evidence source URLs must use HTTPS.');
     return { type: item.type as ProposalEvidenceType, reference: item.reference.trim(), summary: item.summary.trim(), ...(typeof item.sourceUrl === 'string' ? { sourceUrl: item.sourceUrl } : {}) };
   });
 }
