@@ -137,12 +137,13 @@ async function invoicesContext(now: Date): Promise<Row> {
 async function organizationContext(store: DutyStore, now: Date): Promise<Row> {
   const day = new Date(now.getTime() - 24 * 3_600_000).toISOString();
   const week = new Date(now.getTime() - 7 * 24 * 3_600_000).toISOString();
-  const [audit, tasks, failedEvents, bindings, runs] = await Promise.all([
+  const [audit, tasks, failedEvents, bindings, runs, deniedAudit] = await Promise.all([
     recentRows('organization_audit_events', `select=action,outcome,reason,created_at&created_at=gte.${encodeURIComponent(day)}&order=created_at.desc&limit=20`),
     recentRows('organization_tasks', `select=objective,status,assigned_role_id,error_message,created_at&created_at=gte.${encodeURIComponent(week)}&order=created_at.desc&limit=30`),
     recentRows('organization_task_events', `select=task_id,event_type,stage,actor_role_id,department_id,payload,created_at&event_type=eq.stage_failed&created_at=gte.${encodeURIComponent(week)}&order=created_at.desc&limit=30`),
     recentRows('organization_actor_bindings', 'select=role_id,active&active=eq.true'),
     store.recent(week).then((rows) => rows.slice(0, 25)),
+    recentRows('organization_audit_events', `select=action,outcome,reason,created_at&created_at=gte.${encodeURIComponent(day)}&outcome=neq.success&order=created_at.desc&limit=500`),
   ]);
   const compactText = (value: unknown, max = 180) => typeof value === 'string' ? value.slice(0, max) : value ?? null;
   const compactPayload = (value: unknown): Row => {
@@ -156,6 +157,8 @@ async function organizationContext(store: DutyStore, now: Date): Promise<Row> {
   };
   return {
     audit_last_24h: audit.slice(0, 10).map((row) => ({ action: compactText(row.action, 100), outcome: row.outcome, reason: compactText(row.reason), created_at: row.created_at })),
+    audit_non_success_last_24h: deniedAudit.slice(0, 30).map((row) => ({ action: compactText(row.action, 100), outcome: row.outcome, reason: compactText(row.reason), created_at: row.created_at })),
+    audit_denials_truncated: deniedAudit.length > 30 || deniedAudit.length >= 500,
     tasks_last_7d: tasks.slice(0, 15).map((row) => ({ objective: compactText(row.objective), status: row.status, assigned_role_id: row.assigned_role_id, error_message: compactText(row.error_message), created_at: row.created_at })),
     failed_task_events_last_7d: failedEvents.slice(0, 15).map((row) => ({ task_id: row.task_id, event_type: row.event_type, stage: row.stage, actor_role_id: row.actor_role_id, department_id: row.department_id, payload: compactPayload(row.payload), created_at: row.created_at })),
     active_role_bindings: bindings.map((row) => row.role_id).slice(0, 40),
