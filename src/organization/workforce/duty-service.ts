@@ -297,10 +297,10 @@ export async function dispatchNewDiscoveryQueue(maxCount = 5): Promise<number> {
 export async function dispatchReviewingDiscoveryQueue(maxCount = 5): Promise<number> {
   if (!dbConfigured() || maxCount <= 0) return 0;
   const [pending, previous] = await Promise.all([
-    supabaseSelect<DiscoveryQueueRow>(
+    fetchAllPages((offset, limit) => supabaseSelect<DiscoveryQueueRow>(
       'lead_discovery_queue',
-      'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id&processing_status=eq.reviewing&order=created_at.asc&limit=${Math.min(5, Math.floor(maxCount))}',
-    ),
+      `select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id&processing_status=eq.reviewing&order=created_at.asc&offset=${offset}&limit=${limit}`,
+    )),
     supabaseSelect<{ request: string; status: string }>(
       'organization_handoffs',
       'select=request,status&source_duty_id=in.(lead-discovery-queue-watcher,lead-discovery-queue-research-review)&limit=5000',
@@ -308,6 +308,7 @@ export async function dispatchReviewingDiscoveryQueue(maxCount = 5): Promise<num
   ]);
   let dispatched = 0;
   for (const prospect of pending) {
+    if (dispatched >= Math.min(5, Math.floor(maxCount))) break;
     const marker = 'Queue record ID: ' + prospect.id + '.';
     if (hasDiscoveryQueueHandoff(prospect.id, previous)) continue;
     const contextSummary = JSON.stringify({
