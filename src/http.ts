@@ -25,7 +25,7 @@ import { toMinor } from './documents/model.js';
 import { createClientInvoice, InvoiceError } from './payments/invoices.js';
 import { buildDashboard } from './http/dashboard-api.js';
 import { setCorsHeaders } from './http/cors.js';
-import { handleHealth, handleNotFound } from './http/health.js';
+import { handleHealth, handleNotFound, handleReadiness } from './http/health.js';
 import { isAuthorized, unauthorized } from './http/auth.js';
 import { advanceTrackedTask, beginTrackedTask, failTrackedTask } from './organization/task-tracking.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo, type AgentName } from './services/ai.js';
@@ -209,6 +209,7 @@ const server = createHttpServer(async (req, res) => {
   const requestPath = req.url?.split('?')[0] ?? '/';
   if (await handleOAuth(req, res, requestPath)) return;
   if (requestPath === '/health' && req.method === 'GET') { handleHealth(res); return; }
+  if (requestPath === '/ready' && req.method === 'GET') { await handleReadiness(res); return; }
 
   if (requestPath === '/webhooks/evolution' && req.method === 'POST') {
     if (!webhookTokenMatches(req.url, req)) { json(res, 401, { error: 'Unauthorized.' }); return; }
