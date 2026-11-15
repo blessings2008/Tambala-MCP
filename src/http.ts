@@ -17,7 +17,7 @@ import { dbConfigured, NeedsDatabaseError } from './organization/workforce/db-ut
 import { AGENT_DIRECTORY } from './services/ai/models.js';
 import { startDutyScheduler } from './organization/workforce/scheduler.js';
 import { claimStaleDutyAlert, markDutyCycleCompleted, markDutyCycleFailed, markDutyCycleStarted } from './organization/workforce/heartbeat.js';
-import { getRuntimeControl, setRuntimePaused } from './organization/runtime-control.js';
+import { assertRuntimeActive, getRuntimeControl, setRuntimePaused } from './organization/runtime-control.js';
 import { handleWebhook, channelStatus, founderNumber, queueWhatsApp, runOutbox } from './channels/service.js';
 import { OutboxError } from './channels/outbox.js';
 import { createDocument, DocumentError } from './documents/service.js';
@@ -244,6 +244,10 @@ const server = createHttpServer(async (req, res) => {
 
   if ((requestPath === '/api/chat-test/status' || requestPath === '/api/chat-test' || requestPath === '/api/chat-test/collaborate' || requestPath === '/api/chat-test/step' || requestPath === '/api/dashboard' || requestPath === '/api/dashboard/approvals/decide' || requestPath.startsWith('/api/dashboard/')) && (req.method === 'GET' || req.method === 'POST')) {
     if (!chatTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized. Check the chat test token.' }); return; }
+  }
+  if (requestPath.startsWith('/api/dashboard/') && req.method === 'POST') {
+    try { await assertRuntimeActive(); }
+    catch (error) { json(res, 503, { error: error instanceof Error ? error.message : 'Tambala organization is paused.' }); return; }
   }
 
   if (requestPath === '/api/chat-test/status' && req.method === 'GET') {
