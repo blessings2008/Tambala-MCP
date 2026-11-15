@@ -1,3 +1,4 @@
+import { inflateSync } from 'node:zlib';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { computeTotals, documentInputSchema, type StoredDocument } from '../src/documents/model.ts';
@@ -49,7 +50,8 @@ test('quotation PDF renders two A4 pages and includes the MCHS reference section
     closingLine: 'Thank you for considering Tambala Technologies.'
   };
   const pdf = await renderDocument(doc, loadDesign(), { employeeNumber: 'TT-001', title: 'Chief Executive Officer', fingerprint: 'AAAA-BBBB-CCCC-DDDD' });
-  const source = pdf.toString('latin1');
+  const raw = pdf.toString('latin1');
+  const source = [...raw.matchAll(/stream\\r?\\n([\\s\\S]*?)\\r?\\nendstream/g)].map(match => { try { return inflateSync(Buffer.from(match[1], 'latin1')).toString('latin1'); } catch { return ''; } }).join('\\n');
   assert.match(source, /TT-MCHS-2026-001/);
   assert.match(source, /Project Overview/);
   assert.match(source, /Payment Terms/);
