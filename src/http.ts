@@ -16,6 +16,8 @@ import { verifySignature } from './organization/workforce/sign-work.js';
 import { dbConfigured, NeedsDatabaseError } from './organization/workforce/db-util.js';
 import { AGENT_DIRECTORY } from './services/ai/models.js';
 import { startDutyScheduler } from './organization/workforce/scheduler.js';
+import { claimStaleDutyAlert, markDutyCycleCompleted, markDutyCycleFailed, markDutyCycleStarted } from './organization/workforce/heartbeat.js';
+import { assertRuntimeActive, getRuntimeControl, setRuntimePaused } from './organization/runtime-control.js';
 import { handleWebhook, channelStatus, founderNumber, queueWhatsApp, runOutbox } from './channels/service.js';
 import { OutboxError } from './channels/outbox.js';
 import { createDocument, DocumentError } from './documents/service.js';
@@ -24,7 +26,7 @@ import { toMinor } from './documents/model.js';
 import { createClientInvoice, InvoiceError } from './payments/invoices.js';
 import { buildDashboard } from './http/dashboard-api.js';
 import { setCorsHeaders } from './http/cors.js';
-import { handleHealth, handleNotFound } from './http/health.js';
+import { handleHealth, handleNotFound, handleReadiness } from './http/health.js';
 import { isAuthorized, unauthorized } from './http/auth.js';
 import { advanceTrackedTask, beginTrackedTask, failTrackedTask } from './organization/task-tracking.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo, type AgentName } from './services/ai.js';
@@ -208,6 +210,7 @@ const server = createHttpServer(async (req, res) => {
   const requestPath = req.url?.split('?')[0] ?? '/';
   if (await handleOAuth(req, res, requestPath)) return;
   if (requestPath === '/health' && req.method === 'GET') { handleHealth(res); return; }
+  if (requestPath === '/ready' && req.method === 'GET') { await handleReadiness(res); return; }
 
   if (requestPath === '/webhooks/evolution' && req.method === 'POST') {
     if (!webhookTokenMatches(req.url, req)) { json(res, 401, { error: 'Unauthorized.' }); return; }
@@ -241,6 +244,10 @@ const server = createHttpServer(async (req, res) => {
 
   if ((requestPath === '/api/chat-test/status' || requestPath === '/api/chat-test' || requestPath === '/api/chat-test/collaborate' || requestPath === '/api/chat-test/step' || requestPath === '/api/dashboard' || requestPath === '/api/dashboard/approvals/decide' || requestPath.startsWith('/api/dashboard/')) && (req.method === 'GET' || req.method === 'POST')) {
     if (!chatTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized. Check the chat test token.' }); return; }
+  }
+  if (requestPath.startsWith('/api/dashboard/') && req.method === 'POST') {
+    try { await assertRuntimeActive(); }
+    catch (error) { json(res, 503, { error: error instanceof Error ? error.message : 'Tambala organization is paused.' }); return; }
   }
 
   if (requestPath === '/api/chat-test/status' && req.method === 'GET') {
@@ -552,14 +559,60 @@ const server = createHttpServer(async (req, res) => {
     return;
   }
 
+  if (requestPath === '/api/runtime/control' && (req.method === 'GET' || req.method === 'POST')) {
+    if (!chatTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized.' }); return; }
+    try {
+      if (req.method === 'GET') { json(res, 200, await getRuntimeControl()); return; }
+      const body = await readJsonBody(req) as { paused?: unknown; reason?: unknown };
+      if (typeof body.paused !== 'boolean' || (body.reason !== undefined && typeof body.reason !== 'string')) {
+        json(res, 400, { error: 'Provide paused as a boolean and reason as optional text.' }); return;
+      }
+      const state = await setRuntimePaused(body.paused, typeof body.reason === 'string' ? body.reason : null, 'founder');
+      json(res, 200, { paused: state.paused, reason: state.reason, signature: state.signature_fingerprint, updatedAt: state.updated_at });
+    } catch (error) {
+      json(res, 503, { error: error instanceof Error ? error.message : 'Runtime control unavailable.' });
+    }
+    return;
+  }
+
+  if (requestPath === '/api/runtime/watchdog' && req.method === 'POST') {
+    if (!schedulerTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized.' }); return; }
+    if (!founderNumber()) { json(res, 503, { error: 'Founder WhatsApp number is not configured; heartbeat alert cannot be delivered.' }); return; }
+    try {
+      const control = await getRuntimeControl();
+      if (control.paused) { json(res, 200, { ok: true, paused: true, stale: false, message: 'Global pause is active; watchdog alerting is suppressed.' }); return; }
+      const stale = await claimStaleDutyAlert();
+      if (!stale) { json(res, 200, { ok: true, stale: false, message: 'No overdue duty cycle needs an alert.' }); return; }
+      const last = stale.last_completed_at ?? stale.last_started_at ?? 'unknown';
+      await queueWhatsApp({
+        to: founderNumber()!,
+        roleId: 'ceo',
+        agent: 'orchestrator',
+        purpose: 'notify_founder',
+        text: `Tambala runtime alert: no completed duty cycle has been recorded within the configured heartbeat window. Last completed: ${last}. Last error: ${stale.last_error ?? 'No error was recorded'}. Please check the Render service, scheduler and Supabase connectivity.`,
+      });
+      await runOutbox();
+      json(res, 200, { ok: true, stale: true, alertQueued: true, lastCompletedAt: stale.last_completed_at, lastError: stale.last_error });
+    } catch (error) {
+      console.error('Runtime watchdog failed:', error instanceof Error ? error.message : error);
+      json(res, 500, { error: 'Runtime watchdog could not complete.' });
+    }
+    return;
+  }
+
   if (requestPath === '/api/duties/run' && req.method === 'POST') {
     if (!chatTokenMatches(bearerToken(req)) && !schedulerTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized.' }); return; }
     try {
       const body = (await readJsonBody(req).catch(() => ({}))) as { dutyId?: unknown; force?: unknown; handoffsOnly?: unknown };
       const dutyId = typeof body.dutyId === 'string' ? body.dutyId : undefined;
-      json(res, 200, await runDutiesOnce({ dutyId, force: body.force === true && Boolean(dutyId), handoffsOnly: body.handoffsOnly === true }));
+      const fullCycle = !dutyId && body.handoffsOnly !== true;
+      if (fullCycle) await markDutyCycleStarted().catch((error) => console.warn('Duty heartbeat start could not be stored:', error instanceof Error ? error.message : error));
+      const result = await runDutiesOnce({ dutyId, force: body.force === true && Boolean(dutyId), handoffsOnly: body.handoffsOnly === true });
+      if (fullCycle) await markDutyCycleCompleted().catch((error) => console.warn('Duty heartbeat completion could not be stored:', error instanceof Error ? error.message : error));
+      json(res, 200, result);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Duty run failed.';
+      await markDutyCycleFailed(error).catch(() => undefined);
       json(res, /already running/.test(message) ? 409 : /Unknown duty/.test(message) ? 400 : 500, { error: message });
     }
     return;

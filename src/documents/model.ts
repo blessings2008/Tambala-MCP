@@ -23,7 +23,7 @@ export const partySchema = z.object({
 /** A line is either a price-list item (sku + quantity) or a custom line the Founder will see flagged. */
 export const itemInputSchema = z.union([
   z.object({ sku: text(40).min(1), quantity: z.number().positive().max(100000).default(1) }),
-  z.object({ description: text(200).min(1), quantity: z.number().positive().max(100000).default(1), unitPrice: z.number().min(0).max(1_000_000_000) }),
+  z.object({ component: text(120).optional(), description: text(200).min(1), quantity: z.number().positive().max(100000).default(1), unitPrice: z.number().min(0).max(1_000_000_000) }),
 ]);
 
 export const documentInputSchema = z.object({
@@ -32,18 +32,25 @@ export const documentInputSchema = z.object({
   items: z.array(itemInputSchema).max(40).default([]),
   reference: text(80).optional(),
   subject: text(160).optional(),
-  body: text(4000).optional(),        // letters
+  body: text(4000).optional(),
   notes: text(1500).optional(),
   terms: text(2000).optional(),
   validityDays: z.number().int().min(1).max(365).optional(),
+  clientCode: text(24).regex(/^[A-Za-z0-9-]+$/).optional(),
+  project: text(240).optional(),
+  sections: z.array(z.object({ title: text(120).min(1), body: text(2400).optional() })).max(8).optional(),
+  milestones: z.array(z.object({ label: text(120).min(1), percentage: z.number().int().min(0).max(100) })).max(8).optional(),
+  recurringFees: z.array(z.object({ description: text(180).min(1), amountMinor: z.number().int().nonnegative().optional(), included: z.boolean().default(false) })).max(12).optional(),
+  termsBullets: z.array(text(600).min(1)).max(20).optional(),
+  closingLine: text(240).optional(),
   vatPercent: z.number().min(0).max(100).optional(),
   paymentLink: z.string().url().max(500).startsWith('https://').optional(),
-  paidAt: z.string().max(40).optional(), // receipts
+  paidAt: z.string().max(40).optional(),
   paidVia: text(60).optional(),
 });
 export type DocumentInput = z.infer<typeof documentInputSchema>;
 
-export interface ResolvedItem { sku: string | null; description: string; quantity: number; unitPriceMinor: number; amountMinor: number; custom: boolean }
+export interface ResolvedItem { sku: string | null; component?: string; description: string; quantity: number; unitPriceMinor: number; amountMinor: number; custom: boolean }
 export interface Totals { subtotalMinor: number; vatPercent: number; vatMinor: number; totalMinor: number }
 
 export function computeTotals(items: ResolvedItem[], vatPercent: number): Totals {
@@ -58,6 +65,10 @@ export interface StoredDocument {
   number: string; kind: DocKind; issuedAt: string; validUntil: string | null;
   client: z.infer<typeof partySchema>; items: ResolvedItem[]; totals: Totals; currency: string;
   reference?: string; subject?: string; body?: string; notes?: string; terms?: string; paymentLink?: string; paidAt?: string; paidVia?: string;
+  project?: string; sections?: Array<{ title: string; body?: string }>;
+  milestones?: Array<{ label: string; percentage: number }>;
+  recurringFees?: Array<{ description: string; amountMinor?: number; included: boolean }>;
+  termsBullets?: string[]; closingLine?: string;
 }
 
 export const defaultVat = (): number => {

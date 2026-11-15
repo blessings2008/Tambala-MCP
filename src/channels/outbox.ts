@@ -3,6 +3,7 @@ import { EvolutionError } from './evolution.js';
 import { FOUNDER_DAILY_LIMIT, decide, sendWindowOpen, type Purpose } from './policy.js';
 import type { MessageRow, MessageStore } from './message-store.js';
 import { localTime } from '../organization/workforce/schedule.js';
+import { assertRuntimeActive, isRuntimePaused } from '../organization/runtime-control.js';
 
 export class OutboxError extends Error {}
 
@@ -16,6 +17,7 @@ export interface OutboxDeps {
     sendDocument: (number: string, base64: string, fileName: string, caption: string) => Promise<{ id: string | null }>;
   };
   loadDocument: (id: string) => Promise<{ base64: string; fileName: string } | null>;
+  markDocumentSent?: (id: string, sentAt: string) => Promise<void>;
   sign: (input: { roleId: string; kind: 'message'; subjectId: string; content: string }) => Promise<{ block: string; fingerprint: string | null }>;
   approvals: { create: (input: { actionType: string; summary: string; requestedByRoleId: string; riskLevel: 'low' | 'medium'; taskId: string | null; content: string; subjectType: string; subjectId: string }) => Promise<string | null> };
   senderLabel: (roleId: string) => string;
@@ -23,7 +25,7 @@ export interface OutboxDeps {
   pauseMs?: number;
   /** Minimum gap between customer sends, including across separate worker runs. */
   cooldownMs?: number;
-  /** Resolves a normalized WhatsApp number to a CRM lead label; required for autonomous first contact. */
+  /** Legacy compatibility only; customer messages are never sent autonomously. */
   verifyOutreachLead?: (number: string) => Promise<string | null>;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -53,27 +55,21 @@ const dayStartIso = (now: Date): string => {
 };
 
 export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise<QueueResult> {
+  await assertRuntimeActive();
   const to = normalizePhone(input.to);
   if (!to) throw new OutboxError(`"${input.to}" is not a valid phone number. Use international format, e.g. +265888123456.`);
   const now = deps.now();
-  const autonomousOutreach = input.purpose === 'outreach' && input.agent === 'outreach' && input.roleId === 'director-sales-business-development';
-  if (autonomousOutreach && /\[(?:name|company|business(?: name)?|contact(?: name)?|recipient)\]|\{\{\s*(?:name|company|business(?:_name)?|contact(?:_name)?)\s*\}\}|(?:^|[\s,])(?:hi|hello)\s+name\b/i.test(input.text)) {
+  const outreachCopy = input.purpose === 'outreach';
+  if (outreachCopy && /\[(?:name|company|business(?: name)?|contact(?: name)?|recipient)\]|\{\{\s*(?:name|company|business(?:_name)?|contact(?:_name)?)\s*\}\}|(?:^|[\s,])(?:hi|hello)\s+name\b/i.test(input.text)) {
     throw new OutboxError('First-contact message contains an unresolved placeholder. No customer message was queued.');
   }
-  if (autonomousOutreach && /\b(?:we|our team)\s+(?:have|has|had)\s+(?:helped|worked with|served|built|delivered|supported|generated|increased|grown|achieved)\b|\bwe['’]ve\s+(?:helped|worked with|served|built|delivered|supported|generated|increased|grown|achieved)\b/i.test(input.text)) {
+  if (outreachCopy && /\b(?:we|our team)\s+(?:have|has|had)\s+(?:helped|worked with|served|built|delivered|supported|generated|increased|grown|achieved)\b|\bwe['’]ve\s+(?:helped|worked with|served|built|delivered|supported|generated|increased|grown|achieved)\b/i.test(input.text)) {
     throw new OutboxError('First-contact message contains an unverified past-work or results claim. Remove it unless approved portfolio evidence supports it.');
   }
-  let verifiedContactLabel = input.contactLabel?.trim() || null;
+  const verifiedContactLabel = input.contactLabel?.trim() || null;
   const founder = deps.founderNumber();
   const blocked = await deps.store.blockedNumbers();
   const base = decide({ to, purpose: input.purpose, agent: input.agent, text: input.text, hasDocument: Boolean(input.documentId) }, { founderNumber: founder, blocked });
-  if (base.audience === 'client' && autonomousOutreach && base.verdict !== 'block') {
-    const crmLabel = await deps.verifyOutreachLead?.(to);
-    if (!crmLabel || !/\(lead\)$/i.test(crmLabel)) {
-      throw new OutboxError('Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number. No customer message was queued.');
-    }
-    verifiedContactLabel = crmLabel;
-  }
   const customerCopy = base.audience === 'client' ? sanitizeCustomerMessage(input.text.trim()) : input.text.trim();
   if (base.audience === 'client' && customerCopy.length < 2) throw new OutboxError('The customer message contains no usable business content after internal notes were removed.');
   const text = customerCopy;
@@ -99,13 +95,6 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
     // Messages to the Founder carry who sent them and their signature, so he knows exactly who is talking.
     patch.text = `[${deps.senderLabel(input.roleId)}]\n${text}\n\n${stamp.block}`;
     await deps.store.update(row.id, patch);
-    return { id: row.id, status: 'queued' };
-  }
-
-  // Founder-authorized autonomous first contact: only Outreach may send, and only for a named CRM prospect.
-  // Other customer-facing purposes remain behind the normal approval gate.
-  if (base.audience === 'client' && autonomousOutreach && verifiedContactLabel) {
-    await deps.store.update(row.id, { ...patch, status: 'queued', reason: null });
     return { id: row.id, status: 'queued' };
   }
 
@@ -151,6 +140,7 @@ export interface SendOutcome { id: string; status: 'sent' | 'failed' | 'waiting'
 
 /** Send what is queued, respecting the sending window, daily caps, opt-outs and retries. */
 export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOutcome[]> {
+  if (await isRuntimePaused()) return [];
   const out: SendOutcome[] = [];
   const now = deps.now();
   const since = dayStartIso(now);
@@ -164,6 +154,12 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
     if (!row.number) { await deps.store.update(row.id, { status: 'failed', claimed_at: null, reason: 'No destination number is available.' }); out.push({ id: row.id, status: 'failed', reason: 'No destination number is available.' }); continue; }
     if (!deps.transport.configured()) { await wait('WhatsApp is not configured yet.'); continue; }
     if (row.audience === 'client') {
+      // Defence in depth: legacy autonomous rows without a Founder approval are held, too.
+      if (!row.approval_id && row.from_role_id !== 'founder') {
+        await deps.store.update(row.id, { status: 'pending_approval', claimed_at: null, reason: 'Founder approval is required before any customer message can be sent.' });
+        out.push({ id: row.id, status: 'waiting', reason: 'Founder approval is required.' });
+        continue;
+      }
       if (blocked.has(row.number)) { await deps.store.update(row.id, { status: 'blocked', claimed_at: null, reason: 'This number opted out before the message was sent.' }); out.push({ id: row.id, status: 'blocked' }); continue; }
       if (!sendWindowOpen(now)) { await wait('Outside the sending window (Mon-Sat 07:30-19:30). It will go out when the window opens.'); continue; }
       const cooldownMs = Math.max(0, deps.cooldownMs ?? deps.pauseMs ?? 0);
@@ -185,9 +181,15 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
         if (!doc) throw new EvolutionError('The attached document could not be found.', false);
         result = await deps.transport.sendDocument(row.number, doc.base64, doc.fileName, row.text);
       } else result = await deps.transport.sendText(row.number, row.text);
-      await deps.store.update(row.id, { status: 'sent', claimed_at: null, provider_message_id: result.id, sent_at: deps.now().toISOString(), attempts: row.attempts + 1, reason: null });
+      const sentAt = deps.now().toISOString();
+      await deps.store.update(row.id, { status: 'sent', claimed_at: null, provider_message_id: result.id, sent_at: sentAt, attempts: row.attempts + 1, reason: null });
+      let documentWarning: string | undefined;
+      if (row.document_id && deps.markDocumentSent) {
+        try { await deps.markDocumentSent(row.document_id, sentAt); }
+        catch (error) { documentWarning = 'Message was sent, but the document status could not be updated: ' + (error instanceof Error ? error.message : 'unknown error'); }
+      }
       if (row.audience === 'client') sentClient += 1; else counts.founder += 1;
-      out.push({ id: row.id, status: 'sent' });
+      out.push({ id: row.id, status: 'sent', ...(documentWarning ? { reason: documentWarning } : {}) });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Send failed.';
       const retryable = error instanceof EvolutionError ? error.retryable : false;

@@ -165,33 +165,50 @@ test('outbox: customer follow-ups wait for approval, tell the Founder, and go ou
   assert.equal((await h.store.byId(r.id))!.status, 'sent');
 });
 
-test('outbox: autonomous first contact removes internal analysis and routing notes', async () => {
+test('outbox: attached document is marked sent only after the provider accepts delivery', async () => {
+  const marked: Array<{ id: string; at: string }> = [];
+  const h = outboxHarness({ markDocumentSent: async (id, at) => { marked.push({ id, at }); } });
+  const queued = await queueMessage(h.deps, {
+    ...sales, to: '0888123456', text: 'Your quotation is attached.', purpose: 'followup', documentId: 'doc-1',
+    contactLabel: 'Lakeview Lodge',
+  });
+  await onApprovalDecided(h.deps, queued.id, 'approved', null);
+  const result = await processOutbox(h.deps);
+  assert.equal(result.find((item) => item.id === queued.id)?.status, 'sent');
+  assert.deepEqual(marked, [{ id: 'doc-1', at: '2026-11-09T08:00:00.000Z' }]);
+});
+
+test('outbox: first-contact drafts remove internal analysis and routing notes before Founder approval', async () => {
   const h = outboxHarness();
   const result = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello, we build business websites.\nInternal analysis: prioritise this prospect.\nRouting note: assign to CEO.', purpose: 'outreach', contactLabel: 'Verified Test Lodge (lead)' });
-  assert.equal(result.status, 'queued');
+  assert.equal(result.status, 'pending_approval');
   assert.match(h.store.rows[0].text, /Hello, we build business websites/);
   assert.doesNotMatch(h.store.rows[0].text, /Internal analysis|Routing note|prioritise this prospect|assign to CEO/i);
 });
 
-test('outbox: first-contact Outreach is queued autonomously and strips internal employee metadata', async () => {
+test('outbox: first-contact Outreach waits for Founder approval and strips internal employee metadata', async () => {
   const h = outboxHarness({ cooldownMs: 90_000 });
   const r = await queueMessage(h.deps, {
     ...sales, to: '0888123456',
     text: 'Hello Lakeview Lodge, we build professional websites for businesses.\n\nPrepared by CEO · TT-001',
     purpose: 'outreach', contactLabel: 'Lakeview Lodge (lead)',
   });
-  assert.equal(r.status, 'queued');
-  assert.equal(h.approvals.length, 0);
+  assert.equal(r.status, 'pending_approval');
+  assert.equal(h.approvals.length, 1);
   const row = (await h.store.byId(r.id))!;
   assert.match(row.text, /professional websites/);
   assert.doesNotMatch(row.text, /Reply STOP to opt out|opt out/i);
   assert.doesNotMatch(row.text, /CEO|TT[- ]?001|Prepared by/i);
+  const beforeApproval = await processOutbox(h.deps);
+  assert.notEqual(beforeApproval.find((item) => item.id === r.id)?.status, 'sent');
+  assert.equal(h.sent.some((item) => item.number === '265888123456'), false);
+  await onApprovalDecided(h.deps, r.id, 'approved', null);
   const sent = await processOutbox(h.deps);
   assert.equal(sent.find((item) => item.id === r.id)?.status, 'sent');
   assert.doesNotMatch(h.sent.at(-1)!.text, /CEO|TT[- ]?001|Prepared by/i);
 });
 
-test('outbox: autonomous first contact rejects unsupported past-work claims', async () => {
+test('outbox: first-contact drafts reject unsupported past-work claims', async () => {
   const h = outboxHarness();
   await assert.rejects(
     queueMessage(h.deps, { ...sales, to: '0888123456', text: "We've helped similar firms attract more clients.", purpose: 'outreach' }),
@@ -209,19 +226,35 @@ test('outbox: first-contact messages with unresolved placeholders are never queu
   assert.equal(h.store.rows.filter((row) => row.audience === 'client').length, 0);
 });
 
-test('outbox: autonomous first contact is rejected when the number is not a CRM lead', async () => {
+test('outbox: first-contact messages outside CRM still require explicit Founder approval', async () => {
   const h = outboxHarness({ verifyOutreachLead: async () => null });
-  await assert.rejects(
-    queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello there.', purpose: 'outreach', contactLabel: 'Unverified Prospect' }),
-    /matching CRM lead/,
-  );
-  assert.equal(h.store.rows.length, 0);
+  const result = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello there.', purpose: 'outreach', contactLabel: 'Unverified Prospect' });
+  assert.equal(result.status, 'pending_approval');
+  assert.equal(h.approvals.length, 1);
+  assert.equal(h.sent.some((item) => item.number === '265888123456'), false);
+});
+
+test('outbox: legacy queued customer messages without Founder approval are held', async () => {
+  const h = outboxHarness();
+  const row = await h.store.add({
+    direction: 'out', number: '265888123456', audience: 'client', purpose: 'outreach',
+    from_role_id: 'director-sales-business-development', text: 'Legacy first-contact message', document_id: null,
+    approval_id: null, status: 'queued', reason: null, provider_message_id: null, attempts: 0,
+    task_id: null, signature: 'AAAA-BBBB-CCCC-DDDD', contact_label: 'Legacy Prospect',
+    created_at: MON_10AM, sent_at: null,
+  });
+  const results = await processOutbox(h.deps);
+  assert.equal(results.find((item) => item.id === row.id)?.status, 'waiting');
+  assert.equal((await h.store.byId(row.id))?.status, 'pending_approval');
+  assert.equal(h.sent.some((item) => item.number === '265888123456'), false);
 });
 
 test('outbox: at most one customer message is attempted per scheduler pass', async () => {
   const h = outboxHarness();
   const first = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello first prospect.', purpose: 'outreach' });
   const second = await queueMessage(h.deps, { ...sales, to: '0888777888', text: 'Hello second prospect.', purpose: 'outreach' });
+  await onApprovalDecided(h.deps, first.id, 'approved', null);
+  await onApprovalDecided(h.deps, second.id, 'approved', null);
   const firstPass = await processOutbox(h.deps);
   assert.equal(firstPass.find((item) => item.id === first.id)?.status, 'sent');
   assert.equal(firstPass.find((item) => item.id === second.id)?.status, 'waiting');
@@ -233,9 +266,11 @@ test('outbox: at most one customer message is attempted per scheduler pass', asy
 test('outbox: customer cooldown is enforced between separate worker runs', async () => {
   const h = outboxHarness({ cooldownMs: 90_000 });
   const first = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello first prospect.', purpose: 'outreach', contactLabel: 'First Lodge' });
+  await onApprovalDecided(h.deps, first.id, 'approved', null);
   await processOutbox(h.deps);
   assert.equal((await h.store.byId(first.id))!.status, 'sent');
   const second = await queueMessage(h.deps, { ...sales, to: '0888777888', text: 'Hello second prospect.', purpose: 'outreach', contactLabel: 'Second Lodge' });
+  await onApprovalDecided(h.deps, second.id, 'approved', null);
   const early = await processOutbox(h.deps);
   assert.equal(early.find((item) => item.id === second.id)?.status, 'waiting');
   assert.match(early.find((item) => item.id === second.id)?.reason ?? '', /cooldown/i);
@@ -358,6 +393,50 @@ test('inbound: customer replies are stored, matched to the CRM and forwarded to 
   assert.equal((await handleEvolutionWebhook(h.deps, evt('265888123456@s.whatsapp.net', 'Yes please send the quote'))).duplicates, 1);
 });
 
+test('inbound: explicit quotation acceptance links to the sent quote and employee message', async () => {
+  const h = inboundHarness();
+  const outbound = await h.store.add({
+    direction: 'out', number: '265888123456', audience: 'client', purpose: 'followup',
+    from_role_id: 'director-sales-business-development', text: 'Please find your quotation attached.',
+    document_id: 'quote-123', approval_id: 'approval-1', status: 'sent', reason: null,
+    provider_message_id: 'out-quote-1', attempts: 1, task_id: null, signature: 'AAAA-BBBB-CCCC-DDDD',
+    contact_label: 'Lakeview Lodge (lead)', created_at: MON_10AM, sent_at: MON_10AM,
+  });
+  const accepted: Array<{ outboundId: string; inboundId: string; text: string }> = [];
+  h.deps.recordQuotationAcceptance = async (sent, received, customerText) => {
+    accepted.push({ outboundId: sent.id, inboundId: received.id, text: customerText });
+    return true;
+  };
+  const result = await handleEvolutionWebhook(h.deps, evt('265888123456@s.whatsapp.net', 'We accept the quotation and are ready to proceed.', 'ACCEPT-1'));
+  const inbound = (await h.store.recent(1))[0];
+  assert.equal(result.forwarded, 1);
+  assert.equal(classifyCustomerReply('We accept the quotation.'), 'accepted');
+  assert.equal(classifyCustomerReply('Yes, please send the quote.'), 'interested');
+  assert.equal(inbound.reply_to_message_id, outbound.id);
+  assert.equal(inbound.reply_intent, 'accepted');
+  assert.deepEqual(accepted, [{ outboundId: outbound.id, inboundId: inbound.id, text: 'We accept the quotation and are ready to proceed.' }]);
+  assert.match(h.told.at(-1)!, /Explicit quotation acceptance recorded/);
+});
+
+test('inbound: acceptance wording without a sent quotation is never counted as accepted', async () => {
+  const h = inboundHarness();
+  const result = await handleEvolutionWebhook(h.deps, evt('265888123456@s.whatsapp.net', 'We accept the quotation.', 'ACCEPT-NO-QUOTE'));
+  const inbound = (await h.store.recent(1))[0];
+  assert.equal(result.forwarded, 1);
+  assert.equal(inbound.reply_intent, 'accepted');
+  assert.equal(inbound.reply_to_message_id, null);
+  assert.match(h.told.at(-1)!, /no matching sent quotation could be verified/);
+});
+
+test('inbound: customer complaints trigger trust demotion and Founder escalation', async () => {
+  const demotions: Array<{ number: string; reason: string }> = [];
+  const h = inboundHarness({ demoteTrustForNumber: async (number, reason) => { demotions.push({ number, reason }); } });
+  const result = await handleEvolutionWebhook(h.deps, evt('265888123456@s.whatsapp.net', 'I want to make a complaint about your service', 'COMPLAINT-1'));
+  assert.equal(result.forwarded, 1);
+  assert.deepEqual(demotions, [{ number: '265888123456', reason: 'Customer complaint or spam report' }]);
+  assert.ok(h.told.some((message) => /complaint or spam-related message/.test(message)));
+});
+
 test('inbound: STOP opts the customer out, confirms, and tells the Founder', async () => {
   const h = inboundHarness();
   for (const word of ['STOP', ' stop. ', 'Unsubscribe', 'Please stop messaging me.', 'Do not contact me again', 'Remove me from your list']) {
@@ -428,4 +507,56 @@ test('inbound: media without captions is retained as a readable inbound message'
   assert.equal(messageText({ videoMessage: { fileName: 'brief.mp4' } }), '[Incoming video attachment: brief.mp4]');
   assert.equal(messageText({ audioMessage: { ptt: true } }), '[Incoming audio message]');
   assert.equal(messageText({ ephemeralMessage: { message: { documentMessage: { fileName: 'quote.pdf' } } } }), '[Incoming document attachment: quote.pdf]');
+});
+
+
+test('inbound: only the verified Founder can pause and resume the organization by WhatsApp', async () => {
+  let paused = false;
+  const h = inboundHarness({
+    runtimeControl: {
+      get: async () => ({ paused, reason: paused ? 'Founder test pause' : null }),
+      set: async (next, reason) => { paused = next; if (next) assert.equal(reason, 'maintenance window'); },
+    },
+  });
+  await handleEvolutionWebhook(h.deps, evt(`${FOUNDER}@s.whatsapp.net`, 'PAUSE ALL maintenance window', 'P1'));
+  assert.equal(paused, true);
+  assert.match(h.replies.at(-1)!, /PAUSED/);
+  await handleEvolutionWebhook(h.deps, evt(`${FOUNDER}@s.whatsapp.net`, 'PAUSE STATUS', 'P2'));
+  assert.match(h.replies.at(-1)!, /PAUSED/);
+  await handleEvolutionWebhook(h.deps, evt(`${FOUNDER}@s.whatsapp.net`, 'RESUME ALL', 'P3'));
+  assert.equal(paused, false);
+  assert.match(h.replies.at(-1)!, /RESUMED/);
+
+  const stranger = inboundHarness({
+    runtimeControl: {
+      get: async () => ({ paused, reason: null }),
+      set: async (next) => { paused = next; },
+    },
+  });
+  const result = await handleEvolutionWebhook(stranger.deps, evt('265888000999@s.whatsapp.net', 'PAUSE ALL', 'P4'));
+  assert.equal(paused, false);
+  assert.equal(result.forwarded, 1);
+  assert.equal(stranger.replies.length, 0);
+});
+
+
+test('outbox: global pause blocks new queues and stops already queued delivery', async () => {
+  const previousPause = process.env.TAMBALA_PAUSE_ALL;
+  const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.TAMBALA_PAUSE_ALL = 'true';
+  try {
+    const h = outboxHarness();
+    await assert.rejects(
+      queueMessage(h.deps, { roleId: 'ceo', agent: 'orchestrator', to: FOUNDER, text: 'Should not queue while paused', purpose: 'notify_founder' }),
+      /paused/i,
+    );
+    assert.deepEqual(await processOutbox(h.deps), []);
+    assert.equal(h.sent.length, 0);
+  } finally {
+    if (previousPause === undefined) delete process.env.TAMBALA_PAUSE_ALL;
+    else process.env.TAMBALA_PAUSE_ALL = previousPause;
+    if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
+  }
 });

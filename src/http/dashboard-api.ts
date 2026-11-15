@@ -12,6 +12,10 @@ import { signatureStore } from '../organization/workforce/sign-work.js';
 import { signingAvailable } from '../organization/workforce/signing.js';
 import { buildWorkforce } from '../organization/workforce/duty-service.js';
 import { getAgentOperationalInfo, type AgentName } from '../services/ai.js';
+import { getDutyHeartbeat } from '../organization/workforce/heartbeat.js';
+import { getRuntimeControl } from '../organization/runtime-control.js';
+import { getDailyAIUsage } from '../services/ai/spend.js';
+import { getEmployeeTrust } from '../organization/workforce/trust-ledger.js';
 
 export type Section<T> = { ok: true; data: T } | { ok: false; error: string };
 type Row = Record<string, unknown>;
@@ -91,7 +95,7 @@ export async function buildDashboard() {
     return supabaseSelect<T>(path, query);
   };
 
-  const [organization, tasks, events, approvals, decisions, audit, bindings, runs, actions, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents] = await Promise.all([
+  const [organization, tasks, events, approvals, decisions, audit, bindings, runs, actions, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, goals, trust, aiSpend, runtime] = await Promise.all([
     section(async () => {
       const snap = await getOrganizationSnapshot();
       return {
@@ -121,6 +125,91 @@ export async function buildDashboard() {
     section(() => payHealthCached()),
     section(() => db<Row>('organization_task_rooms', 'select=id,handoff_id,parent_task_id,owner_role_id,owner_agent,opened_by_role_id,objective,status,deliverable,blocker,opened_at,updated_at,closed_at&order=updated_at.desc&limit=100')),
     section(() => db<Row>('organization_task_room_events', 'select=id,room_id,event_type,actor_role_id,payload,created_at&order=created_at.desc&limit=100')),
+    section(async () => {
+      const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+      const [prospects, quotes, invoicesRows, messagesRows] = await Promise.all([
+        db<Row>('lead_discovery_queue', 'select=id,processing_status,created_at&order=created_at.desc&limit=5000'),
+        db<Row>('organization_documents', `select=id,status,total_minor,currency,created_by_role_id,created_at&kind=eq.quotation&created_at=gte.${encodeURIComponent(since)}&limit=2000`),
+        db<Row>('organization_invoices', `select=id,status,amount_minor,currency,created_by_role_id,created_at&created_at=gte.${encodeURIComponent(since)}&limit=2000`),
+        db<Row>('organization_messages', `select=id,direction,status,audience,from_role_id,number,created_at,sent_at&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=3000`),
+      ]);
+      const statusCount = (rows: Row[], field: string) => rows.reduce<Record<string, number>>((out, row) => {
+        const key = String(row[field] ?? 'unknown'); out[key] = (out[key] ?? 0) + 1; return out;
+      }, {});
+      const paidInvoices = invoicesRows.filter((row) => String(row.status).toLowerCase() === 'paid');
+      const revenueMinor = paidInvoices.reduce((sum, row) => sum + Number(row.amount_minor ?? 0), 0);
+      const byEmployee: Record<string, { quotations: number; invoices: number; paidInvoices: number; revenueMinor: number; customerMessagesSent: number }> = {};
+      const employee = (role: unknown) => String(role ?? 'unattributed');
+      const bucket = (role: unknown) => byEmployee[employee(role)] ??= { quotations: 0, invoices: 0, paidInvoices: 0, revenueMinor: 0, customerMessagesSent: 0 };
+      for (const row of quotes) bucket(row.created_by_role_id).quotations++;
+      for (const row of invoicesRows) {
+        const item = bucket(row.created_by_role_id); item.invoices++;
+        if (String(row.status).toLowerCase() === 'paid') { item.paidInvoices++; item.revenueMinor += Number(row.amount_minor ?? 0); }
+      }
+      for (const row of messagesRows.filter((item) => item.direction === 'out' && item.audience === 'client' && item.status === 'sent')) bucket(row.from_role_id).customerMessagesSent++;
+      const inboundReplies = messagesRows.filter((row) => row.direction === 'in' && row.audience === 'client').length;
+      const quotesSent = quotes.filter((row) => row.status === 'sent').length;
+      return {
+        windowDays: 30,
+        prospects: { total: prospects.length, byStatus: statusCount(prospects, 'processing_status') },
+        quotations: { created: quotes.length, sent: quotesSent, accepted: null, acceptanceRate: null, acceptanceNote: 'Quotation acceptance is not currently captured as a structured event; this metric is unavailable, not zero.' },
+        invoices: { created: invoicesRows.length, paid: paidInvoices.length, unpaid: invoicesRows.length - paidInvoices.length, paidRevenueMinor: revenueMinor, currency: 'MWK' },
+        customerCommunication: { sent: messagesRows.filter((row) => row.direction === 'out' && row.audience === 'client' && row.status === 'sent').length, replies: inboundReplies, replyRate: null, replyRateNote: 'Replies are counted from inbound client messages; reliable message-to-message attribution is not yet stored, so a reply rate is unavailable.' },
+        byEmployee,
+        source: 'Supabase CRM discovery queue, quotation documents, invoice ledger and WhatsApp message ledger; rolling 30-day window.',
+      };
+    }),
+    section(async () => ({
+      threshold: 20,
+      eligibleActionTypes: ['prepared_followups', 'prepared_work', 'prepared_content', 'prepared_internal_task'],
+      employees: await getEmployeeTrust(),
+      note: 'Standing approval status is a trust signal only. It does not alter roles or grant permissions. Rejections, edited approvals, customer complaints and STOP requests demote trust.',
+    })),
+    section(async () => {
+      const rows = await getDailyAIUsage();
+      const byEmployee: Record<string, { requests: number; promptTokens: number; completionTokens: number; pricedCostUsd: number; unpricedRequests: number }> = {};
+      for (const row of rows) {
+        const item = byEmployee[row.employee_number] ??= { requests: 0, promptTokens: 0, completionTokens: 0, pricedCostUsd: 0, unpricedRequests: 0 };
+        item.requests++;
+        item.promptTokens += Number(row.prompt_tokens ?? 0);
+        item.completionTokens += Number(row.completion_tokens ?? 0);
+        if (row.cost_usd === null || row.cost_status !== 'priced') item.unpricedRequests++;
+        else item.pricedCostUsd += Number(row.cost_usd);
+      }
+      const pricedCostUsd = rows.reduce((sum, row) => sum + (row.cost_status === 'priced' && row.cost_usd !== null ? Number(row.cost_usd) : 0), 0);
+      return {
+        window: 'UTC calendar day',
+        requests: rows.length,
+        promptTokens: rows.reduce((sum, row) => sum + Number(row.prompt_tokens ?? 0), 0),
+        completionTokens: rows.reduce((sum, row) => sum + Number(row.completion_tokens ?? 0), 0),
+        pricedCostUsd: Number(pricedCostUsd.toFixed(8)),
+        unpricedRequests: rows.filter((row) => row.cost_status !== 'priced' || row.cost_usd === null).length,
+        byEmployee,
+        caps: { enforcement: 'not_enabled', note: 'Founder-approved per-employee and organization-wide USD caps and authoritative model pricing are still required before enforcement.' },
+      };
+    }),
+    section(async () => {
+      const since = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+      const [control, heartbeat, dutyRuns] = await Promise.all([
+        getRuntimeControl(), getDutyHeartbeat(), db<Row>('organization_duty_runs', `select=id,status,started_at,completed_at&started_at=gte.${encodeURIComponent(since)}&order=started_at.desc&limit=500`),
+      ]);
+      const completed = dutyRuns.filter((run) => run.status === 'completed' || run.status === 'awaiting_approval').length;
+      const failed = dutyRuns.filter((run) => run.status === 'failed').length;
+      const observed = completed + failed;
+      const failureRatePercent = observed ? Math.round((failed / observed) * 10000) / 100 : null;
+      const target = Math.min(99.9, Math.max(50, Number(process.env.TAMBALA_DUTY_SUCCESS_TARGET_PERCENT) || 95));
+      const allowedFailureRate = 100 - target;
+      return {
+        control,
+        heartbeat,
+        errorBudget: {
+          windowHours: 24, targetSuccessPercent: target, completed, failed, observed,
+          failureRatePercent,
+          remainingPercent: failureRatePercent === null ? null : Math.max(0, Math.round(((allowedFailureRate - failureRatePercent) / allowedFailureRate) * 10000) / 100),
+          note: 'Based only on recorded duty runs in the last 24 hours. It is unavailable when no completed or failed duty runs are recorded.',
+        },
+      };
+    }),
   ]);
 
   const agents = (Object.keys(AGENT_DIRECTORY) as AgentName[]).map((name) => {
@@ -148,7 +237,7 @@ export async function buildDashboard() {
       deniedRecent,
     },
     organization, tasks, taskSummary: taskSummary ? { ok: true as const, data: taskSummary } : { ok: false as const, error: tasks.ok ? '' : tasks.error },
-    events, approvals, decisions, audit, bindings, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, automation: { runs, pendingActions: actions }, agents,
+    events, approvals, decisions, audit, bindings, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, goals, trust, aiSpend, runtime, automation: { runs, pendingActions: actions }, agents,
     config: {
       database: dbConfigured,
       oauth: flag('TAMBALA_OAUTH_SECRET') && flag('TAMBALA_OAUTH_APPROVAL_CODE'),

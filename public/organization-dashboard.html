@@ -56,7 +56,7 @@ details.emp{border:1px solid var(--line);background:#121e31;border-radius:10px;p
  <div class="sidebar-bottom"><div class="founder"><b><span class="dot"></span>Founder workspace</b><p>Reserved authority · Organization-wide visibility</p></div></div>
 </aside>
 <main class="main">
- <header class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="icon-btn mobile-toggle" id="menu">☰</button><div><div class="crumb">Tambala Organization / <span id="crumb">Overview</span></div><div style="font-size:12px;font-weight:750">Control Centre</div></div></div><div class="top-actions"><input class="search" id="globalSearch" placeholder="Search workspace…"><button class="icon-btn" id="notifications" title="Notifications">♧</button><div class="avatar">B</div></div></header>
+ <header class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="icon-btn mobile-toggle" id="menu">☰</button><div><div class="crumb">Tambala Organization / <span id="crumb">Overview</span></div><div style="font-size:12px;font-weight:750">Control Centre</div></div></div><div class="top-actions"><input class="search" id="globalSearch" placeholder="Search workspace…"><button class="outline-btn" id="runtimePause" title="Pause or resume all organization execution">Pause all</button><button class="icon-btn" id="notifications" title="Notifications">♧</button><div class="avatar">B</div></div></header>
  <div class="content">
 <section class="view active" id="view-overview"><div class="page-head"><div><div class="eyebrow">FOUNDER COMMAND</div><h1>Organization overview</h1><div class="sub">Live operating picture. <span class="sync" id="syncNote">Not loaded yet.</span></div></div><div class="actions"><button class="outline-btn" id="runDuties">Run due duties</button><button class="outline-btn" id="refresh">Refresh</button><button class="primary" id="openTaskConsole">＋ Create objective</button></div></div><div id="banner"></div>
 <div class="grid stats"><article class="card"><div class="stat-top">Active roles <span class="stat-icon">♙</span></div><div class="stat-value" id="sRoles">—</div><div class="stat-foot" id="sRolesFoot"></div></article><article class="card"><div class="stat-top">Ready agents <span class="stat-icon">◈</span></div><div class="stat-value" id="sAgents">—</div><div class="stat-foot" id="sAgentsFoot"></div></article><article class="card"><div class="stat-top">Open tasks <span class="stat-icon">▤</span></div><div class="stat-value" id="sTasks">—</div><div class="stat-foot" id="sTasksFoot"></div></article><article class="card"><div class="stat-top">Pending approvals <span class="stat-icon">✓</span></div><div class="stat-value" id="sApprovals">—</div><div class="stat-foot" id="sApprovalsFoot"></div></article></div>
@@ -482,12 +482,33 @@ function renderDocuments(d){
  if(!d.channel.ok||!d.channel.data.configured){}
 }
 
+async function refreshRuntimeControl(){
+ const r=await fetch('/api/runtime/control',{headers:authHeaders()});
+ if(!r.ok)throw Error('Runtime control unavailable.');
+ const s=await r.json();const b=$('runtimePause');
+ b.textContent=s.paused?'Resume all':'Pause all';
+ b.style.borderColor=s.paused?'#ff9696':'';
+ b.style.color=s.paused?'#ff9696':'';
+ b.title=s.paused?'Paused: '+(s.reason||'Founder pause')+' · click to resume':'System running · click to pause all execution';
+}
+$('runtimePause').addEventListener('click',async()=>{
+ const b=$('runtimePause');b.disabled=true;
+ try{
+  const r=await fetch('/api/runtime/control',{headers:authHeaders()});if(!r.ok)throw Error('Could not read runtime state.');
+  const state=await r.json();let reason=null;
+  if(!state.paused){reason=window.prompt('Reason for pausing Tambala (optional):','Founder emergency pause');if(reason===null)return}
+  else if(!window.confirm('Resume all organization execution and approved message delivery?'))return;
+  await post('/api/runtime/control',{paused:!state.paused,reason});
+  notify(state.paused?'Tambala organization resumed.':'Tambala organization paused.');
+  await load();
+ }catch(e){notify(e.message)}finally{b.disabled=false}
+});
 async function load(){
  const token=sessionStorage.getItem(KEY);if(!token){$('gate').style.display='flex';return}
  try{const r=await fetch('/api/dashboard',{headers:{Authorization:'Bearer '+token}});
   if(r.status===401){sessionStorage.removeItem(KEY);$('gate').style.display='flex';$('gateErr').textContent='Token rejected.';return}
   if(!r.ok)throw Error('Server returned '+r.status);
-  data=await r.json();$('gate').style.display='none';render();if($('view-office').classList.contains('active'))renderDepartmentOffice()}
+  data=await r.json();$('gate').style.display='none';render();await refreshRuntimeControl().catch(e=>{$('syncNote').textContent='Runtime control unavailable: '+e.message});if($('view-office').classList.contains('active'))renderDepartmentOffice()}
  catch(e){$('syncNote').textContent='Refresh failed: '+e.message+(data?' (showing last data)':'')}
 }
 $('gateForm').addEventListener('submit',e=>{e.preventDefault();sessionStorage.setItem(KEY,$('gateToken').value.trim());$('gateErr').textContent='';load()});

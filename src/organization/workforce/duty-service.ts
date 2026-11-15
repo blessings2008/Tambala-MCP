@@ -13,6 +13,7 @@ import { dbConfigured as dbOn } from './db-util.js';
 import { loadDuties, requireConfigStore, saveBuiltinOverride, saveCustomDuty, SupabaseDutyConfigStore, type DutyConfigStore } from './duty-config.js';
 import { InMemoryHandoffStore, SupabaseHandoffStore, processHandoffs, queueHandoff, resumeFounderTaskRoom, type Handoff, type HandoffDeps, type HandoffOutcome, type HandoffStore } from './handoffs.js';
 import { identityMark, signingAvailable } from './signing.js';
+import { assertRuntimeActive } from '../runtime-control.js';
 import { signWork, signatureStore } from './sign-work.js';
 import { describeResults, executeActions, type ActionExecDeps } from './actions-exec.js';
 import type { Action } from './actions.js';
@@ -790,6 +791,20 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
       async queue(input) { await queueHandoff(handoffStore(), { ...input, sign: signWork }); },
     },
     unavailableReason: (duty: StandingDuty) => agentUnavailable(duty.agent, { web: duty.needsWeb, db: duty.contexts.some((c) => c !== 'briefing') }),
+    async employeeOutcomeHistory(_duty, roleId, at) {
+      const since = new Date(at.getTime() - 30 * 24 * 3_600_000).toISOString();
+      const rows = await store.recent(since);
+      return rows.filter((row) => row.role_id === roleId)
+        .sort((a, b) => b.started_at.localeCompare(a.started_at))
+        .slice(0, 8)
+        .map((row) => ({
+          dutyId: row.duty_id,
+          status: row.status,
+          at: row.completed_at ?? row.started_at,
+          summary: row.summary ? row.summary.slice(0, 500) : null,
+          error: row.error ? row.error.slice(0, 240) : null,
+        }));
+    },
     async buildContext(kinds: ContextKind[], at: Date) {
       const out: Row = {};
       for (const kind of kinds) {
@@ -863,6 +878,7 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
 let running = false;
 /** One duty cycle at a time per process; the database claim protects across processes. */
 export async function runDutiesOnce(opts: { dutyId?: string; force?: boolean; handoffsOnly?: boolean; skipDiscoveryQueue?: boolean } = {}): Promise<{ outcomes: DutyOutcome[]; handoffs: HandoffOutcome[]; messages: SendOutcome[] }> {
+  await assertRuntimeActive();
   if (running) throw new Error('A duty cycle is already running.');
   running = true;
   try {

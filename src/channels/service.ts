@@ -1,7 +1,8 @@
 import { supabaseSelect } from '../lib/supabase.js';
 import { createApprovalRequest, decideApproval, listPendingApprovals, registerApprovalHook } from '../organization/workforce/approvals-service.js';
 import { dbConfigured } from '../organization/workforce/db-util.js';
-import { labelForRole } from '../organization/workforce/profiles.js';
+import { identityForRole, labelForRole } from '../organization/workforce/profiles.js';
+import { demoteEmployeeTrust } from '../organization/workforce/trust-ledger.js';
 import { getOrganizationSnapshot, routeOrganizationObjective } from '../organization/service.js';
 import { requireConfiguredRuntime, resolveExecutionRoute } from '../organization/execution-router.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../services/ai.js';
@@ -9,6 +10,8 @@ import { getBusinessSummary, getCompactCompanyContext } from '../services/ai/con
 import { buildProspectingSearchQueries } from '../services/web-research.js';
 import { signWork } from '../organization/workforce/sign-work.js';
 import { loadPdfForSending } from '../documents/service.js';
+import { documentStore } from '../documents/store.js';
+import { markDocumentSent, recordQuotationAcceptance } from '../documents/acceptance.js';
 import { connectionState, evolutionConfig, evolutionConfigured, isWhatsAppNumber, sendDocument, sendText } from './evolution.js';
 import { handleEvolutionWebhook, type FounderMessageEnvelope, type InboundDeps, type InboundSummary } from './inbound.js';
 import { messageStore, type MessageStore } from './message-store.js';
@@ -17,6 +20,7 @@ import { FOUNDER_DAILY_LIMIT } from './policy.js';
 import { maskNumber, normalizePhone } from './phone.js';
 import { localTime } from '../organization/workforce/schedule.js';
 import { isCompanyStatusRequest, isFounderKnowledgeQuestion, runCompanyStatusReport } from './founder-execution.js';
+import { getRuntimeControl, setRuntimePaused } from '../organization/runtime-control.js';
 
 /** The Founder's own WhatsApp number, where employees reach him. Set TAMBALA_FOUNDER_WHATSAPP. */
 export function founderNumber(): string | null {
@@ -28,6 +32,7 @@ export function productionOutboxDeps(store: MessageStore = messageStore(), now: 
     store, now, founderNumber,
     transport: { configured: evolutionConfigured, sendText, sendDocument },
     loadDocument: (id) => loadPdfForSending(id),
+    markDocumentSent: async (id, sentAt) => { await markDocumentSent(id, sentAt, documentStore()); },
     sign: (input) => signWork(input),
     approvals: { create: (input) => createApprovalRequest({ ...input }) },
     senderLabel: (roleId) => labelForRole(roleId),
@@ -106,13 +111,14 @@ async function verifyOutreachLead(number: string): Promise<string | null> {
 
 async function answerFounderKnowledgeQuestion(envelope: FounderMessageEnvelope): Promise<string> {
   const warnings: string[] = [];
-  const [companyContext, businessSummary, snapshot, queueRows, messageRows, approvalRows] = await Promise.all([
+  const [companyContext, businessSummary, snapshot, queueRows, messageRows, approvalRows, documentRows] = await Promise.all([
     getCompactCompanyContext().catch((error) => { warnings.push('Company profile/services unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return null; }),
     getBusinessSummary().catch((error) => { warnings.push('CRM summary unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return null; }),
     getOrganizationSnapshot().catch((error) => { warnings.push('Organization chart unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return null; }),
     supabaseSelect<Record<string, unknown>>('lead_discovery_queue', 'select=organisation_name,processing_status,verification_status,crm_lead_id,updated_at&order=created_at.desc&limit=500').catch((error) => { warnings.push('Prospect queue unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return []; }),
-    supabaseSelect<Record<string, unknown>>('organization_messages', 'select=direction,audience,purpose,status,sent_at,created_at,contact_label&order=created_at.desc&limit=1000').catch((error) => { warnings.push('Message history unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return []; }),
+    supabaseSelect<Record<string, unknown>>('organization_messages', 'select=id,direction,audience,purpose,status,sent_at,created_at,contact_label,from_role_id,document_id,reply_to_message_id,reply_intent&order=created_at.desc&limit=1000').catch((error) => { warnings.push('Message history unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return []; }),
     supabaseSelect<Record<string, unknown>>('organization_approval_requests', 'select=action_type,status,summary,created_at,resolved_at&order=created_at.desc&limit=300').catch((error) => { warnings.push('Approval history unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return []; }),
+    supabaseSelect<Record<string, unknown>>('organization_documents', 'select=id,kind,status,total_minor,currency,created_by_role_id,created_at,sent_at,accepted_at,accepted_by_message_id&order=created_at.desc&limit=1000').catch((error) => { warnings.push('Document outcomes unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return []; }),
   ]);
 
   const countBy = (rows: Record<string, unknown>[], field: string) => rows.reduce<Record<string, number>>((counts, row) => {
@@ -122,6 +128,29 @@ async function answerFounderKnowledgeQuestion(envelope: FounderMessageEnvelope):
   }, {});
   const clientOutbound = messageRows.filter((row) => row.direction === 'out' && row.audience === 'client');
   const sentClientMessages = clientOutbound.filter((row) => row.status === 'sent');
+  const outboundById = new Map(clientOutbound.map((row) => [String(row.id), row]));
+  const inboundById = new Map(messageRows.filter((row) => row.direction === 'in').map((row) => [String(row.id), row]));
+  const attributedReplies = messageRows.filter((row) => row.direction === 'in' && typeof row.reply_to_message_id === 'string');
+  const replyIntents = countBy(attributedReplies, 'reply_intent');
+  const repliesByEmployee = attributedReplies.reduce<Record<string, { replies: number; accepted: number; interested: number }>>((counts, reply) => {
+    const outbound = outboundById.get(String(reply.reply_to_message_id));
+    const employee = String(outbound?.from_role_id ?? 'unavailable');
+    const bucket = counts[employee] ?? { replies: 0, accepted: 0, interested: 0 };
+    bucket.replies += 1;
+    if (reply.reply_intent === 'accepted') bucket.accepted += 1;
+    if (reply.reply_intent === 'interested') bucket.interested += 1;
+    counts[employee] = bucket;
+    return counts;
+  }, {});
+  const quotations = documentRows.filter((row) => row.kind === 'quotation');
+  const acceptedQuotations = quotations.filter((row) => row.status === 'accepted');
+  const acceptedQuoteEmployee = acceptedQuotations.reduce<Record<string, number>>((counts, quote) => {
+    const acceptanceMessage = inboundById.get(String(quote.accepted_by_message_id ?? ''));
+    const outbound = acceptanceMessage?.reply_to_message_id ? outboundById.get(String(acceptanceMessage.reply_to_message_id)) : undefined;
+    const employee = String(outbound?.from_role_id ?? 'unavailable');
+    counts[employee] = (counts[employee] ?? 0) + 1;
+    return counts;
+  }, {});
   const units = snapshot?.organization?.units ?? [];
   const roles = snapshot?.organization?.roles ?? [];
   const crm = businessSummary ? {
@@ -165,7 +194,17 @@ async function answerFounderKnowledgeQuestion(envelope: FounderMessageEnvelope):
         purpose: row.purpose, status: row.status, contact_label: row.contact_label,
         sent_at: row.sent_at, created_at: row.created_at,
       })),
-      note: 'Only organization_messages rows with direction=out, audience=client and status=sent count as sent client messages. Founder notifications are not client outreach.',
+      replies_linked_to_outbound: attributedReplies.length,
+      replies_by_intent: replyIntents,
+      replies_by_employee: repliesByEmployee,
+      quotations: {
+        sent: quotations.filter((row) => row.status === 'sent' || row.status === 'accepted').length,
+        accepted: acceptedQuotations.length,
+        awaiting_acceptance: quotations.filter((row) => row.status === 'sent').length,
+        accepted_value_minor: acceptedQuotations.reduce((sum, row) => sum + Number(row.total_minor ?? 0), 0),
+        accepted_by_employee: acceptedQuoteEmployee,
+      },
+      note: 'Replies are counted only when a customer inbound message is linked to a previously sent outbound message. A quotation is accepted only when explicit acceptance wording is linked to a sent quotation; interest alone is not acceptance.',
     },
     approvals: {
       total_loaded: approvalRows.length,
@@ -309,7 +348,27 @@ export function productionInboundDeps(store: MessageStore = messageStore()): Inb
       await runOutbox();
     },
     contactLookup: contactLabel,
+    recordQuotationAcceptance: async (outbound, inbound, customerText) => {
+      if (!outbound.document_id) return false;
+      return recordQuotationAcceptance(outbound.document_id, {
+        messageId: inbound.id, acceptedAt: new Date().toISOString(), customerText,
+      }, documentStore());
+    },
+    demoteTrustForNumber: async (number, reason) => {
+      if (!dbConfigured()) return;
+      const rows = await supabaseSelect<{ from_role_id: string | null }>(
+        'organization_messages',
+        `select=from_role_id&direction=eq.out&audience=eq.client&number=eq.${encodeURIComponent(number)}&status=eq.sent&order=sent_at.desc&limit=1`,
+      );
+      const roleId = rows[0]?.from_role_id;
+      const identity = roleId ? identityForRole(roleId) : null;
+      if (identity && identity.employeeNumber !== 'TT-000') await demoteEmployeeTrust(identity.employeeNumber, reason);
+    },
     handleFounderInstruction,
+    runtimeControl: {
+      get: async () => { const state = await getRuntimeControl(); return { paused: state.paused, reason: state.reason }; },
+      set: async (paused, reason) => { await setRuntimePaused(paused, reason, 'founder'); },
+    },
     approvals: {
       pending: async () => (dbConfigured() ? (await listPendingApprovals()).map((a) => ({ id: a.id, summary: a.summary })) : []),
       async decide(prefix, decision, note) {

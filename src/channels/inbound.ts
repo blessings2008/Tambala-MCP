@@ -1,6 +1,6 @@
 import { jidToNumber, maskNumber, normalizePhone } from './phone.js';
 import { OPT_OUT_PATTERN } from './policy.js';
-import type { MessageStore } from './message-store.js';
+import type { MessageRow, MessageStore } from './message-store.js';
 
 export interface InboundDeps {
   store: MessageStore;
@@ -18,6 +18,12 @@ export interface InboundDeps {
   };
   /** Route ordinary messages from the verified Founder number into the CEO workflow. */
   handleFounderInstruction?: (envelope: FounderMessageEnvelope) => Promise<string>;
+  demoteTrustForNumber?: (number: string, reason: string) => Promise<void>;
+  recordQuotationAcceptance?: (outbound: MessageRow, inbound: MessageRow, customerText: string) => Promise<boolean>;
+  runtimeControl?: {
+    get: () => Promise<{ paused: boolean; reason: string | null }>;
+    set: (paused: boolean, reason: string | null) => Promise<void>;
+  };
 }
 
 export interface FounderMessageEnvelope {
@@ -70,11 +76,12 @@ export function senderNumber(m: RawMessage): string | null {
 const COMMAND_YES = /^\s*(yes|approve|ok)\s+([0-9a-f]{6})\s*$/i;
 const COMMAND_NO = /^\s*(no|reject)\s+([0-9a-f]{6})\s*(.*)$/is;
 
-export type CustomerReplyIntent = 'interested' | 'not_interested' | 'question' | 'other';
+export type CustomerReplyIntent = 'accepted' | 'interested' | 'not_interested' | 'question' | 'other';
 
 /** Deterministic triage for customer replies; informs the Founder but never sends an unapproved sales response. */
 export function classifyCustomerReply(value: string): CustomerReplyIntent {
   const text = value.trim().toLowerCase();
+  if (/\b(?:we|i)\s+(?:formally\s+)?accept(?:\s+the)?\s+(?:quote|quotation|proposal)\b|\baccept(?:ed)?\s+(?:the\s+)?(?:quote|quotation|proposal)\b|\bgo ahead with (?:the )?(?:quote|quotation|proposal|project)\b|\bproceed with (?:the )?(?:quote|quotation|proposal|project)\b|\bwe agree to the quotation\b/.test(text)) return 'accepted';
   if (/\b(not interested|no thanks|not for us|we are not interested|don't need|dont need)\b/.test(text)) return 'not_interested';
   if (/\b(yes|interested|sounds good|send (?:me )?(?:the )?(?:quote|quotation|details|proposal)|let's talk|lets talk|call me|contact me)\b/.test(text)) return 'interested';
   if (/[?]/.test(text) || /^\s*(what|how|when|where|who|why|which|can|could|would|do|does|is|are|please explain)\b/.test(text)) return 'question';
@@ -101,7 +108,7 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
     const label = number ? await deps.contactLookup(number).catch(() => null) : null;
     const pushName = typeof m.pushName === 'string' ? m.pushName.slice(0, 60) : null;
 
-    await deps.store.add({
+    const receivedMessage = await deps.store.add({
       direction: 'in', number, audience: null, purpose: 'inbound', from_role_id: null, text, document_id: null, approval_id: null,
       status: 'received', reason: number ? null : 'WhatsApp did not reveal this sender’s phone number.', provider_message_id: providerId, attempts: 0,
       task_id: null, signature: null, contact_label: label ?? pushName, created_at: deps.now().toISOString(), sent_at: null,
@@ -109,7 +116,13 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
     summary.stored += 1;
     if (!number) { summary.unresolved += 1; continue; }
 
+    if (number !== founder && /\b(complaint|complain|spam|report you|report this number|unprofessional|harassment)\b/i.test(text)) {
+      await deps.demoteTrustForNumber?.(number, 'Customer complaint or spam report').catch(() => undefined);
+      await deps.tellFounder(`${label ?? maskNumber(number)} sent a complaint or spam-related message. Employee standing approvals linked to the latest outbound contact have been demoted.`).catch(() => undefined);
+    }
+
     if (number !== founder && OPT_OUT_PATTERN.test(text)) {
+      await deps.demoteTrustForNumber?.(number, 'Customer STOP/opt-out request').catch(() => undefined);
       await deps.store.addBlock(number, 'Customer replied STOP');
       await deps.reply(number, 'You have been unsubscribed and will not receive more messages from Tambala Technologies. Sorry to see you go.').catch(() => undefined);
       await deps.tellFounder(`${label ?? maskNumber(number)} replied STOP and has been added to the do-not-contact list.`).catch(() => undefined);
@@ -123,6 +136,22 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
       if (/^\s*(pending|list|status)\s*$/i.test(text)) {
         const list = await deps.approvals.pending();
         await deps.reply(number, list.length ? `${list.length} waiting:\n${list.slice(0, 8).map((a) => `${a.id.slice(0, 6)} · ${a.summary.slice(0, 70)}`).join('\n')}\n\nReply YES <code> or NO <code> <reason>.` : 'Nothing is waiting for you.').catch(() => undefined);
+        summary.founderCommands += 1; continue;
+      }
+      if (deps.runtimeControl && /^\s*pause\s+all(?:\s+(.+))?\s*$/i.test(text)) {
+        const match = text.match(/^\s*pause\s+all(?:\s+(.+))?\s*$/i)!;
+        await deps.runtimeControl.set(true, match[1]?.trim() || 'Paused by Founder via WhatsApp');
+        await deps.reply(number, 'Tambala organization is now PAUSED. AI requests, duty execution and WhatsApp outbox delivery are blocked until you send RESUME ALL.').catch(() => undefined);
+        summary.founderCommands += 1; continue;
+      }
+      if (deps.runtimeControl && /^\s*resume\s+all\s*$/i.test(text)) {
+        await deps.runtimeControl.set(false, null);
+        await deps.reply(number, 'Tambala organization has been RESUMED. Normal duties and approved message delivery may continue.').catch(() => undefined);
+        summary.founderCommands += 1; continue;
+      }
+      if (deps.runtimeControl && /^\s*pause\s+status\s*$/i.test(text)) {
+        const state = await deps.runtimeControl.get();
+        await deps.reply(number, state.paused ? `Tambala is PAUSED. Reason: ${state.reason ?? 'Founder pause'}.` : 'Tambala is RUNNING.').catch(() => undefined);
         summary.founderCommands += 1; continue;
       }
       if (deps.handleFounderInstruction) {
@@ -149,7 +178,26 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
       summary.founderCommands += 1; continue;
     }
 
-    await deps.tellFounder(`Reply from ${label ?? pushName ?? maskNumber(number)} [${classifyCustomerReply(text).replace('_', ' ')}]:\n"${text.slice(0, 400)}"`).catch(() => undefined);
+    const intent = classifyCustomerReply(text);
+    const received = receivedMessage;
+    const since = new Date(deps.now().getTime() - 90 * 86_400_000).toISOString();
+    let attributedTo: MessageRow | null = null;
+    if (intent === 'accepted') attributedTo = await deps.store.latestSentTo(number, since, true);
+    if (!attributedTo) attributedTo = await deps.store.latestSentTo(number, since);
+    if (received?.direction === 'in' && received.number === number) {
+      await deps.store.update(received.id, { reply_to_message_id: attributedTo?.id ?? null, reply_intent: intent });
+    }
+    let acceptanceRecorded = false;
+    if (intent === 'accepted' && attributedTo?.document_id && deps.recordQuotationAcceptance) {
+      acceptanceRecorded = await deps.recordQuotationAcceptance(attributedTo, received, text).catch(() => false);
+    }
+    const attribution = attributedTo
+      ? ` Linked to outbound message ${attributedTo.id} (employee ${attributedTo.from_role_id ?? 'unavailable'}).`
+      : ' No matching sent customer message was found in the last 90 days.';
+    const acceptance = intent === 'accepted'
+      ? (acceptanceRecorded ? ' Explicit quotation acceptance recorded.' : ' Acceptance wording received, but no matching sent quotation could be verified; no quote was marked accepted.')
+      : '';
+    await deps.tellFounder(`Reply from ${label ?? pushName ?? maskNumber(number)} [${intent.replace('_', ' ')}]:\n"${text.slice(0, 400)}"${attribution}${acceptance}`).catch(() => undefined);
     summary.forwarded += 1;
   }
   return summary;

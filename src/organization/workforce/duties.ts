@@ -54,8 +54,8 @@ export const STANDING_DUTIES: readonly StandingDuty[] = [
   {
     id: 'sales-pipeline-review', agent: 'outreach', title: 'Daily pipeline review and outreach preparation',
     cadence: { kind: 'weekdays' }, time: '08:30', contexts: ['crm', 'crm_detail', 'company', 'catalog'],
-    job: 'Review the lead pipeline by status. Pick the best-fit leads that have not been contacted or are due. Identify the single best-fit CRM prospect that has not been contacted, verify its business name and WhatsApp number, and send one personalised first-contact WhatsApp message using the whatsapp action. The system processes additional approved prospects in separate scheduler cycles to respect the customer-send cooldown. First-contact messages from Outreach may be sent autonomously under the Founder-approved daily cap and cooldown. Keep each message natural, specific, relevant and customer-ready; never include internal role titles, employee codes (such as TT-001), agent names, signatures, routing notes, draft labels, internal analysis or unrelated information. Do not mention services unless they are in the verified catalogue. Do not message unknown numbers or invent contact details. If a lead clearly needs a quotation and the price list covers it, prepare it with the document action.',
-    deliverable: 'Pipeline snapshot, the one prospect selected, the message actually queued or sent, delivery outcome, replies received, and any blockers. Clearly separate messages queued, sent, failed, blocked and drafts awaiting approval using the action results; never describe an autonomous first-contact message as awaiting approval when it was queued or sent, and never claim delivery unless the outbox confirms it.',
+    job: 'Review the lead pipeline by status. Pick the best-fit leads that have not been contacted or are due. Identify the single best-fit CRM prospect that has not been contacted, verify its business name and WhatsApp number, and prepare one personalised first-contact WhatsApp draft using the whatsapp action. The draft must wait for Founder approval before delivery. The system processes additional approved prospects in separate scheduler cycles to respect the customer-send cooldown. Keep each message natural, specific, relevant and customer-ready; never include internal role titles, employee codes (such as TT-001), agent names, signatures, routing notes, draft labels, internal analysis or unrelated information. Do not mention services unless they are in the verified catalogue. Do not message unknown numbers or invent contact details. If a lead clearly needs a quotation and the price list covers it, prepare it with the document action.',
+    deliverable: 'Pipeline snapshot, the one prospect selected, the message prepared, its approval status, delivery outcome, replies received, and any blockers. Clearly separate drafts awaiting approval, queued, sent, failed and blocked messages using the action results; never claim delivery unless the outbox confirms it.',
   },
   {
     id: 'customer-followups', agent: 'followup', title: 'Daily customer follow-ups',
@@ -99,6 +99,12 @@ export const STANDING_DUTIES: readonly StandingDuty[] = [
     cadence: { kind: 'weekly', day: 5 }, time: '15:00', contexts: ['crm', 'organization'],
     job: 'Review the week across the pipeline, tasks and organization activity. State what moved, what stalled, and the top three priorities for next week with reasons.',
     deliverable: 'What moved, what stalled, three priorities, and the single biggest risk.',
+  },
+  {
+    id: 'ceo-weekly-operating-plan', agent: 'orchestrator', title: 'Weekly CEO operating plan',
+    cadence: { kind: 'weekly', day: 1 }, time: '08:00', contexts: ['crm', 'organization', 'invoices', 'company'],
+    job: 'You are the CEO. Prepare the company operating plan for the coming week using only the supplied CRM, invoice, organization and company records. Review real pipeline movement, quotations, payments, overdue work, duty outcomes, staffing readiness and risks. Set no financial commitments, prices or regulatory positions. Do not assign work outside active employee duties or change anyone’s permissions. Separate verified metrics from unavailable data and recommendations. Escalate any decision requiring Founder authority.',
+    deliverable: 'A signed weekly operating plan with: measurable company targets based on the actual baseline; sales pipeline priorities; delivery and client commitments already on record; cash/invoice facts; department priorities and owners; risks and blockers; Founder decisions required; and what evidence will be reviewed next week. Label every unavailable metric explicitly.',
   },
   {
     id: 'ceo-daily-briefing', agent: 'orchestrator', title: 'Daily executive briefing',

@@ -12,7 +12,7 @@ export const SIGNATURE_VERSION = 'tt-sig-1';
 export const ALGORITHM = 'HMAC-SHA256/tt-sig-1';
 export const FOUNDER_NUMBER = 'TT-000';
 
-export type SignatureKind = 'duty_result' | 'briefing' | 'handoff_request' | 'handoff_result' | 'approval_decision' | 'document' | 'message' | 'invoice';
+export type SignatureKind = 'duty_result' | 'briefing' | 'handoff_request' | 'handoff_result' | 'approval_decision' | 'document' | 'message' | 'invoice' | 'runtime_control';
 
 function masterSecret(): Buffer | null {
   const direct = process.env.TAMBALA_SIGNING_SECRET;

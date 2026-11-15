@@ -24,6 +24,8 @@ export interface DutyDeps {
   /** Why this employee cannot work right now, or null when they can. */
   unavailableReason(duty: StandingDuty): Promise<string | null>;
   buildContext(kinds: ContextKind[], now: Date): Promise<Record<string, unknown>>;
+  /** Recent signed outcomes for this employee, used to prevent repeated work and expose recurring blockers. */
+  employeeOutcomeHistory?(duty: StandingDuty, roleId: string, now: Date): Promise<Array<{ dutyId: string; status: string; at: string; summary: string | null; error: string | null }>>;
   ask(duty: StandingDuty, prompt: string, context: Record<string, unknown>): Promise<string>;
   /** Used when the output is a report and no model is available, so the Founder still gets a briefing. */
   fallbackBody?(duty: StandingDuty, context: Record<string, unknown>): string | null;
@@ -38,7 +40,7 @@ export interface DutyDeps {
 
 const MAX_ATTEMPTS = 3;
 const STALE_RUNNING_MS = 15 * 60_000;
-const RULES = 'Use ONLY the supplied data. If a source is empty or unavailable, say so plainly and list what you could not check. Never invent leads, clients, amounts, dates or results. Do not sign or add a sign-off: the system signs your work with your employee number. Customer-facing messages are drafts for Founder approval except first-contact WhatsApp outreach by the Sales & Business Development director, which may be sent autonomously only when the shared outbox verifies a CRM lead and applies the configured cap, cooldown and opt-out rules. Never claim a message was sent unless the outbox confirms it.';
+const RULES = 'Use ONLY the supplied data. If a source is empty or unavailable, say so plainly and list what you could not check. Never invent leads, clients, amounts, dates or results. Do not sign or add a sign-off: the system signs your work with your employee number. All customer-facing messages, including first-contact outreach, are drafts for Founder approval. No employee trust score or CRM status bypasses this gate. Never claim a message was sent unless the outbox confirms it.';
 
 export function buildDutyPrompt(duty: StandingDuty, lt: LocalTime, who?: { employeeNumber: string; title: string }): string {
   const parts = [
@@ -46,6 +48,7 @@ export function buildDutyPrompt(duty: StandingDuty, lt: LocalTime, who?: { emplo
     who ? `You are employee ${who.employeeNumber}, ${who.title} at Tambala Technologies.` : '',
     `Today is ${lt.date} (office time, ${OFFICE_TZ}). This is your recurring job, not a Founder request.`,
     RULES,
+    'EMPLOYEE OUTCOME HISTORY: context.employee_outcome_history contains your recent recorded duty outcomes. Use it to avoid repeating completed work, follow up unresolved items, and identify recurring failures. Treat historical summaries as records, not proof that an old issue is still current; verify against today’s supplied context.',
     `JOB: ${duty.job}`,
     `DELIVERABLE: ${duty.deliverable}`,
     'Keep it under 350 words, plain and scannable.',
@@ -109,6 +112,9 @@ export async function runDuty(deps: DutyDeps, duty: StandingDuty, opts: { force?
       { status: 'executing', stage: 'department', eventType: 'department_execution_started', roleId },
     ]);
     const context = await deps.buildContext(duty.contexts, now);
+    if (deps.employeeOutcomeHistory) {
+      context.employee_outcome_history = await deps.employeeOutcomeHistory(duty, roleId, now);
+    }
     let body: string;
     let compiledWithoutModel = false;
     let pendingHandoffs: { toAgent: StandingDuty['agent']; request: string }[] = [];
