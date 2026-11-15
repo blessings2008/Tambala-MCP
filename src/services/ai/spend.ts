@@ -51,3 +51,20 @@ export async function getDailyAIUsage(now = new Date()) {
   start.setUTCHours(0, 0, 0, 0);
   return supabaseSelect<AIUsageRecord>('organization_ai_usage', `select=employee_number,agent,provider,model,prompt_tokens,completion_tokens,cost_usd,cost_status,created_at&created_at=gte.${encodeURIComponent(start.toISOString())}&order=created_at.desc&limit=5000`);
 }
+
+
+/** Free-only is the default. Unknown provider/model pricing is never treated as free. */
+export function assertFreeAIModel(provider: string, model: string): void {
+  if (process.env.TAMBALA_AI_FREE_ONLY === 'false') return;
+  if (provider === 'openrouter' && /:free$/i.test(model)) return;
+  const allowlist = (process.env.TAMBALA_FREE_AI_MODEL_ALLOWLIST ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const exactId = `${provider}:${model}`;
+  if (allowlist.includes(exactId)) return;
+  throw new Error(
+    `AI request blocked by Tambala's free-only policy: ${exactId} is not verified as free. ` +
+    'No paid fallback was attempted. Add this exact provider:model to TAMBALA_FREE_AI_MODEL_ALLOWLIST only after confirming it is available at no charge.',
+  );
+}
