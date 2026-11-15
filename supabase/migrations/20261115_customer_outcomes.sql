@@ -9,6 +9,8 @@ create index if not exists organization_messages_reply_to_idx
   on public.organization_messages(reply_to_message_id) where reply_to_message_id is not null;
 
 alter table public.organization_documents
+  add column if not exists sent_at timestamptz;
+alter table public.organization_documents
   add column if not exists accepted_at timestamptz;
 alter table public.organization_documents
   add column if not exists accepted_by_message_id uuid references public.organization_messages(id) on delete set null;
