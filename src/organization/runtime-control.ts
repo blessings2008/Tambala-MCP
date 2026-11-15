@@ -51,14 +51,11 @@ export async function assertRuntimeActive(): Promise<void> {
 export async function setRuntimePaused(paused: boolean, reason: string | null, roleId: string): Promise<RuntimeControl> {
   if (!dbConfigured()) throw new Error('The global pause switch requires the database and runtime reliability migration.');
   const now = new Date().toISOString();
-  return await import('../lib/supabase.js').then(async ({ supabaseUpdate }) => {
-    const rows = await supabaseUpdate<RuntimeControl>('organization_runtime_control', {
-      paused,
-      reason: paused ? (reason?.trim().slice(0, 500) || 'Paused by Founder') : null,
-      paused_at: paused ? now : null,
-      paused_by_role_id: paused ? roleId : null,
-      updated_at: now,
-    }, 'id=eq.global');
-    return rows;
-  });
+  return supabaseUpdate<RuntimeControl>('organization_runtime_control', {
+    paused,
+    reason: paused ? (reason?.trim().slice(0, 500) || 'Paused by Founder') : null,
+    paused_at: paused ? now : null,
+    paused_by_role_id: paused ? roleId : null,
+    updated_at: now,
+  }, 'id=eq.global');
 }
