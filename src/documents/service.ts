@@ -57,8 +57,8 @@ export async function createDocument(input: unknown, roleId: string, deps: Creat
   const design = deps.design ?? loadDesign();
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const number = await store.nextNumber(KIND_PREFIX[kind], now.getUTCFullYear());
-    const sequence = number.match(/(\\d+)$/)?.[1]?.replace(/^0+(?=\\d)/, '') ?? '1';
-    const clientCode = (data.clientCode ?? (data.client.business || data.client.name).split(/\\s+/).filter(Boolean).map((word) => word[0]).join('').slice(0, 8)).toUpperCase();
+    const sequence = number.match(/(\d+)$/)?.[1]?.replace(/^0+(?=\d)/, '') ?? '1';
+    const clientCode = (data.clientCode ?? (data.client.business || data.client.name).split(/\s+/).filter(Boolean).map((word) => word[0]).join('').slice(0, 8)).toUpperCase();
     const quotationReference = kind === 'quotation' ? `TT-${clientCode}-${now.getUTCFullYear()}-${sequence.padStart(3, '0')}` : data.reference;
     const full: StoredDocument = { ...doc, number, reference: quotationReference };
     // Sign the content of the document (not the PDF bytes), so the fingerprint can be printed inside the PDF itself.
