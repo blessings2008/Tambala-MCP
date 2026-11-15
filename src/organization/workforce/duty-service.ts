@@ -182,7 +182,7 @@ type DiscoveryQueueRow = {
 let discoveryQueueDispatchRunning = false;
 
 /**
- * Claim newly researched prospects and create one durable Sales room for the batch.
+ * Claim newly researched prospects and create one durable Research review room per record.
  * The queue status transition is conditional (new -> reviewing), so concurrent
  * scheduler instances cannot claim the same record. If handoff creation fails,
  * claims are released back to new for the next five-minute pass.
@@ -250,7 +250,7 @@ export async function dispatchNewDiscoveryQueue(): Promise<number> {
         });
         dispatched.add(prospect.id);
       }
-      console.log('Discovery queue Sales handoffs created:', JSON.stringify({
+      console.log('Discovery queue Research handoffs created:', JSON.stringify({
         count: dispatched.size,
         ids: [...dispatched],
       }));
@@ -272,7 +272,7 @@ export async function dispatchNewDiscoveryQueue(): Promise<number> {
   } finally {
     discoveryQueueDispatchRunning = false;
   }
-
+}
 
 /**
  * Re-review records already left in "reviewing" by the earlier Sales-owned
@@ -293,7 +293,7 @@ export async function dispatchReviewingDiscoveryQueue(): Promise<number> {
   ]);
   let dispatched = 0;
   for (const prospect of pending) {
-    const marker = \`Queue record ID: \${prospect.id}.\`;
+    const marker = 'Queue record ID: ' + prospect.id + '.';
     if (previous.some((item) => item.request.includes(marker))) continue;
     const contextSummary = JSON.stringify({
       source: 'public.lead_discovery_queue',
@@ -333,8 +333,6 @@ export async function dispatchReviewingDiscoveryQueue(): Promise<number> {
   }
   if (dispatched) console.log('Discovery queue recovery handoffs sent to Research:', dispatched);
   return dispatched;
-}
-
 }
 
 let discoveryApprovalDispatchRunning = false;
@@ -542,7 +540,7 @@ async function applyDiscoveryCrmApproval(approval: ApprovalRow, decision: 'appro
 registerApprovalHook('lead_discovery_queue', applyDiscoveryCrmApproval);
 
 /**
- * Convert completed Sales QUALIFY decisions into Founder approval requests.
+ * Convert completed Research QUALIFY decisions into Founder approval requests.
  * No CRM row is created until the Founder approves the request.
  */
 export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
