@@ -3,6 +3,7 @@ import { EvolutionError } from './evolution.js';
 import { FOUNDER_DAILY_LIMIT, decide, sendWindowOpen, type Purpose } from './policy.js';
 import type { MessageRow, MessageStore } from './message-store.js';
 import { localTime } from '../organization/workforce/schedule.js';
+import { assertRuntimeActive, isRuntimePaused } from '../organization/runtime-control.js';
 
 export class OutboxError extends Error {}
 
@@ -53,6 +54,7 @@ const dayStartIso = (now: Date): string => {
 };
 
 export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise<QueueResult> {
+  await assertRuntimeActive();
   const to = normalizePhone(input.to);
   if (!to) throw new OutboxError(`"${input.to}" is not a valid phone number. Use international format, e.g. +265888123456.`);
   const now = deps.now();
@@ -151,6 +153,7 @@ export interface SendOutcome { id: string; status: 'sent' | 'failed' | 'waiting'
 
 /** Send what is queued, respecting the sending window, daily caps, opt-outs and retries. */
 export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOutcome[]> {
+  if (await isRuntimePaused()) return [];
   const out: SendOutcome[] = [];
   const now = deps.now();
   const since = dayStartIso(now);
