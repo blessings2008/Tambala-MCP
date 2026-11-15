@@ -1,5 +1,6 @@
 import { supabaseSelect, supabaseUpdate } from '../lib/supabase.js';
 import { dbConfigured } from './workforce/db-util.js';
+import { signWork } from './workforce/sign-work.js';
 
 export interface RuntimeControl {
   id: 'global';
@@ -8,6 +9,8 @@ export interface RuntimeControl {
   paused_at: string | null;
   paused_by_role_id: string | null;
   updated_at: string;
+  signature_fingerprint?: string | null;
+  signature_record_id?: string | null;
 }
 
 export class RuntimePausedError extends Error {
@@ -50,12 +53,23 @@ export async function assertRuntimeActive(): Promise<void> {
 
 export async function setRuntimePaused(paused: boolean, reason: string | null, roleId: string): Promise<RuntimeControl> {
   if (!dbConfigured()) throw new Error('The global pause switch requires the database and runtime reliability migration.');
-  const now = new Date().toISOString();
+  const now = new Date();
+  const normalizedReason = paused ? (reason?.trim().slice(0, 500) || 'Paused by Founder') : null;
+  const stamp = await signWork({
+    roleId,
+    kind: 'runtime_control',
+    subjectId: 'global',
+    content: JSON.stringify({ paused, reason: normalizedReason, actor: roleId }),
+    now,
+  });
+  if (!stamp.signed) throw new Error('Runtime control change was not signed. Configure TAMBALA_SIGNING_SECRET before changing the global pause state.');
   return supabaseUpdate<RuntimeControl>('organization_runtime_control', {
     paused,
-    reason: paused ? (reason?.trim().slice(0, 500) || 'Paused by Founder') : null,
-    paused_at: paused ? now : null,
-    paused_by_role_id: paused ? roleId : null,
-    updated_at: now,
+    reason: normalizedReason,
+    paused_at: paused ? now.toISOString() : null,
+    paused_by_role_id: roleId,
+    updated_at: now.toISOString(),
+    signature_fingerprint: stamp.fingerprint,
+    signature_record_id: stamp.recordId,
   }, 'id=eq.global');
 }
