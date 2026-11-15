@@ -160,9 +160,15 @@ The dashboard exposes a rolling 30-day `goals` section sourced from the discover
 
 Do not treat sent quotations as accepted or invoice creation as revenue. Paid revenue counts only invoice rows whose recorded status is `paid`; reconciliation still depends on the Tambala Pay status refresh.
 
-### AI spend ledger (configuration still required)
+### AI spend and free-only policy
 
-`organization_ai_usage` stores employee number, agent, provider, model and actual token usage. Set `TAMBALA_MODEL_PRICING_USD_PER_1M` to a JSON object keyed by exact provider model ID, with `inputUsd` and `outputUsd` rates per one million tokens, only after verifying those rates against the provider's current pricing. Unknown or malformed model prices remain unpriced; no estimate is substituted. The dashboard shows token counts, priced spend and unpriced request counts by employee. Daily spend caps are not activated yet: the Founder must approve per-employee and organization-wide USD limits and authoritative model rates before strict enforcement can be enabled.
+`organization_ai_usage` stores employee number, agent, provider, model and actual token usage. The Founder has set the current operating policy to **free AI only**; no paid model or paid fallback may be used.
+
+- `TAMBALA_AI_FREE_ONLY=true` is the default and should remain enabled. OpenRouter models ending in the explicit `:free` suffix are accepted.
+- Other provider/model combinations are blocked unless the exact `provider:model` pair is added to `TAMBALA_FREE_AI_MODEL_ALLOWLIST` after verifying that the provider account can use that model at no charge. Example: `groq:openai/gpt-oss-20b`. This allowlist does not claim that every provider account receives free usage.
+- Unknown pricing is never assumed to be zero. If free capacity is unavailable, the request fails with a clear policy error; the system does not silently switch to a paid model.
+- Set `TAMBALA_MODEL_PRICING_USD_PER_1M` only when verified provider prices are available. The dashboard then reports priced spend; otherwise usage remains explicitly unpriced.
+- Daily USD spend caps are not used while paid AI is prohibited. Any move away from free-only requires explicit Founder approval and a separately configured spend cap.
 
 ## PDF documents
 
