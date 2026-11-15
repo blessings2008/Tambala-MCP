@@ -6,7 +6,7 @@ import { verifySignature } from '../organization/workforce/sign-work.js';
 import { HandoffError } from '../organization/workforce/handoffs.js';
 import { AGENT_DIRECTORY } from '../services/ai/models.js';
 import { resolveOrganizationIdentity } from '../organization/identity-service.js';
-import { proposeDutyChange } from '../organization/workforce/governed-proposals.js';
+import { proposeDutyChange, proposeRoleChange } from '../organization/workforce/governed-proposals.js';
 
 function text(value: unknown, isError = false) {
   return { ...(isError ? { isError: true } : {}), content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] };
@@ -103,6 +103,26 @@ export function registerWorkforceTools(server: McpServer): void {
       return text({ status: 'pending_founder_approval', approvalId, summary: `Proposed duty “${title}” for ${employee}. It is not active until Founder approval.` });
     } catch (error) {
       return text({ error: error instanceof Error ? error.message : 'Could not submit duty proposal.' }, true);
+    }
+  });
+
+  server.registerTool('propose_organization_role', {
+    description: 'People/HR or Strategy may propose a human or shared-responsibility role inside an existing unit. The proposal goes to the Founder approval inbox. After approval it is added through the persistent organization role table with no capabilities granted. This does not create an AI employee or assign an employee number.',
+    inputSchema: {
+      title: z.string().min(3).max(120),
+      kind: z.enum(['human', 'shared_responsibility']),
+      unitId: z.string().min(2).max(80),
+      reportsToRoleId: z.string().min(2).max(100),
+      purpose: z.string().min(10).max(1000),
+    },
+  }, async ({ title, kind, unitId, reportsToRoleId, purpose }) => {
+    const identity = await resolveOrganizationIdentity();
+    if (!identity.authenticated || !identity.role) return text({ error: 'A trusted OAuth role binding is required.' }, true);
+    try {
+      const approvalId = await proposeRoleChange(identity.role.id, { title, kind, unitId, reportsToRoleId, purpose });
+      return text({ status: 'pending_founder_approval', approvalId, summary: `Proposed role “${title}”. No role is added until Founder approval.` });
+    } catch (error) {
+      return text({ error: error instanceof Error ? error.message : 'Could not submit role proposal.' }, true);
     }
   });
 
