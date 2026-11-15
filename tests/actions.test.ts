@@ -74,7 +74,7 @@ ACTIONS:
 });
 
 test('legacy security notify payload is normalized to the current safe action schema', () => {
-  const parsed = parseActions(\`Review complete.\nACTIONS:\n{ "action": "notify_founder", "payload": { "subject": "Security alert", "message": "Two failures need review." } }\`);
+  const parsed = parseActions('Review complete.\nACTIONS:\n{ "action": "notify_founder", "payload": { "subject": "Security alert", "message": "Two failures need review." } }');
   assert.equal(parsed.actions.length, 1);
   assert.deepEqual(parsed.actions[0], { type: 'notify_founder', text: 'Security alert — Two failures need review.' });
   assert.deepEqual(parsed.rejected, []);
