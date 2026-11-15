@@ -12,6 +12,8 @@ import { signatureStore } from '../organization/workforce/sign-work.js';
 import { signingAvailable } from '../organization/workforce/signing.js';
 import { buildWorkforce } from '../organization/workforce/duty-service.js';
 import { getAgentOperationalInfo, type AgentName } from '../services/ai.js';
+import { getDutyHeartbeat } from '../organization/workforce/heartbeat.js';
+import { getRuntimeControl } from '../organization/runtime-control.js';
 
 export type Section<T> = { ok: true; data: T } | { ok: false; error: string };
 type Row = Record<string, unknown>;
@@ -91,7 +93,7 @@ export async function buildDashboard() {
     return supabaseSelect<T>(path, query);
   };
 
-  const [organization, tasks, events, approvals, decisions, audit, bindings, runs, actions, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents] = await Promise.all([
+  const [organization, tasks, events, approvals, decisions, audit, bindings, runs, actions, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, runtime] = await Promise.all([
     section(async () => {
       const snap = await getOrganizationSnapshot();
       return {
@@ -121,6 +123,28 @@ export async function buildDashboard() {
     section(() => payHealthCached()),
     section(() => db<Row>('organization_task_rooms', 'select=id,handoff_id,parent_task_id,owner_role_id,owner_agent,opened_by_role_id,objective,status,deliverable,blocker,opened_at,updated_at,closed_at&order=updated_at.desc&limit=100')),
     section(() => db<Row>('organization_task_room_events', 'select=id,room_id,event_type,actor_role_id,payload,created_at&order=created_at.desc&limit=100')),
+    section(async () => {
+      const since = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+      const [control, heartbeat, dutyRuns] = await Promise.all([
+        getRuntimeControl(), getDutyHeartbeat(), db<Row>('organization_duty_runs', `select=id,status,started_at,completed_at&started_at=gte.${encodeURIComponent(since)}&order=started_at.desc&limit=500`),
+      ]);
+      const completed = dutyRuns.filter((run) => run.status === 'completed' || run.status === 'awaiting_approval').length;
+      const failed = dutyRuns.filter((run) => run.status === 'failed').length;
+      const observed = completed + failed;
+      const failureRatePercent = observed ? Math.round((failed / observed) * 10000) / 100 : null;
+      const target = Math.min(99.9, Math.max(50, Number(process.env.TAMBALA_DUTY_SUCCESS_TARGET_PERCENT) || 95));
+      const allowedFailureRate = 100 - target;
+      return {
+        control,
+        heartbeat,
+        errorBudget: {
+          windowHours: 24, targetSuccessPercent: target, completed, failed, observed,
+          failureRatePercent,
+          remainingPercent: failureRatePercent === null ? null : Math.max(0, Math.round(((allowedFailureRate - failureRatePercent) / allowedFailureRate) * 10000) / 100),
+          note: 'Based only on recorded duty runs in the last 24 hours. It is unavailable when no completed or failed duty runs are recorded.',
+        },
+      };
+    }),
   ]);
 
   const agents = (Object.keys(AGENT_DIRECTORY) as AgentName[]).map((name) => {
@@ -148,7 +172,7 @@ export async function buildDashboard() {
       deniedRecent,
     },
     organization, tasks, taskSummary: taskSummary ? { ok: true as const, data: taskSummary } : { ok: false as const, error: tasks.ok ? '' : tasks.error },
-    events, approvals, decisions, audit, bindings, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, automation: { runs, pendingActions: actions }, agents,
+    events, approvals, decisions, audit, bindings, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, runtime, automation: { runs, pendingActions: actions }, agents,
     config: {
       database: dbConfigured,
       oauth: flag('TAMBALA_OAUTH_SECRET') && flag('TAMBALA_OAUTH_APPROVAL_CODE'),
