@@ -380,6 +380,41 @@ test('inbound: customer replies are stored, matched to the CRM and forwarded to 
   assert.equal((await handleEvolutionWebhook(h.deps, evt('265888123456@s.whatsapp.net', 'Yes please send the quote'))).duplicates, 1);
 });
 
+test('inbound: explicit quotation acceptance links to the sent quote and employee message', async () => {
+  const h = inboundHarness();
+  const outbound = await h.store.add({
+    direction: 'out', number: '265888123456', audience: 'client', purpose: 'followup',
+    from_role_id: 'director-sales-business-development', text: 'Please find your quotation attached.',
+    document_id: 'quote-123', approval_id: 'approval-1', status: 'sent', reason: null,
+    provider_message_id: 'out-quote-1', attempts: 1, task_id: null, signature: 'AAAA-BBBB-CCCC-DDDD',
+    contact_label: 'Lakeview Lodge (lead)', created_at: MON_10AM, sent_at: MON_10AM,
+  });
+  const accepted: Array<{ outboundId: string; inboundId: string; text: string }> = [];
+  h.deps.recordQuotationAcceptance = async (sent, received, customerText) => {
+    accepted.push({ outboundId: sent.id, inboundId: received.id, text: customerText });
+    return true;
+  };
+  const result = await handleEvolutionWebhook(h.deps, evt('265888123456@s.whatsapp.net', 'We accept the quotation and are ready to proceed.', 'ACCEPT-1'));
+  const inbound = (await h.store.recent(1))[0];
+  assert.equal(result.forwarded, 1);
+  assert.equal(classifyCustomerReply('We accept the quotation.'), 'accepted');
+  assert.equal(classifyCustomerReply('Yes, please send the quote.'), 'interested');
+  assert.equal(inbound.reply_to_message_id, outbound.id);
+  assert.equal(inbound.reply_intent, 'accepted');
+  assert.deepEqual(accepted, [{ outboundId: outbound.id, inboundId: inbound.id, text: 'We accept the quotation and are ready to proceed.' }]);
+  assert.match(h.told.at(-1)!, /Explicit quotation acceptance recorded/);
+});
+
+test('inbound: acceptance wording without a sent quotation is never counted as accepted', async () => {
+  const h = inboundHarness();
+  const result = await handleEvolutionWebhook(h.deps, evt('265888123456@s.whatsapp.net', 'We accept the quotation.', 'ACCEPT-NO-QUOTE'));
+  const inbound = (await h.store.recent(1))[0];
+  assert.equal(result.forwarded, 1);
+  assert.equal(inbound.reply_intent, 'accepted');
+  assert.equal(inbound.reply_to_message_id, null);
+  assert.match(h.told.at(-1)!, /no matching sent quotation could be verified/);
+});
+
 test('inbound: customer complaints trigger trust demotion and Founder escalation', async () => {
   const demotions: Array<{ number: string; reason: string }> = [];
   const h = inboundHarness({ demoteTrustForNumber: async (number, reason) => { demotions.push({ number, reason }); } });
