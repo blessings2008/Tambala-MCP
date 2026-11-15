@@ -8,7 +8,7 @@ import { loadDesign } from '../src/documents/design.ts';
 test('quotation input accepts structured sections, milestones, recurring fees and terms bullets', () => {
   const parsed = documentInputSchema.safeParse({
     kind: 'quotation', client: { name: 'Malawi College of Health Sciences' },
-    items: [{ description: 'System design', quantity: 1, unitPrice: 25000 }],
+    items: [{ component: 'Discovery', description: 'System design and requirements mapping', quantity: 1, unitPrice: 25000 }],
     clientCode: 'MCHS', project: 'College Management System',
     sections: [{ title: 'Project Overview', body: 'Centralised academic administration.' }],
     milestones: [{ label: 'Acceptance', percentage: 50 }, { label: 'Review', percentage: 30 }, { label: 'Handover', percentage: 20 }],
@@ -19,6 +19,7 @@ test('quotation input accepts structured sections, milestones, recurring fees an
   assert.equal(parsed.success, true);
   if (parsed.success) {
     assert.equal(parsed.data.clientCode, 'MCHS');
+    assert.equal('component' in parsed.data.items[0] ? parsed.data.items[0].component : undefined, 'Discovery');
     assert.equal(parsed.data.milestones?.reduce((n, x) => n + x.percentage, 0), 100);
     assert.equal(parsed.data.recurringFees?.[0].included, true);
   }
@@ -40,7 +41,7 @@ test('quotation PDF renders two A4 pages and includes the MCHS reference section
   const doc: StoredDocument = {
     number: 'TT-Q-2026-0001', kind: 'quotation', issuedAt: '2026-11-02T08:00:00.000Z', validUntil: '2026-12-02T08:00:00.000Z',
     client: { name: 'Malawi College of Health Sciences' },
-    items: [{ sku: null, description: 'System design and architecture', quantity: 1, unitPriceMinor: 2500000, amountMinor: 2500000, custom: true }],
+    items: [{ sku: null, component: 'System design', description: 'Architecture and requirements documentation', quantity: 1, unitPriceMinor: 2500000, amountMinor: 2500000, custom: true }],
     totals: { subtotalMinor: 2500000, vatPercent: 0, vatMinor: 0, totalMinor: 2500000 }, currency: 'MWK',
     reference: 'TT-MCHS-2026-001', project: 'College Management System',
     sections: [{ title: 'Project Overview', body: 'A centralised college management system.' }],
