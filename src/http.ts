@@ -17,6 +17,7 @@ import { dbConfigured, NeedsDatabaseError } from './organization/workforce/db-ut
 import { AGENT_DIRECTORY } from './services/ai/models.js';
 import { startDutyScheduler } from './organization/workforce/scheduler.js';
 import { claimStaleDutyAlert, markDutyCycleCompleted, markDutyCycleFailed, markDutyCycleStarted } from './organization/workforce/heartbeat.js';
+import { getRuntimeControl, setRuntimePaused } from './organization/runtime-control.js';
 import { handleWebhook, channelStatus, founderNumber, queueWhatsApp, runOutbox } from './channels/service.js';
 import { OutboxError } from './channels/outbox.js';
 import { createDocument, DocumentError } from './documents/service.js';
@@ -550,6 +551,22 @@ const server = createHttpServer(async (req, res) => {
     } catch (error) {
       console.error('Scheduled WhatsApp outbox run failed:', error instanceof Error ? error.message : error);
       json(res, 500, { error: 'WhatsApp outbox could not be processed.' });
+    }
+    return;
+  }
+
+  if (requestPath === '/api/runtime/control' && (req.method === 'GET' || req.method === 'POST')) {
+    if (!chatTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized.' }); return; }
+    try {
+      if (req.method === 'GET') { json(res, 200, await getRuntimeControl()); return; }
+      const body = await readJsonBody(req) as { paused?: unknown; reason?: unknown };
+      if (typeof body.paused !== 'boolean' || (body.reason !== undefined && typeof body.reason !== 'string')) {
+        json(res, 400, { error: 'Provide paused as a boolean and reason as optional text.' }); return;
+      }
+      const state = await setRuntimePaused(body.paused, typeof body.reason === 'string' ? body.reason : null, 'founder');
+      json(res, 200, { paused: state.paused, reason: state.reason, signature: state.signature_fingerprint, updatedAt: state.updated_at });
+    } catch (error) {
+      json(res, 503, { error: error instanceof Error ? error.message : 'Runtime control unavailable.' });
     }
     return;
   }
