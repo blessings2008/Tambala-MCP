@@ -75,7 +75,8 @@ function renderQuotation(doc: StoredDocument, design: DocDesign, signer: Signer)
     const widths = [145, cw - 145 - 94, 94];
     y = drawTableHeader(y, widths, ['Work component', 'Description', 'Amount (MWK)']);
     doc.items.forEach((item, i) => {
-      const descH = pdf.heightOfString(safe(item.description), { width: widths[1] - 12, font: 'Helvetica', size: 7.6, lineGap: 1 });
+      pdf.font('Helvetica').fontSize(7.6);
+      const descH = pdf.heightOfString(safe(item.description), { width: widths[1] - 12, lineGap: 1 });
       const rowH = Math.max(22, descH + 9);
       if (i % 2 === 0) pdf.rect(m, y, cw, rowH).fill('#f8fafc');
       pdf.fillColor(c.text).font('Helvetica-Bold').fontSize(7.6).text(safe(item.description), m + 7, y + 6, { width: widths[0] - 12 });
@@ -126,7 +127,8 @@ function renderQuotation(doc: StoredDocument, design: DocDesign, signer: Signer)
     y += 12;
     y = sectionTitle(5, 'Terms and Conditions', y);
     terms.forEach((bullet) => {
-      const h = pdf.heightOfString(safe(bullet), { width: cw - 16, font: 'Helvetica', size: 8, lineGap: 1 });
+      pdf.font('Helvetica').fontSize(8);
+      const h = pdf.heightOfString(safe(bullet), { width: cw - 16, lineGap: 1 });
       pdf.fillColor(c.primary).font('Helvetica-Bold').fontSize(8).text('•', m + 2, y + 1, { lineBreak: false });
       pdf.fillColor(c.text).font('Helvetica').fontSize(8).text(safe(bullet), m + 16, y, { width: cw - 16, lineGap: 1 });
       y += Math.max(15, h + 5);
