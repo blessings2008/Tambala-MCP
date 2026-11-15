@@ -138,11 +138,11 @@ async function organizationContext(store: DutyStore, now: Date): Promise<Row> {
   const day = new Date(now.getTime() - 24 * 3_600_000).toISOString();
   const week = new Date(now.getTime() - 7 * 24 * 3_600_000).toISOString();
   const [audit, tasks, failedEvents, bindings, runs] = await Promise.all([
-    recentRows('organization_audit_events', `select=action,outcome,reason,created_at&created_at=gte.${encodeURIComponent(day)}&order=created_at.desc&limit=100`),
-    recentRows('organization_tasks', `select=objective,status,assigned_role_id,error_message,created_at&created_at=gte.${encodeURIComponent(week)}&order=created_at.desc&limit=100`),
-    recentRows('organization_task_events', `select=task_id,event_type,stage,actor_role_id,department_id,payload,created_at&event_type=eq.stage_failed&created_at=gte.${encodeURIComponent(week)}&order=created_at.desc&limit=100`),
+    recentRows('organization_audit_events', `select=action,outcome,reason,created_at&created_at=gte.${encodeURIComponent(day)}&order=created_at.desc&limit=20`),
+    recentRows('organization_tasks', `select=objective,status,assigned_role_id,error_message,created_at&created_at=gte.${encodeURIComponent(week)}&order=created_at.desc&limit=30`),
+    recentRows('organization_task_events', `select=task_id,event_type,stage,actor_role_id,department_id,payload,created_at&event_type=eq.stage_failed&created_at=gte.${encodeURIComponent(week)}&order=created_at.desc&limit=30`),
     recentRows('organization_actor_bindings', 'select=role_id,active&active=eq.true'),
-    store.recent(week),
+    store.recent(week).then((rows) => rows.slice(0, 25)),
   ]);
   return {
     audit_last_24h: audit,
@@ -723,7 +723,7 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
         if (kind === 'briefing') out.briefing = await briefingContext(store, at);
         if (kind === 'catalog') out.catalog = await catalogContext();
         if (kind === 'invoices') out.invoices = await invoicesContext(at);
-        if (kind === 'discovery') out.discovery = { note: 'Research-only queue. New entries await Sales review; do not create CRM leads or contact prospects.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,crm_lead_id&order=research_date.desc,created_at.desc&limit=5000') };
+        if (kind === 'discovery') out.discovery = { note: 'Research-only queue. New entries await Sales review; do not create CRM leads or contact prospects.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,service_fit,verification_status,processing_status,crm_lead_id&processing_status=in.(new,reviewing,qualified)&order=research_date.desc,created_at.desc&limit=100') };
       }
       return out;
     },
