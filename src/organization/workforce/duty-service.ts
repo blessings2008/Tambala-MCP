@@ -144,12 +144,23 @@ async function organizationContext(store: DutyStore, now: Date): Promise<Row> {
     recentRows('organization_actor_bindings', 'select=role_id,active&active=eq.true'),
     store.recent(week).then((rows) => rows.slice(0, 25)),
   ]);
+  const compactText = (value: unknown, max = 180) => typeof value === 'string' ? value.slice(0, max) : value ?? null;
+  const compactPayload = (value: unknown): Row => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return { detail: compactText(value) };
+    const input = value as Row;
+    const selected: Row = {};
+    for (const key of ['error', 'message', 'reason', 'dutyId', 'summary', 'status', 'category']) {
+      if (input[key] !== undefined) selected[key] = compactText(input[key]);
+    }
+    return selected;
+  };
   return {
-    audit_last_24h: audit,
-    tasks_last_7d: tasks,
-    failed_task_events_last_7d: failedEvents,
-    active_role_bindings: bindings.length,
-    duty_runs_last_7d: runs.map((r) => ({ duty: r.duty_id, role: r.role_id, status: r.status, attempts: r.attempts, error: r.error, when: r.started_at })),
+    audit_last_24h: audit.slice(0, 10).map((row) => ({ action: compactText(row.action, 100), outcome: row.outcome, reason: compactText(row.reason), created_at: row.created_at })),
+    tasks_last_7d: tasks.slice(0, 15).map((row) => ({ objective: compactText(row.objective), status: row.status, assigned_role_id: row.assigned_role_id, error_message: compactText(row.error_message), created_at: row.created_at })),
+    failed_task_events_last_7d: failedEvents.slice(0, 15).map((row) => ({ task_id: row.task_id, event_type: row.event_type, stage: row.stage, actor_role_id: row.actor_role_id, department_id: row.department_id, payload: compactPayload(row.payload), created_at: row.created_at })),
+    active_role_bindings: bindings.map((row) => row.role_id).slice(0, 40),
+    active_role_binding_count: bindings.length,
+    duty_runs_last_7d: runs.slice(0, 15).map((r) => ({ duty: r.duty_id, role: r.role_id, status: r.status, attempts: r.attempts, error: compactText(r.error), when: r.started_at })),
     office_hours_note: 'Office hours are Mon-Fri 08:00-17:00 Africa/Blantyre. Activity outside them is unusual.',
   };
 }
@@ -784,7 +795,7 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
         if (kind === 'briefing') out.briefing = await briefingContext(store, at);
         if (kind === 'catalog') out.catalog = await catalogContext();
         if (kind === 'invoices') out.invoices = await invoicesContext(at);
-        if (kind === 'discovery') out.discovery = { note: 'Research queue. Central Research & Intelligence reviews records; CRM promotion and customer contact remain separately controlled.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,verification_status,processing_status&order=created_at.asc&limit=500') };
+        if (kind === 'discovery') out.discovery = { note: 'Research queue. Central Research & Intelligence reviews records; CRM promotion and customer contact remain separately controlled.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=organisation_name,verification_status,processing_status&order=created_at.asc&limit=500') };
       }
       return out;
     },
