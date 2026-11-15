@@ -18,6 +18,10 @@ export interface InboundDeps {
   };
   /** Route ordinary messages from the verified Founder number into the CEO workflow. */
   handleFounderInstruction?: (envelope: FounderMessageEnvelope) => Promise<string>;
+  runtimeControl?: {
+    get: () => Promise<{ paused: boolean; reason: string | null }>;
+    set: (paused: boolean, reason: string | null) => Promise<void>;
+  };
 }
 
 export interface FounderMessageEnvelope {
@@ -123,6 +127,22 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
       if (/^\s*(pending|list|status)\s*$/i.test(text)) {
         const list = await deps.approvals.pending();
         await deps.reply(number, list.length ? `${list.length} waiting:\n${list.slice(0, 8).map((a) => `${a.id.slice(0, 6)} · ${a.summary.slice(0, 70)}`).join('\n')}\n\nReply YES <code> or NO <code> <reason>.` : 'Nothing is waiting for you.').catch(() => undefined);
+        summary.founderCommands += 1; continue;
+      }
+      if (deps.runtimeControl && /^\\s*pause\\s+all(?:\\s+(.+))?\\s*$/i.test(text)) {
+        const match = text.match(/^\\s*pause\\s+all(?:\\s+(.+))?\\s*$/i)!;
+        await deps.runtimeControl.set(true, match[1]?.trim() || 'Paused by Founder via WhatsApp');
+        await deps.reply(number, 'Tambala organization is now PAUSED. AI requests, duty execution and WhatsApp outbox delivery are blocked until you send RESUME ALL.').catch(() => undefined);
+        summary.founderCommands += 1; continue;
+      }
+      if (deps.runtimeControl && /^\\s*resume\\s+all\\s*$/i.test(text)) {
+        await deps.runtimeControl.set(false, null);
+        await deps.reply(number, 'Tambala organization has been RESUMED. Normal duties and approved message delivery may continue.').catch(() => undefined);
+        summary.founderCommands += 1; continue;
+      }
+      if (deps.runtimeControl && /^\\s*pause\\s+status\\s*$/i.test(text)) {
+        const state = await deps.runtimeControl.get();
+        await deps.reply(number, state.paused ? `Tambala is PAUSED. Reason: ${state.reason ?? 'Founder pause'}.` : 'Tambala is RUNNING.').catch(() => undefined);
         summary.founderCommands += 1; continue;
       }
       if (deps.handleFounderInstruction) {
