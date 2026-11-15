@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { supabaseInsert } from '../../lib/supabase.js';
 import { getPersistedOrganizationSnapshot } from '../persisted-service.js';
 import { createApprovalRequest, registerApprovalHook, type ApprovalRow } from './approvals-service.js';
-import { saveDutyConfig } from './duty-service.js';
 import { roleIdFor } from './profiles.js';
-import { validateCustomDuty } from './duty-config.js';
+import { requireConfigStore, validateCustomDuty, type CustomDutyRow, type DutyConfigStore } from './duty-config.js';
+import { STANDING_DUTIES } from './duties.js';
 import { AGENT_DIRECTORY, type AgentName } from '../../services/ai/models.js';
 
 const PROPOSER_ROLES = new Set([roleIdFor('people'), roleIdFor('strategy')]);
@@ -43,26 +43,26 @@ export async function proposeDutyChange(proposedByRoleId: string, proposal: Duty
   return id;
 }
 
-registerApprovalHook(SUBJECT, async (approval: ApprovalRow, decision: 'approved' | 'rejected') => {
-  if (decision !== 'approved') return;
+export async function activateApprovedDutyProposal(
+  approval: Pick<ApprovalRow, 'id' | 'content'>,
+  store: DutyConfigStore = requireConfigStore(),
+): Promise<CustomDutyRow> {
   if (!approval.content) throw new Error('Approved duty proposal has no stored content.');
   const parsed = JSON.parse(approval.content) as { version?: unknown; proposal?: unknown };
   if (parsed.version !== 1 || !parsed.proposal || typeof parsed.proposal !== 'object') throw new Error('Duty proposal content version is invalid.');
-  const proposal = parsed.proposal as DutyProposal;
-  const takenIds = new Set<string>();
-  // The existing config path performs final validation, id allocation and persistence.
-  const validated = validateCustomDuty({
-    title: proposal.title,
-    agent: proposal.agent,
-    cadence: proposal.cadence,
-    time: proposal.time,
-    contexts: proposal.contexts,
-    job: proposal.job,
-    deliverable: proposal.deliverable,
-    requiresApproval: proposal.requiresApproval,
-    enabled: proposal.enabled,
-  }, takenIds);
-  await saveDutyConfig({ custom: validated });
+  const stableId = `founder-approved-${approval.id.replace(/[^a-f0-9]/gi, '').toLowerCase()}`;
+  const existing = await store.customs();
+  const alreadyActivated = existing.find((duty) => duty.id === stableId);
+  if (alreadyActivated) return alreadyActivated;
+  const takenIds = new Set([...STANDING_DUTIES.map((duty) => duty.id), ...existing.map((duty) => duty.id)]);
+  const validated = validateCustomDuty(parsed.proposal, takenIds, stableId);
+  await store.saveCustom(validated);
+  return validated;
+}
+
+registerApprovalHook(SUBJECT, async (approval: ApprovalRow, decision: 'approved' | 'rejected') => {
+  if (decision !== 'approved') return;
+  await activateApprovedDutyProposal(approval);
 });
 
 export interface RoleProposal {
