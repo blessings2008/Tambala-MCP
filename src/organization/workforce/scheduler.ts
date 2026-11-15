@@ -1,21 +1,21 @@
 import { dispatchNewDiscoveryQueue, dispatchReviewingDiscoveryQueue, dispatchQualifiedDiscoveryApprovals, runDutiesOnce } from './duty-service.js';
 
 export interface ScheduledQueueMaintenanceDeps {
-  dispatchNew: () => Promise<number>;
-  dispatchReviewing: () => Promise<number>;
+  dispatchNew: (maxCount: number) => Promise<number>;
+  dispatchReviewing: (maxCount: number) => Promise<number>;
   dispatchApprovals: () => Promise<number>;
   runDuties: (options: { skipDiscoveryQueue: true }) => Promise<{ outcomes: unknown[]; handoffs: unknown[] }>;
 }
 
-/** Keep legacy recovery in the in-process path even though runDuties skips queue dispatch. */
+/** Keep recovery and intake within the five-handoff worker budget in every scheduler mode. */
 export async function runScheduledQueueMaintenance(deps: ScheduledQueueMaintenanceDeps = {
   dispatchNew: dispatchNewDiscoveryQueue,
   dispatchReviewing: dispatchReviewingDiscoveryQueue,
   dispatchApprovals: dispatchQualifiedDiscoveryApprovals,
   runDuties: runDutiesOnce,
 }) {
-  const newClaims = await deps.dispatchNew();
-  const recoveredReviews = await deps.dispatchReviewing();
+  const recoveredReviews = await deps.dispatchReviewing(5);
+  const newClaims = await deps.dispatchNew(Math.max(0, 5 - recoveredReviews));
   const promotionApprovals = await deps.dispatchApprovals();
   const cycle = await deps.runDuties({ skipDiscoveryQueue: true });
   return { newClaims, recoveredReviews, promotionApprovals, ...cycle };
