@@ -10,6 +10,8 @@ import { getBusinessSummary, getCompactCompanyContext } from '../services/ai/con
 import { buildProspectingSearchQueries } from '../services/web-research.js';
 import { signWork } from '../organization/workforce/sign-work.js';
 import { loadPdfForSending } from '../documents/service.js';
+import { documentStore } from '../documents/store.js';
+import { recordQuotationAcceptance } from '../documents/acceptance.js';
 import { connectionState, evolutionConfig, evolutionConfigured, isWhatsAppNumber, sendDocument, sendText } from './evolution.js';
 import { handleEvolutionWebhook, type FounderMessageEnvelope, type InboundDeps, type InboundSummary } from './inbound.js';
 import { messageStore, type MessageStore } from './message-store.js';
@@ -311,6 +313,12 @@ export function productionInboundDeps(store: MessageStore = messageStore()): Inb
       await runOutbox();
     },
     contactLookup: contactLabel,
+    recordQuotationAcceptance: async (outbound, inbound, customerText) => {
+      if (!outbound.document_id) return false;
+      return recordQuotationAcceptance(outbound.document_id, {
+        messageId: inbound.id, acceptedAt: new Date().toISOString(), customerText,
+      }, documentStore());
+    },
     demoteTrustForNumber: async (number, reason) => {
       if (!dbConfigured()) return;
       const rows = await supabaseSelect<{ from_role_id: string | null }>(
