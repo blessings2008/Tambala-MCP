@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { activateApprovedDutyProposal, proposeDutyChange } from '../src/organization/workforce/governed-proposals.ts';
+import { activateApprovedDutyProposal, activateApprovedRoleProposal, proposeDutyChange } from '../src/organization/workforce/governed-proposals.ts';
 import { InMemoryDutyConfigStore } from '../src/organization/workforce/duty-config.ts';
 import { roleIdFor } from '../src/organization/workforce/profiles.ts';
 
@@ -58,4 +58,54 @@ test('governed proposals require traceable evidence and HTTPS for web sources', 
     ...proposal,
     evidence: [{ type: 'web_source', reference: 'source:1', summary: 'A source summary with enough detail.', sourceUrl: 'http://example.com' }],
   }), /HTTPS source URL/);
+});
+
+
+test('approved role activation revalidates the organization and is idempotent with no capabilities', async () => {
+  const roles: Array<Record<string, unknown>> = [{ id: 'ceo' }];
+  const inserted: Array<Record<string, unknown>> = [];
+  const approval = {
+    content: JSON.stringify({
+      version: 1,
+      id: 'operations-coordinator-approved-1',
+      proposal: {
+        title: 'Operations Coordinator',
+        kind: 'human',
+        unitId: 'operations-administration',
+        reportsToRoleId: 'ceo',
+        purpose: 'Coordinate office operations and internal administration.',
+        evidence: [{ type: 'organization_report', reference: 'reports:workforce-gap', summary: 'The report identifies repeated scheduling and coordination gaps.' }],
+      },
+    }),
+  };
+  const deps = {
+    getSnapshot: async () => ({ organization: { units: [{ id: 'operations-administration' }], roles } } as any),
+    insertRole: async (row: Record<string, unknown>) => { inserted.push(row); roles.push({ id: row.id }); },
+  };
+  assert.equal(await activateApprovedRoleProposal(approval, deps), true);
+  assert.equal(await activateApprovedRoleProposal(approval, deps), false);
+  assert.equal(inserted.length, 1);
+  assert.deepEqual(inserted[0].capabilities, []);
+  assert.equal(inserted[0].activation, 'active');
+});
+
+test('approved role activation stops if its unit or reporting line has changed', async () => {
+  const approval = {
+    content: JSON.stringify({
+      version: 1,
+      id: 'operations-coordinator-approved-2',
+      proposal: {
+        title: 'Operations Coordinator',
+        kind: 'human',
+        unitId: 'removed-unit',
+        reportsToRoleId: 'ceo',
+        purpose: 'Coordinate office operations and internal administration.',
+        evidence: [{ type: 'organization_report', reference: 'reports:workforce-gap', summary: 'The report identifies repeated scheduling and coordination gaps.' }],
+      },
+    }),
+  };
+  await assert.rejects(activateApprovedRoleProposal(approval, {
+    getSnapshot: async () => ({ organization: { units: [], roles: [{ id: 'ceo' }] } } as any),
+    insertRole: async () => { throw new Error('must not insert'); },
+  }), /organizational structure changed/);
 });
