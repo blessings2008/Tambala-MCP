@@ -4,7 +4,7 @@ import { earnsStandingApproval, mayUseStandingApproval, STANDING_APPROVAL_DAILY_
 
 test('standing approval requires 20 consecutive unedited approvals for an eligible low-risk action', () => {
   assert.equal(TRUST_APPROVAL_THRESHOLD, 20);
-  assert.equal(earnsStandingApproval(19, 'prepared_followups', true, true), false);
+  assert.equal(earnsStandingApproval(19, 'prepared_work', true, true), false);
   assert.equal(earnsStandingApproval(20, 'prepared_work', true, true, 'low'), true);
   assert.equal(earnsStandingApproval(25, 'prepared_work', true, false, 'low'), false);
   assert.equal(earnsStandingApproval(25, 'prepared_work', false, true, 'low'), false);
