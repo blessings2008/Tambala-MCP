@@ -16,6 +16,7 @@ import { verifySignature } from './organization/workforce/sign-work.js';
 import { dbConfigured, NeedsDatabaseError } from './organization/workforce/db-util.js';
 import { AGENT_DIRECTORY } from './services/ai/models.js';
 import { startDutyScheduler } from './organization/workforce/scheduler.js';
+import { claimStaleDutyAlert, markDutyCycleCompleted, markDutyCycleFailed, markDutyCycleStarted } from './organization/workforce/heartbeat.js';
 import { handleWebhook, channelStatus, founderNumber, queueWhatsApp, runOutbox } from './channels/service.js';
 import { OutboxError } from './channels/outbox.js';
 import { createDocument, DocumentError } from './documents/service.js';
@@ -552,14 +553,42 @@ const server = createHttpServer(async (req, res) => {
     return;
   }
 
+  if (requestPath === '/api/runtime/watchdog' && req.method === 'POST') {
+    if (!schedulerTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized.' }); return; }
+    if (!founderNumber()) { json(res, 503, { error: 'Founder WhatsApp number is not configured; heartbeat alert cannot be delivered.' }); return; }
+    try {
+      const stale = await claimStaleDutyAlert();
+      if (!stale) { json(res, 200, { ok: true, stale: false, message: 'No overdue duty cycle needs an alert.' }); return; }
+      const last = stale.last_completed_at ?? stale.last_started_at ?? 'unknown';
+      await queueWhatsApp({
+        to: founderNumber()!,
+        roleId: 'ceo',
+        agent: 'orchestrator',
+        purpose: 'notify_founder',
+        text: `Tambala runtime alert: no completed duty cycle has been recorded within the configured heartbeat window. Last completed: ${last}. Last error: ${stale.last_error ?? 'No error was recorded'}. Please check the Render service, scheduler and Supabase connectivity.`,
+      });
+      await runOutbox();
+      json(res, 200, { ok: true, stale: true, alertQueued: true, lastCompletedAt: stale.last_completed_at, lastError: stale.last_error });
+    } catch (error) {
+      console.error('Runtime watchdog failed:', error instanceof Error ? error.message : error);
+      json(res, 500, { error: 'Runtime watchdog could not complete.' });
+    }
+    return;
+  }
+
   if (requestPath === '/api/duties/run' && req.method === 'POST') {
     if (!chatTokenMatches(bearerToken(req)) && !schedulerTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized.' }); return; }
     try {
       const body = (await readJsonBody(req).catch(() => ({}))) as { dutyId?: unknown; force?: unknown; handoffsOnly?: unknown };
       const dutyId = typeof body.dutyId === 'string' ? body.dutyId : undefined;
-      json(res, 200, await runDutiesOnce({ dutyId, force: body.force === true && Boolean(dutyId), handoffsOnly: body.handoffsOnly === true }));
+      const fullCycle = !dutyId && body.handoffsOnly !== true;
+      if (fullCycle) await markDutyCycleStarted().catch((error) => console.warn('Duty heartbeat start could not be stored:', error instanceof Error ? error.message : error));
+      const result = await runDutiesOnce({ dutyId, force: body.force === true && Boolean(dutyId), handoffsOnly: body.handoffsOnly === true });
+      if (fullCycle) await markDutyCycleCompleted().catch((error) => console.warn('Duty heartbeat completion could not be stored:', error instanceof Error ? error.message : error));
+      json(res, 200, result);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Duty run failed.';
+      await markDutyCycleFailed(error).catch(() => undefined);
       json(res, /already running/.test(message) ? 409 : /Unknown duty/.test(message) ? 400 : 500, { error: message });
     }
     return;
