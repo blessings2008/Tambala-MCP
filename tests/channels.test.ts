@@ -165,6 +165,19 @@ test('outbox: customer follow-ups wait for approval, tell the Founder, and go ou
   assert.equal((await h.store.byId(r.id))!.status, 'sent');
 });
 
+test('outbox: attached document is marked sent only after the provider accepts delivery', async () => {
+  const marked: Array<{ id: string; at: string }> = [];
+  const h = outboxHarness({ markDocumentSent: async (id, at) => { marked.push({ id, at }); } });
+  const queued = await queueMessage(h.deps, {
+    ...sales, to: '0888123456', text: 'Your quotation is attached.', purpose: 'followup', documentId: 'doc-1',
+    contactLabel: 'Lakeview Lodge',
+  });
+  await onApprovalDecided(h.deps, queued.id, 'approved', null);
+  const result = await processOutbox(h.deps);
+  assert.equal(result.find((item) => item.id === queued.id)?.status, 'sent');
+  assert.deepEqual(marked, [{ id: 'doc-1', at: MON_10AM }]);
+});
+
 test('outbox: first-contact drafts remove internal analysis and routing notes before Founder approval', async () => {
   const h = outboxHarness();
   const result = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello, we build business websites.\nInternal analysis: prioritise this prospect.\nRouting note: assign to CEO.', purpose: 'outreach', contactLabel: 'Verified Test Lodge (lead)' });
