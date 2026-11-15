@@ -795,7 +795,28 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
         if (kind === 'briefing') out.briefing = await briefingContext(store, at);
         if (kind === 'catalog') out.catalog = await catalogContext();
         if (kind === 'invoices') out.invoices = await invoicesContext(at);
-        if (kind === 'discovery') out.discovery = { note: 'Research queue. Central Research & Intelligence reviews records; CRM promotion and customer contact remain separately controlled.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=organisation_name,verification_status,processing_status&order=created_at.asc&limit=500') };
+        if (kind === 'discovery') {
+          const prospects = await supabaseSelect<Row>('lead_discovery_queue', 'select=organisation_name,verification_status,processing_status&order=created_at.asc&limit=500');
+          const processingCounts: Record<string, number> = {};
+          const verificationCounts: Record<string, number> = {};
+          for (const prospect of prospects) {
+            const processing = String(prospect.processing_status ?? 'unknown');
+            const verification = String(prospect.verification_status ?? 'unknown');
+            processingCounts[processing] = (processingCounts[processing] ?? 0) + 1;
+            verificationCounts[verification] = (verificationCounts[verification] ?? 0) + 1;
+          }
+          out.discovery = {
+            note: 'Complete live lead_discovery_queue snapshot. Central Research & Intelligence owns review; CRM promotion and customer contact remain separately controlled.',
+            total: prospects.length,
+            processing_status_counts: processingCounts,
+            verification_status_counts: verificationCounts,
+            records: prospects.map((prospect) => [
+              String(prospect.organisation_name ?? 'Unknown organisation'),
+              String(prospect.verification_status ?? 'unknown'),
+              String(prospect.processing_status ?? 'unknown'),
+            ].join(' | ')),
+          };
+        }
       }
       return out;
     },
