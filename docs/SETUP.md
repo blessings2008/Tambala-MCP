@@ -68,30 +68,49 @@ your own approval decisions (signed as TT-000). Each signed item ends with a lin
 
 ## WhatsApp (Evolution API)
 
-1. Set `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_INSTANCE` (the instance connected to the business number) and
-   `TAMBALA_FOUNDER_WHATSAPP` (your own number, where employees reach you).
-2. If it has not already been applied, run `20261108_whatsapp_outbox_claims.sql` before enabling the WhatsApp worker. On an always-on host, set `TAMBALA_WHATSAPP_OUTBOX_SCHEDULER=true` (optional interval: `TAMBALA_WHATSAPP_OUTBOX_INTERVAL_MINUTES=1`). On a sleeping/free host, use the external cron endpoint described below.
-3. In Evolution, set the instance webhook to `https://<your-host>/webhooks/evolution?token=<EVOLUTION_WEBHOOK_TOKEN>`
-   with the `MESSAGES_UPSERT` event on and "webhook base64" off. Without the token the endpoint refuses everything.
-4. Open **Messages** in the dashboard and press *Send me a test*.
+### Exact Render environment variables
 
-How it behaves:
+Add these variables to the Tambala MCP web service. Do not paste secrets into chat or commit them to Git.
 
-- **You:** anyone on staff can message you (signed, with their employee number). Reply `YES a1b2c3` or `NO a1b2c3 reason`
-  to approve or reject a customer message from your phone, or `PENDING` to list what is waiting.
-- **Customers:** nothing reaches a customer until you approve it. Then it goes out only Mon-Sat 07:30-19:30 Malawi time,
-  a few seconds apart, within the daily cap, never twice within 24 hours, and never to a number that opted out.
-  Outreach ends with "Reply STOP to opt out"; a bare STOP blocks the number permanently and tells you.
-- **Who may write to customers:** Outreach, Customer Relations, Finance and Payments. Everyone else may only message you.
-- **Customer replies** are stored and forwarded to you; they are not treated as employee instructions.
-- **Your own messages** from `TAMBALA_FOUNDER_WHATSAPP` are packaged as a structured Founder instruction and delivered to the CEO. The CEO uses deterministic capability routing and may hand the task to its mapped specialist only when that role is active and its dedicated runtime is configured. The response returns to your WhatsApp. Approval and role-binding controls still apply to consequential writes and customer-facing actions.
-- Captionless images, videos, documents, audio, locations and contact cards are recorded as typed attachment notices. This build records their presence and metadata; it does not yet download or store the original media file. Incoming media attachments are not yet downloaded or made available in the dashboard; caption-only text is handled as text.
-- **Caveat:** Evolution uses an unofficial WhatsApp connection. Bulk or cold messaging can get a number banned. Keep volume low.
-- WhatsApp sometimes hides a sender's number (`@lid`). Such messages are stored but cannot be matched, opted out or treated as you.
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `EVOLUTION_API_URL` | Yes | Base HTTPS URL of your Evolution API server, without a trailing slash. |
+| `EVOLUTION_API_KEY` | Yes | Evolution API key sent in the `apikey` request header. |
+| `EVOLUTION_INSTANCE` | Yes | Exact Evolution instance name paired to the Tambala business WhatsApp number. |
+| `EVOLUTION_WEBHOOK_TOKEN` | Yes | Random secret of at least 16 characters. Authenticates Evolution's webhook requests. |
+| `TAMBALA_FOUNDER_WHATSAPP` | Yes | Founder's personal WhatsApp number in international format, e.g. `+265...`; employee notifications and approvals go here. |
+| `TAMBALA_WHATSAPP_FOUNDER_DAILY_LIMIT` | Optional | Maximum daily messages to the Founder; defaults to 40. This is not a customer daily cap. |
+| `TAMBALA_WHATSAPP_COOLDOWN_MS` | Optional | Minimum interval between customer sends across worker runs; defaults to 90,000 ms and is never allowed below 90 seconds in the production service. |
+| `TAMBALA_WHATSAPP_OUTBOX_SCHEDULER` | Optional | Set `true` only when this process is on an always-on host; enables the in-process outbox timer. |
+| `TAMBALA_WHATSAPP_OUTBOX_INTERVAL_MINUTES` | Optional | In-process outbox interval; defaults to 1 minute. |
+| `TAMBALA_SCHEDULER_TOKEN` | Required for external cron | Random token of at least 24 characters. Authorizes the external outbox cron endpoint; separate from chat and webhook tokens. |
+| `PUBLIC_BASE_URL` | Recommended | Public HTTPS base URL used by the checklist to print the exact webhook URL. |
 
+### Bring-up and live verification
 
+1. Confirm migrations `20261101_channels_documents_payments.sql` and `20261108_whatsapp_outbox_claims.sql` have been applied to the intended Supabase project. The claims migration must be applied before enabling the worker.
+2. Set the variables above in Render and redeploy the service. The business WhatsApp number must already be paired and connected in Evolution.
+3. Run `npm run check:evolution` in an environment with the same Evolution variables. It checks configuration, calls Evolution's connection-state endpoint, checks required tokens and prints the webhook URL. It does not send a message by default.
+4. To explicitly send one test message to the configured Founder number only, run `npm run check:evolution -- --send-test`. The script first checks that the Founder number is registered on WhatsApp. It never sends to a customer.
+5. In Evolution, set the instance webhook to the URL printed by the script: `https://<your-host>/webhooks/evolution?token=<EVOLUTION_WEBHOOK_TOKEN>`. Enable `MESSAGES_UPSERT` and disable webhook base64. The endpoint also accepts the token in the `x-webhook-token` header. Requests without a valid token are rejected.
+6. From a second phone, send a simple test message to the connected business number. Confirm the inbound message appears in **Messages** and a notification reaches the Founder. This live inbound delivery cannot be proven by a local mock-server test.
+7. Reply to the business number from the Founder phone with `PENDING`; confirm the approvals list arrives. Use a test approval only if a harmless test approval is actually pending. Do not approve a real customer message just to test the channel.
+8. If a customer-facing test is necessary, use a test contact that has explicitly agreed to receive it. Create a draft through the normal approval path and verify it is not delivered before Founder approval.
 
-For hosts that sleep (including Render's free web-service plan), do not rely on an in-process timer. Configure an external cron to call `POST https://<your-host>/api/channels/outbox/run` every minute with `Authorization: Bearer $TAMBALA_SCHEDULER_TOKEN`. The token must be at least 24 characters. On an always-on host, you may instead set `TAMBALA_WHATSAPP_OUTBOX_SCHEDULER=true` and `TAMBALA_WHATSAPP_OUTBOX_INTERVAL_MINUTES=1`. The outbox uses atomic claims to prevent two workers from sending the same queued row concurrently.
+### How it behaves
+
+- **Founder:** staff can message the configured Founder number through the signed, rate-limited path. Reply `YES a1b2c3` or `NO a1b2c3 reason` to decide a pending approval, or `PENDING` to list waiting approvals. Only the configured Founder number can use these commands.
+- **Customers:** no customer message is sent until Founder approval. Delivery is restricted to Monday-Saturday, 07:30-19:30 Africa/Blantyre time; one customer message is attempted per outbox pass; the default cross-run cooldown is 90 seconds; duplicates and opted-out numbers are blocked. There is no customer daily-send cap in the current implementation. The separate daily limit applies to messages sent to the Founder.
+- **Who may write to customers:** Outreach, Customer Relations, Finance and Payments. Other roles may message the Founder only.
+- **Customer replies:** stored and forwarded to the Founder; they are not treated as employee instructions. STOP/unsubscribe requests create a do-not-contact block.
+- **Founder instructions:** ordinary messages from the configured Founder number are delivered to the CEO as structured instructions. The CEO uses deterministic capability routing; a specialist must be active and have a configured runtime. Consequential writes and customer-facing actions retain their approval and role-binding gates.
+- **Media limitation:** captionless images, videos, documents, audio, locations and contact cards are recorded as typed attachment notices. Original inbound media is not yet downloaded or stored; captions are handled as text.
+- **Privacy/identity limitation:** WhatsApp may hide a sender's number behind an `@lid` identifier. Such messages are stored but cannot be matched, opted out or treated as Founder instructions unless Evolution supplies the real number.
+- **Caveat:** Evolution uses an unofficial WhatsApp connection. Bulk or cold messaging can lead to restrictions or bans. Keep volume low and respect consent.
+
+### Keep the outbox running
+
+For a sleeping host (including Render's free web-service plan), do not rely on an in-process timer. Configure an external cron to call `POST https://<your-host>/api/channels/outbox/run` every minute with `Authorization: Bearer $TAMBALA_SCHEDULER_TOKEN`. The token must be at least 24 characters. On an always-on host, you may instead set `TAMBALA_WHATSAPP_OUTBOX_SCHEDULER=true` and `TAMBALA_WHATSAPP_OUTBOX_INTERVAL_MINUTES=1`. The outbox uses atomic database claims to prevent two workers from sending the same queued row concurrently.
 
 ## PDF documents
 
