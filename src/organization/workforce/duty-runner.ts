@@ -6,7 +6,6 @@ import { roleIdFor } from './profiles.js';
 import { localTime, OFFICE_TZ, periodKey, runsToday, timeReached, type LocalTime } from './schedule.js';
 import type { DutyRun, DutyStore } from './duty-store.js';
 import type { OrganizationTaskTransition } from '../task-lifecycle.js';
-import { persistDiscoveredProspects } from './lead-discovery-persistence.js';
 
 export type DutyOutcomeStatus = 'completed' | 'awaiting_approval' | 'skipped' | 'failed' | 'not_due' | 'already_running';
 export interface DutyOutcome { dutyId: string; status: DutyOutcomeStatus; reason?: string; taskId?: string; runId?: string; handoffs?: number }
