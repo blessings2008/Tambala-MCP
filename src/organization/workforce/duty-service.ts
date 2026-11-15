@@ -242,7 +242,7 @@ export async function dispatchNewDiscoveryQueue(): Promise<number> {
           request: [
             'You are Central Research & Intelligence reviewing one existing lead_discovery_queue record. Do not run a new prospect search and do not contact the organisation.',
             'Return the exact organisation name, queue record ID, service-fit evidence, source URLs, public organisational contact evidence, verification gaps, and one clear recommendation: QUALIFY, INVESTIGATE, or REJECT.',
-            'A named decision-maker is optional enrichment and MUST NOT be a qualification requirement. A missing decision-maker alone is never a reason to downgrade. QUALIFY only when service fit is supported by credible source evidence, the organisation is genuinely relevant to an active Tambala service, and at least one public organisational email or phone is verified in the supplied record. If a contact is present but not evidenced, INVESTIGATE and name the exact check needed. Never invent or infer contact details. Do not contact the prospect.'
+            'A named decision-maker is optional enrichment and MUST NOT be a qualification requirement. A missing decision-maker alone is never a reason to downgrade. QUALIFY only when service fit is supported by credible source evidence, the organisation is genuinely relevant to an active Tambala service, and at least one public organisational email or phone is verified in the supplied record. If a contact is present but not evidenced, INVESTIGATE and name the exact check needed. Never invent or infer contact details. Do not contact the prospect.',
             `Queue record ID: ${prospect.id}.`,
           ].join(' '),
           contextSummary,
@@ -723,7 +723,7 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
         if (kind === 'briefing') out.briefing = await briefingContext(store, at);
         if (kind === 'catalog') out.catalog = await catalogContext();
         if (kind === 'invoices') out.invoices = await invoicesContext(at);
-        if (kind === 'discovery') out.discovery = { note: 'Research-only queue. New entries await Sales review; do not create CRM leads or contact prospects.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,service_fit,verification_status,processing_status,crm_lead_id&processing_status=in.(new,reviewing,qualified)&order=research_date.desc,created_at.desc&limit=100') };
+        if (kind === 'discovery') out.discovery = { note: 'Research queue. Central Research & Intelligence reviews records; CRM promotion and customer contact remain separately controlled.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,service_fit,verification_status,processing_status,crm_lead_id&processing_status=in.(new,reviewing,qualified)&order=research_date.desc,created_at.desc&limit=100') };
       }
       return out;
     },
@@ -818,7 +818,7 @@ export async function buildWorkforce(now: Date = new Date()) {
   const store = dutyStore();
   const week = new Date(now.getTime() - 7 * 24 * 3_600_000).toISOString();
   const [runs, snapshot, duties, handoffRows] = await Promise.all([
-    store.recent(week), getOrganizationSnapshot(),
+    store.recent(week).then((rows) => rows.slice(0, 25)), getOrganizationSnapshot(),
     loadDuties(configStore()), handoffStore().recent(week).catch(() => [] as Handoff[]),
   ]);
   let tasks: Row[] = [];
