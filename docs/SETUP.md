@@ -153,7 +153,7 @@ The CEO has a built-in weekly operating-plan duty scheduled for Monday at 08:00 
 
 The MCP tool `propose_organization_duty` is restricted to a trusted OAuth-bound People/HR or Strategy role. It creates a signed-governance approval request; no duty is written to the active configuration at proposal time. Once the Founder approves, the approval hook validates the stored proposal and applies it through the existing duty configuration save path. Rejections leave the active configuration unchanged.
 
-New duties must be attached to an existing employee and require approval for prepared work. Proposals cannot change permissions, employee numbers, model budgets, pricing, financial authority or regulatory policy. Role-creation proposals are not yet implemented; do not treat a proposed role as an active appointment.
+New duties must be attached to an existing employee and require approval for prepared work. Proposals cannot change permissions, employee numbers, model budgets, pricing, financial authority or regulatory policy. Role proposals use `propose_organization_role`. They are restricted to human/shared-responsibility positions in existing units; after Founder approval the role is inserted as active with an empty capability list. AI-agent role creation is deliberately excluded because no new frozen employee number may be allocated by an employee proposal. The Founder must separately appoint and bind a person or agent and grant only approved capabilities.
 
 ### Employee trust ledger
 
