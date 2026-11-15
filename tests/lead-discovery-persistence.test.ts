@@ -38,6 +38,14 @@ test('salvages complete records before a truncated final record', () => {
   assert.match(result.parseIssue ?? '', /recovered 1 complete prospect/);
 });
 
+test('salvages complete records when the closing JSON fence is truncated', () => {
+  const body = 'DISCOVERED_PROSPECTS:\n\`\`\`json\n[' + JSON.stringify(prospect('Five Malawi Limited')) + ',{"organisation_name":"unfinished';
+  const result = parseProspectBlock(body);
+  assert.equal(result.prospects.length, 1);
+  assert.equal(result.prospects[0].organisation_name, 'Five Malawi Limited');
+  assert.match(result.parseIssue ?? '', /recovered 1 complete prospect/);
+});
+
 test('missing structured output becomes a recorded issue instead of failing the duty', () => {
   const result = parseProspectBlock('The research provider returned a short summary without prospect JSON.');
   assert.deepEqual(result.prospects, []);
