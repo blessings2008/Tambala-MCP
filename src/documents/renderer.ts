@@ -16,7 +16,140 @@ export function pdfSafe(input: string): string {
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Africa/Blantyre' });
 
+
+function renderQuotation(doc: StoredDocument, design: DocDesign, signer: Signer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const pdf = new PDFDocument({ size: 'A4', margin: 0, bufferPages: true, info: { Title: `QUOTATION ${doc.reference ?? doc.number}`, Author: design.company.name, Creator: 'Tambala MCP' } });
+    const chunks: Buffer[] = [];
+    pdf.on('data', (d: Buffer) => chunks.push(d));
+    pdf.on('end', () => resolve(Buffer.concat(chunks)));
+    pdf.on('error', reject);
+    const W = pdf.page.width; const H = pdf.page.height; const m = 48; const right = W - m; const cw = W - 2 * m;
+    const c = design.colors; const safe = (s: string) => pdfSafe(s);
+    const line = (x1: number, y1: number, x2: number, y2: number) => pdf.moveTo(x1, y1).lineTo(x2, y2).lineWidth(0.55).strokeColor(c.line).stroke();
+    const header = (page: number) => {
+      pdf.rect(0, 0, W, 31).fill(c.navy);
+      pdf.fillColor(c.white).font('Helvetica-Bold').fontSize(8).text('TAMBALA TECHNOLOGIES | SOFTWARE DEVELOPMENT & DIGITAL SOLUTIONS', m, 11, { lineBreak: false });
+      pdf.fillColor(c.white).font('Helvetica').fontSize(8).text(`Page ${page}`, right - 55, 11, { width: 55, align: 'right', lineBreak: false });
+    };
+    const sectionTitle = (n: number, title: string, y: number) => {
+      pdf.fillColor(c.navy).font('Helvetica-Bold').fontSize(10).text(`${n}. ${safe(title)}`, m, y, { width: cw });
+      return pdf.y + 5;
+    };
+    const overview = doc.sections?.find(s => /project overview/i.test(s.title))?.body ?? doc.notes ?? 'Tambala Technologies is pleased to submit this quotation for the project described below.';
+    const scopeIntro = doc.sections?.find(s => /scope/i.test(s.title))?.body;
+    const supportIntro = doc.sections?.find(s => /management|support/i.test(s.title))?.body;
+    const terms = doc.termsBullets?.length ? doc.termsBullets : (doc.terms ?? '').split(/\n+/).map(s => s.replace(/^[-•]\s*/, '').trim()).filter(Boolean);
+    const milestones = doc.milestones ?? [{ label: 'Upon acceptance and commencement', percentage: 50 }, { label: 'Upon presentation of the working system for review', percentage: 30 }, { label: 'Upon final acceptance and handover', percentage: 20 }];
+    const money = (v: number) => formatMoney(v, doc.currency);
+    const date = (v: string) => new Date(v).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'Africa/Blantyre' });
+    const drawTableHeader = (y: number, widths: number[], labels: string[]) => {
+      pdf.rect(m, y, cw, 20).fill('#eef2f7');
+      let x = m + 7;
+      labels.forEach((label, i) => { pdf.fillColor(c.navy).font('Helvetica-Bold').fontSize(7.5).text(label, x, y + 6, { width: widths[i] - 10, lineBreak: false, align: i === labels.length - 1 ? 'right' : 'left' }); x += widths[i]; });
+      return y + 20;
+    };
+    // PAGE 1 — project, scope, support and payment heading.
+    header(1);
+    pdf.fillColor(c.navy).font('Helvetica-Bold').fontSize(20).text('QUOTATION', m, 53, { lineBreak: false });
+    pdf.fillColor(c.muted).font('Helvetica').fontSize(8.5).text(`Ref: ${safe(doc.reference ?? doc.number)}\nDate: ${date(doc.issuedAt)}`, right - 190, 54, { width: 190, align: 'right', lineGap: 4 });
+    let y = 112;
+    const partyW = (cw - 28) / 2;
+    pdf.fillColor(c.muted).font('Helvetica-Bold').fontSize(7.5).text('PREPARED FOR', m, y, { lineBreak: false });
+    pdf.fillColor(c.navy).font('Helvetica-Bold').fontSize(10).text(safe(doc.client.name), m, y + 13, { width: partyW });
+    pdf.fillColor(c.text).font('Helvetica').fontSize(8).text(safe([doc.client.business, doc.client.address].filter(Boolean).join(' · ')), m, y + 27, { width: partyW });
+    pdf.fillColor(c.muted).font('Helvetica-Bold').fontSize(7.5).text('PREPARED BY', m + partyW + 28, y, { lineBreak: false });
+    pdf.fillColor(c.navy).font('Helvetica-Bold').fontSize(10).text(safe(design.company.name), m + partyW + 28, y + 13, { width: partyW });
+    pdf.fillColor(c.text).font('Helvetica').fontSize(8).text(safe(design.company.tagline), m + partyW + 28, y + 27, { width: partyW });
+    y += 57;
+    pdf.fillColor(c.muted).font('Helvetica-Bold').fontSize(7.5).text('PROJECT', m, y, { lineBreak: false });
+    pdf.fillColor(c.navy).font('Helvetica').fontSize(9).text(safe(doc.project ?? doc.subject ?? 'Software development and implementation'), m, y + 12, { width: partyW });
+    pdf.fillColor(c.muted).font('Helvetica-Bold').fontSize(7.5).text('VALIDITY', m + partyW + 28, y, { lineBreak: false });
+    pdf.fillColor(c.navy).font('Helvetica').fontSize(9).text('30 days from date of issue', m + partyW + 28, y + 12, { width: partyW });
+    y += 49;
+    y = sectionTitle(1, 'Project Overview', y);
+    pdf.fillColor(c.text).font('Helvetica').fontSize(8.4).text(safe(overview), m, y, { width: cw, lineGap: 2, height: 58 });
+    y = pdf.y + 10;
+    y = sectionTitle(2, 'Scope of Work and Development Costs', y);
+    if (scopeIntro) { pdf.fillColor(c.text).font('Helvetica').fontSize(8).text(safe(scopeIntro), m, y, { width: cw }); y = pdf.y + 5; }
+    const widths = [145, cw - 145 - 94, 94];
+    y = drawTableHeader(y, widths, ['Work component', 'Description', 'Amount (MWK)']);
+    doc.items.forEach((item, i) => {
+      const descH = pdf.heightOfString(safe(item.description), { width: widths[1] - 12, font: 'Helvetica', size: 7.6, lineGap: 1 });
+      const rowH = Math.max(22, descH + 9);
+      if (i % 2 === 0) pdf.rect(m, y, cw, rowH).fill('#f8fafc');
+      pdf.fillColor(c.text).font('Helvetica-Bold').fontSize(7.6).text(safe(item.description), m + 7, y + 6, { width: widths[0] - 12 });
+      pdf.font('Helvetica').fontSize(7.6).text(safe(item.description), m + widths[0] + 6, y + 6, { width: widths[1] - 12 });
+      pdf.font('Helvetica').fontSize(7.6).text(money(item.amountMinor), m + widths[0] + widths[1], y + 6, { width: widths[2] - 7, align: 'right', lineBreak: false });
+      y += rowH; line(m, y, right, y);
+    });
+    pdf.rect(m, y, cw, 23).fill('#e8eef6');
+    pdf.fillColor(c.navy).font('Helvetica-Bold').fontSize(8.5).text('TOTAL', m + 7, y + 7, { lineBreak: false });
+    pdf.text(money(doc.totals.totalMinor), right - 145, y + 7, { width: 138, align: 'right', lineBreak: false });
+    y += 32;
+    y = sectionTitle(3, 'Ongoing System Management and Support', y);
+    if (supportIntro) { pdf.fillColor(c.text).font('Helvetica').fontSize(7.8).text(safe(supportIntro), m, y, { width: cw }); y = pdf.y + 4; }
+    const fees = doc.recurringFees ?? [];
+    const feeWidths = [cw - 125, 125];
+    y = drawTableHeader(y, feeWidths, ['Management service', 'Monthly fee']);
+    fees.forEach((fee, i) => {
+      const value = fee.included ? 'Included' : money(fee.amountMinor ?? 0);
+      pdf.fillColor(c.text).font('Helvetica').fontSize(7.5).text(safe(fee.description), m + 7, y + 5, { width: feeWidths[0] - 12 });
+      pdf.text(value, m + feeWidths[0], y + 5, { width: feeWidths[1] - 8, align: 'right', lineBreak: false });
+      y += 17; line(m, y, right, y);
+    });
+    const monthly = fees.filter(f => !f.included).reduce((sum, f) => sum + (f.amountMinor ?? 0), 0);
+    pdf.fillColor(c.navy).font('Helvetica-Bold').fontSize(8).text('MONTHLY MANAGEMENT FEE', m + 7, y + 6, { lineBreak: false });
+    pdf.text(monthly ? money(monthly) : 'As agreed separately', right - 180, y + 6, { width: 173, align: 'right', lineBreak: false });
+    y += 25;
+    sectionTitle(4, 'Payment Terms', y);
+    // PAGE 2 — milestones, conditions and acceptance.
+    pdf.addPage({ size: 'A4', margin: 0 });
+    header(2);
+    y = 61;
+    pdf.fillColor(c.navy).font('Helvetica-Bold').fontSize(10).text('4. Payment Terms', m, y, { lineBreak: false });
+    y += 23;
+    const intro = `The one-time development fee of ${money(doc.totals.totalMinor)} is proposed to be paid as follows:`;
+    pdf.fillColor(c.text).font('Helvetica').fontSize(8.5).text(safe(intro), m, y, { width: cw });
+    y = pdf.y + 10;
+    const mw = [cw - 180, 72, 108];
+    y = drawTableHeader(y, mw, ['Milestone', 'Share', 'Amount (MWK)']);
+    let allocated = 0;
+    milestones.forEach((milestone, i) => {
+      const amount = i === milestones.length - 1 ? doc.totals.totalMinor - allocated : Math.round(doc.totals.totalMinor * milestone.percentage / 100);
+      allocated += amount;
+      pdf.fillColor(c.text).font('Helvetica').fontSize(8).text(safe(milestone.label), m + 7, y + 6, { width: mw[0] - 12 });
+      pdf.text(`${milestone.percentage}%`, m + mw[0], y + 6, { width: mw[1] - 8, align: 'right', lineBreak: false });
+      pdf.text(money(amount), m + mw[0] + mw[1], y + 6, { width: mw[2] - 8, align: 'right', lineBreak: false });
+      y += 23; line(m, y, right, y);
+    });
+    y += 12;
+    y = sectionTitle(5, 'Terms and Conditions', y);
+    terms.forEach((bullet) => {
+      const h = pdf.heightOfString(safe(bullet), { width: cw - 16, font: 'Helvetica', size: 8, lineGap: 1 });
+      pdf.fillColor(c.primary).font('Helvetica-Bold').fontSize(8).text('•', m + 2, y + 1, { lineBreak: false });
+      pdf.fillColor(c.text).font('Helvetica').fontSize(8).text(safe(bullet), m + 16, y, { width: cw - 16, lineGap: 1 });
+      y += Math.max(15, h + 5);
+    });
+    y += 7;
+    y = sectionTitle(6, 'Acceptance', y);
+    pdf.fillColor(c.text).font('Helvetica').fontSize(8).text('Acceptance of this quotation confirms agreement to the stated development scope, fees and payment terms. Ongoing management services require separate written confirmation.', m, y, { width: cw, lineGap: 2 });
+    y = pdf.y + 18;
+    const half = (cw - 28) / 2;
+    const signCol = (x: number, title: string, name: string) => {
+      pdf.fillColor(c.navy).font('Helvetica-Bold').fontSize(8).text(title, x, y, { width: half });
+      pdf.fillColor(c.text).font('Helvetica').fontSize(8).text(`Name: ${name}\n\nTitle: __________________________\n\nSignature: ______________________\n\nDate: __________________________`, x, y + 17, { width: half, lineGap: 1 });
+    };
+    signCol(m, 'FOR THE CLIENT', '____________________________');
+    signCol(m + half + 28, 'FOR TAMBALA TECHNOLOGIES', signer.employeeNumber);
+    pdf.fillColor(c.muted).font('Helvetica').fontSize(6.5).text(signer.fingerprint ? `Employee signature fingerprint: ${signer.fingerprint}` : 'UNSIGNED — signing is not configured', m + half + 28, y + 111, { width: half });
+    pdf.fillColor(c.navy).font('Helvetica-Bold').fontSize(9).text(safe(doc.closingLine ?? 'Thank you for considering Tambala Technologies as your technology partner.'), m, H - 78, { width: cw, align: 'center' });
+    pdf.end();
+  });
+}
+
 export function renderDocument(doc: StoredDocument, design: DocDesign, signer: Signer): Promise<Buffer> {
+  if (doc.kind === 'quotation') return renderQuotation(doc, design, signer);
   return new Promise((resolve, reject) => {
     const c = design.colors;
     const m = design.margin;
