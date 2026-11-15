@@ -125,6 +125,41 @@ Add these variables to the Tambala MCP web service. Do not paste secrets into ch
 
 For a sleeping host (including Render's free web-service plan), do not rely on an in-process timer. Configure an external cron to call `POST https://<your-host>/api/channels/outbox/run` every minute with `Authorization: Bearer $TAMBALA_SCHEDULER_TOKEN`. The token must be at least 24 characters. On an always-on host, you may instead set `TAMBALA_WHATSAPP_OUTBOX_SCHEDULER=true` and `TAMBALA_WHATSAPP_OUTBOX_INTERVAL_MINUTES=1`. The outbox uses atomic database claims to prevent two workers from sending the same queued row concurrently.
 
+## Runtime reliability and company outcomes
+
+Apply `supabase/migrations/20261115_runtime_reliability.sql` and `supabase/migrations/20261115_ai_usage_ledger.sql` to the production Supabase project before enabling the heartbeat or reading the AI usage ledger. Both migrations are additive and safe to re-run.
+
+### Heartbeat and dead-man's switch
+
+- `TAMBALA_HEARTBEAT_MAX_MINUTES=30`: mark the duty cycle stale after this many minutes without a successful full cycle (minimum 5).
+- `TAMBALA_HEARTBEAT_ALERT_COOLDOWN_MINUTES=60`: avoid repeating the same outage alert more frequently than this (minimum 15).
+- Configure an independent external cron to POST `/api/runtime/watchdog` every 5 minutes with `Authorization: Bearer $TAMBALA_SCHEDULER_TOKEN`. This must be independent of the application process; an in-process timer cannot reliably report that the process itself has stopped.
+- The watchdog queues an alert to `TAMBALA_FOUNDER_WHATSAPP` when the last full duty cycle is stale. A real alert requires the database, scheduler token, Founder number and Evolution connection to work.
+- `GET /health` is liveness only. `GET /ready` checks database readiness and, when configured, Evolution connectivity. A disconnected optional WhatsApp provider is reported in readiness details; database failure makes readiness return HTTP 503.
+
+### Pause everything
+
+The global pause is a Founder-controlled runtime switch. Use the dashboard pause/resume controls, the Founder WhatsApp command, or the Founder-bound MCP pause tool. The switch blocks new AI calls, scheduled duties, guarded writes and WhatsApp outbox delivery. It does not stop the HTTP process or erase queued work. Resume only after the reason is understood. Only the Founder identity can change this control; all changes are signed/audited.
+
+### Error budget and always-on hosting
+
+The dashboard's rolling 24-hour duty error budget is calculated from recorded duty-run rows only. No recorded runs means unavailable, not 100% success. Use an always-on Render paid web service or a VPS/container host with process supervision, restart policy, persistent secrets and external cron. Do not rely on Render free-instance in-process timers for 24/7 execution. Configure external cron for both duty execution and the watchdog; use the same scheduler token with HTTPS Bearer authentication.
+
+### Company outcomes
+
+The dashboard exposes a rolling 30-day `goals` section sourced from the discovery queue, quotation documents, invoice ledger and WhatsApp message ledger:
+- Prospect counts by actual discovery processing status.
+- Quotations created and sent. Acceptance count/rate remains unavailable until a structured client acceptance event is recorded.
+- Invoices created, paid/unpaid counts and paid revenue in MWK.
+- Outbound customer messages sent and inbound customer replies. A reliable reply rate is unavailable until message-to-message attribution is recorded.
+- Basic employee attribution from each record's existing role field. Unattributed activity remains grouped as `unattributed`.
+
+Do not treat sent quotations as accepted or invoice creation as revenue. Paid revenue counts only invoice rows whose recorded status is `paid`; reconciliation still depends on the Tambala Pay status refresh.
+
+### AI spend ledger (configuration still required)
+
+`organization_ai_usage` stores employee number, agent, provider, model, token usage and USD cost where a trusted per-model price is configured. Unknown model prices must remain unpriced, never estimated. Daily spend caps are not activated by this migration; the Founder must approve per-employee and organization-wide USD limits and provide authoritative model prices before enforcement can be switched on.
+
 ## PDF documents
 
 Quotations, invoices, receipts and letters are numbered, signed by their author, totals computed by the system (never by a model), stored in the database and downloadable from **Documents & payments**. Quotations render as a two-page A4 Helvetica document following the MCHS quotation structure. Their client reference is generated as `TT-<CLIENTCODE>-<YEAR>-<SEQUENCE>` (for example `TT-MCHS-2026-001`); supply `clientCode` to set the code explicitly. The quotation model accepts `project`, `sections`, `milestones`, `recurringFees`, `termsBullets` and `closingLine`. Milestone percentages must total 100%; each milestone amount is calculated from the server-computed document total, with the final milestone absorbing any rounding remainder. Quotation validity defaults to 30 days. A document retains its employee signature fingerprint in the PDF.
