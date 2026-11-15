@@ -28,6 +28,6 @@ export async function recordQuotationAcceptance(
 export async function markDocumentSent(documentId: string, sentAt: string, store: DocumentStore): Promise<boolean> {
   const document = await store.byId(documentId);
   if (!document || document.status !== 'draft') return false;
-  await store.update(documentId, { status: 'sent' });
+  await store.update(documentId, { status: 'sent', sent_at: sentAt });
   return true;
 }
