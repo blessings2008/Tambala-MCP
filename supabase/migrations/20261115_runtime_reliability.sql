@@ -10,8 +10,8 @@ create table if not exists public.organization_runtime_heartbeat (
   updated_at timestamptz not null default now()
 );
 
-insert into public.organization_runtime_heartbeat (id)
-values ('duty-cycle')
+insert into public.organization_runtime_heartbeat (id, last_started_at)
+values ('duty-cycle', now())
 on conflict (id) do nothing;
 
 create or replace function public.claim_duty_heartbeat_alert(
@@ -28,8 +28,7 @@ as $$
      set alert_sent_at = p_now,
          updated_at = p_now
    where id = 'duty-cycle'
-     and coalesce(last_completed_at, last_started_at) is not null
-     and coalesce(last_completed_at, last_started_at) < p_stale_before
+     and greatest(coalesce(last_completed_at, 'epoch'::timestamptz), coalesce(last_started_at, 'epoch'::timestamptz)) < p_stale_before
      and (alert_sent_at is null or alert_sent_at < p_now - make_interval(secs => greatest(60, p_cooldown_seconds)))
   returning *;
 $$;
