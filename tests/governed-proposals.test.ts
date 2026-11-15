@@ -24,3 +24,14 @@ test('HR and Strategy proposals require persistent Founder approval storage', as
   await assert.rejects(proposeDutyChange(roleIdFor('people'), proposal), /require persistent approval storage/);
   await assert.rejects(proposeDutyChange(roleIdFor('strategy'), proposal), /require persistent approval storage/);
 });
+
+test('role proposals reject non-HR/Strategy proposers before accessing persistent storage', async () => {
+  const { proposeRoleChange } = await import('../src/organization/workforce/governed-proposals.ts');
+  await assert.rejects(proposeRoleChange('ceo', {
+    title: 'Operations Coordinator',
+    kind: 'human',
+    unitId: 'operations-administration',
+    reportsToRoleId: 'ceo',
+    purpose: 'Coordinate office operations and internal administration.',
+  }), /Only People\/HR or Strategy/);
+});
