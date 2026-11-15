@@ -209,7 +209,7 @@ export async function dispatchNewDiscoveryQueue(maxCount = 5): Promise<number> {
   try {
     const pending = await supabaseSelect<DiscoveryQueueRow>(
       'lead_discovery_queue',
-      'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message&processing_status=eq.new&order=created_at.asc&limit=${Math.min(5, Math.floor(maxCount))}',
+      `select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message&processing_status=eq.new&order=created_at.asc&limit=${Math.min(5, Math.floor(maxCount))}`,
     );
     if (!pending.length) return 0;
 
