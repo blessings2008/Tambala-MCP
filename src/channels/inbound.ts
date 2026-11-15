@@ -18,6 +18,7 @@ export interface InboundDeps {
   };
   /** Route ordinary messages from the verified Founder number into the CEO workflow. */
   handleFounderInstruction?: (envelope: FounderMessageEnvelope) => Promise<string>;
+  demoteTrustForNumber?: (number: string, reason: string) => Promise<void>;
   runtimeControl?: {
     get: () => Promise<{ paused: boolean; reason: string | null }>;
     set: (paused: boolean, reason: string | null) => Promise<void>;
@@ -113,7 +114,13 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
     summary.stored += 1;
     if (!number) { summary.unresolved += 1; continue; }
 
+    if (number !== founder && /\\b(complaint|complain|spam|report you|report this number|unprofessional|harassment)\\b/i.test(text)) {
+      await deps.demoteTrustForNumber?.(number, 'Customer complaint or spam report').catch(() => undefined);
+      await deps.tellFounder(`${label ?? maskNumber(number)} sent a complaint or spam-related message. Employee standing approvals linked to the latest outbound contact have been demoted.`).catch(() => undefined);
+    }
+
     if (number !== founder && OPT_OUT_PATTERN.test(text)) {
+      await deps.demoteTrustForNumber?.(number, 'Customer STOP/opt-out request').catch(() => undefined);
       await deps.store.addBlock(number, 'Customer replied STOP');
       await deps.reply(number, 'You have been unsubscribed and will not receive more messages from Tambala Technologies. Sorry to see you go.').catch(() => undefined);
       await deps.tellFounder(`${label ?? maskNumber(number)} replied STOP and has been added to the do-not-contact list.`).catch(() => undefined);
