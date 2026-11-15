@@ -147,7 +147,7 @@ async function answerFounderKnowledgeQuestion(envelope: FounderMessageEnvelope):
   const acceptedQuoteEmployee = acceptedQuotations.reduce<Record<string, number>>((counts, quote) => {
     const acceptanceMessage = inboundById.get(String(quote.accepted_by_message_id ?? ''));
     const outbound = acceptanceMessage?.reply_to_message_id ? outboundById.get(String(acceptanceMessage.reply_to_message_id)) : undefined;
-    const employee = String(outbound?.from_role_id ?? quote.created_by_role_id ?? 'unavailable');
+    const employee = String(outbound?.from_role_id ?? 'unavailable');
     counts[employee] = (counts[employee] ?? 0) + 1;
     return counts;
   }, {});
