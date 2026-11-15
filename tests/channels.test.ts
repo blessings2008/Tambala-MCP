@@ -429,3 +429,33 @@ test('inbound: media without captions is retained as a readable inbound message'
   assert.equal(messageText({ audioMessage: { ptt: true } }), '[Incoming audio message]');
   assert.equal(messageText({ ephemeralMessage: { message: { documentMessage: { fileName: 'quote.pdf' } } } }), '[Incoming document attachment: quote.pdf]');
 });
+
+
+test('inbound: only the verified Founder can pause and resume the organization by WhatsApp', async () => {
+  let paused = false;
+  const h = inboundHarness({
+    runtimeControl: {
+      get: async () => ({ paused, reason: paused ? 'Founder test pause' : null }),
+      set: async (next, reason) => { paused = next; if (next) assert.equal(reason, 'maintenance window'); },
+    },
+  });
+  await handleEvolutionWebhook(h.deps, evt(`${FOUNDER}@s.whatsapp.net`, 'PAUSE ALL maintenance window', 'P1'));
+  assert.equal(paused, true);
+  assert.match(h.replies.at(-1)!, /PAUSED/);
+  await handleEvolutionWebhook(h.deps, evt(`${FOUNDER}@s.whatsapp.net`, 'PAUSE STATUS', 'P2'));
+  assert.match(h.replies.at(-1)!, /PAUSED/);
+  await handleEvolutionWebhook(h.deps, evt(`${FOUNDER}@s.whatsapp.net`, 'RESUME ALL', 'P3'));
+  assert.equal(paused, false);
+  assert.match(h.replies.at(-1)!, /RESUMED/);
+
+  const stranger = inboundHarness({
+    runtimeControl: {
+      get: async () => ({ paused, reason: null }),
+      set: async (next) => { paused = next; },
+    },
+  });
+  const result = await handleEvolutionWebhook(stranger.deps, evt('265888000999@s.whatsapp.net', 'PAUSE ALL', 'P4'));
+  assert.equal(paused, false);
+  assert.equal(result.forwarded, 1);
+  assert.equal(stranger.replies.length, 0);
+});
