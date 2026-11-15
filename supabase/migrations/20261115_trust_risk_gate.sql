@@ -18,8 +18,9 @@ language plpgsql
 security definer
 set search_path = public
 as $$
-declare result public.organization_employee_trust;
-declare can_earn boolean := p_approved and p_unedited and p_eligible and p_risk_level = 'low';
+declare
+  result public.organization_employee_trust;
+  can_earn boolean := p_approved and p_unedited and p_eligible and p_risk_level = 'low';
 begin
   insert into public.organization_employee_trust(employee_number, action_type, consecutive_approvals, standing_approval, demoted_reason, updated_at)
   values (
