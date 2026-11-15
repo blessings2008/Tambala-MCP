@@ -95,8 +95,7 @@ For hosts that sleep (including Render's free web-service plan), do not rely on 
 
 ## PDF documents
 
-Quotations, invoices, receipts and letters: numbered (`TT-Q-2026-0001`), signed by their author, totals computed by the
-system (never by a model), stored in the database and downloadable from **Documents & payments**.
+Quotations, invoices, receipts and letters are numbered, signed by their author, totals computed by the system (never by a model), stored in the database and downloadable from **Documents & payments**. Quotations render as a two-page A4 Helvetica document following the MCHS quotation structure. Their client reference is generated as `TT-<CLIENTCODE>-<YEAR>-<SEQUENCE>` (for example `TT-MCHS-2026-001`); supply `clientCode` to set the code explicitly. The quotation model accepts `project`, `sections`, `milestones`, `recurringFees`, `termsBullets` and `closingLine`. Milestone percentages must total 100%; each milestone amount is calculated from the server-computed document total, with the final milestone absorbing any rounding remainder. Quotation validity defaults to 30 days. A document retains its employee signature fingerprint in the PDF.
 
 - Fill the **price list** first. Employees quote by price-list code; a custom-priced line is allowed but is flagged for you.
 - Set `TAMBALA_COMPANY_*`, `TAMBALA_PAYMENT_INSTRUCTIONS` and `TAMBALA_VAT_PERCENT` for the header and footer details.
