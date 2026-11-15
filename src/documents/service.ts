@@ -20,7 +20,7 @@ export async function resolveItems(items: DocumentInput['items'], prices: PriceI
       return { sku: p.sku, description: p.name, quantity: raw.quantity, unitPriceMinor: p.unit_price_minor, amountMinor: lineAmountMinor(raw.quantity, p.unit_price_minor), custom: false };
     }
     const unit = toMinor(raw.unitPrice);
-    return { sku: null, description: raw.description, quantity: raw.quantity, unitPriceMinor: unit, amountMinor: lineAmountMinor(raw.quantity, unit), custom: true };
+    return { sku: null, component: raw.component, description: raw.description, quantity: raw.quantity, unitPriceMinor: unit, amountMinor: lineAmountMinor(raw.quantity, unit), custom: true };
   });
 }
 
@@ -61,8 +61,7 @@ export async function createDocument(input: unknown, roleId: string, deps: Creat
     const clientCode = (data.clientCode ?? (data.client.business || data.client.name).split(/\s+/).filter(Boolean).map((word) => word[0]).join('').slice(0, 8)).toUpperCase();
     const quotationReference = kind === 'quotation' ? `TT-${clientCode}-${now.getUTCFullYear()}-${sequence.padStart(3, '0')}` : data.reference;
     const full: StoredDocument = { ...doc, number, reference: quotationReference };
-    // Sign the content of the document (not the PDF bytes), so the fingerprint can be printed inside the PDF itself.
-    const canonical = JSON.stringify({ number, kind, issuedAt: doc.issuedAt, client: doc.client.name, items: items.map((i) => [i.description, i.quantity, i.unitPriceMinor]), total: totals.totalMinor });
+    const canonical = JSON.stringify({ number, kind, issuedAt: doc.issuedAt, client: doc.client.name, items: items.map((i) => [i.component, i.description, i.quantity, i.unitPriceMinor]), total: totals.totalMinor });
     const stamp = await signWork({ roleId, kind: 'document', subjectId: id, content: canonical, now });
     const pdf = await renderDocument(full, design, { employeeNumber: who.employeeNumber, title: who.title, fingerprint: stamp.fingerprint });
     const row: DocumentRow = {
