@@ -22,3 +22,12 @@ export async function recordQuotationAcceptance(
   });
   return true;
 }
+
+
+/** A document becomes sent only after the outbox confirms the provider accepted its delivery request. */
+export async function markDocumentSent(documentId: string, sentAt: string, store: DocumentStore): Promise<boolean> {
+  const document = await store.byId(documentId);
+  if (!document || document.status !== 'draft') return false;
+  await store.update(documentId, { status: 'sent' });
+  return true;
+}
