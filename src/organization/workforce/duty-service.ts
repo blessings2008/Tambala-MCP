@@ -194,7 +194,7 @@ export async function dispatchNewDiscoveryQueue(): Promise<number> {
   try {
     const pending = await supabaseSelect<DiscoveryQueueRow>(
       'lead_discovery_queue',
-      'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message&processing_status=eq.new&order=created_at.asc&limit=2',
+      'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message&processing_status=eq.new&order=created_at.asc&limit=25',
     );
     if (!pending.length) return 0;
 
@@ -237,12 +237,12 @@ export async function dispatchNewDiscoveryQueue(): Promise<number> {
 
         await queueHandoff(handoffStore(), {
           fromRoleId: 'ceo',
-          toAgent: 'outreach',
+          toAgent: 'research',
           sourceDutyId: 'lead-discovery-queue-watcher',
           request: [
-            'Review this single researched Tambala prospect using the attached record.',
-            'Return its organisation name, service fit, source evidence, available public contact, and a qualify / investigate / reject recommendation.',
-            'Do not repeat research. If the service fit is supported and at least one verified public organisation email or phone is supplied, the recommendation MUST be QUALIFY. A named decision-maker is optional enrichment: do not treat its absence as a blocker, do not downgrade the prospect to investigate for that reason, and do not request more research solely to find a personal contact. Never invent contacts. Do not contact the prospect in this review assignment.',
+            'You are Central Research & Intelligence reviewing one existing lead_discovery_queue record. Do not run a new prospect search and do not contact the organisation.',
+            'Return the exact organisation name, queue record ID, service-fit evidence, source URLs, public organisational contact evidence, verification gaps, and one clear recommendation: QUALIFY, INVESTIGATE, or REJECT.',
+            'A named decision-maker is optional enrichment and MUST NOT be a qualification requirement. A missing decision-maker alone is never a reason to downgrade. QUALIFY only when service fit is supported by credible source evidence, the organisation is genuinely relevant to an active Tambala service, and at least one public organisational email or phone is verified in the supplied record. If a contact is present but not evidenced, INVESTIGATE and name the exact check needed. Never invent or infer contact details. Do not contact the prospect.'
             `Queue record ID: ${prospect.id}.`,
           ].join(' '),
           contextSummary,
@@ -723,7 +723,7 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
         if (kind === 'briefing') out.briefing = await briefingContext(store, at);
         if (kind === 'catalog') out.catalog = await catalogContext();
         if (kind === 'invoices') out.invoices = await invoicesContext(at);
-        if (kind === 'discovery') out.discovery = { note: 'Research-only queue. New entries await Sales review; do not create CRM leads or contact prospects.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status&processing_status=in.(new,reviewing)&order=research_date.desc,created_at.desc&limit=50') };
+        if (kind === 'discovery') out.discovery = { note: 'Research-only queue. New entries await Sales review; do not create CRM leads or contact prospects.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,crm_lead_id&order=research_date.desc,created_at.desc&limit=5000') };
       }
       return out;
     },
