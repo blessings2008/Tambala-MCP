@@ -202,14 +202,14 @@ let discoveryQueueDispatchRunning = false;
  * scheduler instances cannot claim the same record. If handoff creation fails,
  * claims are released back to new for the next five-minute pass.
  */
-export async function dispatchNewDiscoveryQueue(): Promise<number> {
-  if (!dbConfigured() || discoveryQueueDispatchRunning) return 0;
+export async function dispatchNewDiscoveryQueue(maxCount = 5): Promise<number> {
+  if (!dbConfigured() || discoveryQueueDispatchRunning || maxCount <= 0) return 0;
   discoveryQueueDispatchRunning = true;
   let claimed: DiscoveryQueueRow[] = [];
   try {
     const pending = await supabaseSelect<DiscoveryQueueRow>(
       'lead_discovery_queue',
-      'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message&processing_status=eq.new&order=created_at.asc&limit=5',
+      'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message&processing_status=eq.new&order=created_at.asc&limit=${Math.min(5, Math.floor(maxCount))}',
     );
     if (!pending.length) return 0;
 
@@ -294,12 +294,12 @@ export async function dispatchNewDiscoveryQueue(): Promise<number> {
  * workflow. A separate source duty ID makes this one-shot and idempotent:
  * each record is sent to Research at most once by this recovery pass.
  */
-export async function dispatchReviewingDiscoveryQueue(): Promise<number> {
-  if (!dbConfigured()) return 0;
+export async function dispatchReviewingDiscoveryQueue(maxCount = 5): Promise<number> {
+  if (!dbConfigured() || maxCount <= 0) return 0;
   const [pending, previous] = await Promise.all([
     supabaseSelect<DiscoveryQueueRow>(
       'lead_discovery_queue',
-      'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id&processing_status=eq.reviewing&order=created_at.asc&limit=100',
+      'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id&processing_status=eq.reviewing&order=created_at.asc&limit=${Math.min(5, Math.floor(maxCount))}',
     ),
     supabaseSelect<{ request: string; status: string }>(
       'organization_handoffs',
@@ -867,8 +867,8 @@ export async function runDutiesOnce(opts: { dutyId?: string; force?: boolean; ha
   try {
     const outcomes = opts.handoffsOnly ? [] : await runDueDuties(productionDeps(), opts);
     if (!opts.skipDiscoveryQueue) {
-      await dispatchNewDiscoveryQueue();
-      await dispatchReviewingDiscoveryQueue();
+      const recovered = await dispatchReviewingDiscoveryQueue(5);
+      await dispatchNewDiscoveryQueue(Math.max(0, 5 - recovered));
     }
     try { await dispatchPromotedProspectsToSales(); }
     catch (error) { console.error('Promoted-prospect dispatch failed; existing handoffs will still be processed:', error); }
