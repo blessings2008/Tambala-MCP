@@ -75,6 +75,8 @@ export interface RoleProposal {
 
 export async function proposeRoleChange(proposedByRoleId: string, proposal: RoleProposal): Promise<string> {
   if (!PROPOSER_ROLES.has(proposedByRoleId)) throw new Error('Only People/HR or Strategy may propose a new organizational role.');
+  if (!['human', 'shared_responsibility'].includes(proposal.kind)) throw new Error('AI agent roles cannot be created through this proposal path; frozen employee numbers must be assigned through the Founder-controlled hiring process.');
+  if (proposal.title.trim().length < 3 || proposal.title.length > 120 || proposal.purpose.trim().length < 10 || proposal.purpose.length > 1000) throw new Error('Role title or purpose is outside the allowed length.');
   const snapshot = await getPersistedOrganizationSnapshot();
   if (!snapshot.organization.units.some((unit) => unit.id === proposal.unitId)) throw new Error('The proposed role must belong to an existing organizational unit.');
   if (!snapshot.organization.roles.some((role) => role.id === proposal.reportsToRoleId)) throw new Error('The proposed reporting line must reference an existing role.');
