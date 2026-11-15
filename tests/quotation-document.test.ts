@@ -53,9 +53,9 @@ test('quotation PDF renders two A4 pages and includes the MCHS reference section
   const pdf = await renderDocument(doc, loadDesign(), { employeeNumber: 'TT-001', title: 'Chief Executive Officer', fingerprint: 'AAAA-BBBB-CCCC-DDDD' });
   const raw = pdf.toString('latin1');
   const source = [...raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)].map(match => { try { return inflateSync(Buffer.from(match[1], 'latin1')).toString('latin1'); } catch { return ''; } }).join('\n');
-  const decoded = [...source.matchAll(/\\[(.*?)\\]\\s*TJ/gs)]
+  const decoded = [...source.matchAll(/\[(.*?)\]\s*TJ/gs)]
     .map(match => [...match[1].matchAll(/<([0-9A-Fa-f]+)>/g)].map(glyph => Buffer.from(glyph[1], 'hex').toString('latin1')).join(''))
-    .join('\\n');
+    .join('\n');
   assert.match(decoded, /TT-MCHS-2026-001/);
   assert.match(decoded, /Project Overview/);
   assert.match(decoded, /Payment Terms/);
