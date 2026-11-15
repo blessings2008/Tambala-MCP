@@ -1,6 +1,14 @@
 -- Durable runtime heartbeat and Founder-controlled global pause state.
 -- Safe to re-run; no employee identities or existing records are rewritten.
 
+-- Add the dedicated signature kind used for Founder pause/resume records.
+alter table public.organization_signatures
+  drop constraint if exists organization_signatures_kind_check;
+alter table public.organization_signatures
+  add constraint organization_signatures_kind_check
+  check (kind in ('duty_result','briefing','handoff_request','handoff_result','approval_decision','document','message','invoice','runtime_control'));
+
+
 create table if not exists public.organization_runtime_heartbeat (
   id text primary key check (id = 'duty-cycle'),
   last_started_at timestamptz,
