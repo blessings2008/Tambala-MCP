@@ -8,10 +8,10 @@ import { formatResearchContext, webResearch, webResearchMany } from './web-resea
 const clients = new Map<AgentName, OpenAI>();
 
 // Preserve the full organization and grounding rules while keeping total requests below provider TPM limits.
-const MAX_SYSTEM_PROMPT_CHARS = 9_000;
+const MAX_SYSTEM_PROMPT_CHARS = 6_000;
 const MAX_USER_INPUT_CHARS = 3_000;
-const MAX_CONTEXT_CHARS = 4_000;
-const MAX_COMPLETION_TOKENS = 900;
+const MAX_CONTEXT_CHARS = 1_800;
+const MAX_COMPLETION_TOKENS = 750;
 
 function boundText(value: string, maxChars: number): string {
   const normalized = value.replace(/[ \t]+/g, ' ').replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
@@ -173,7 +173,8 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
     const userInput = boundText(input, userInputLimit);
     const contextText = context === undefined ? '' : '\n\nTambala business context:\n' + serializeBoundedContext(context, contextLimit);
     const userMessage = boundText(userInput + contextText, userInputLimit + contextLimit + 40);
-    const completionBudget = agent === 'operations' ? 1_600 : researchHeavyOutreach ? (input.includes('discovery pass') ? 700 : 1_400) : agent === 'research' ? 1_800 : MAX_COMPLETION_TOKENS;
+    const queueOnlyResearch = agent === 'research' && /STANDING DUTY: Daily prospect queue intelligence|STANDING DUTY: Research department queue assessment/i.test(input);
+    const completionBudget = queueOnlyResearch ? 900 : agent === 'operations' ? 1_200 : researchHeavyOutreach ? (input.includes('discovery pass') ? 700 : 1_100) : agent === 'research' ? 1_100 : MAX_COMPLETION_TOKENS;
     const requestPayload = {
       model: config.model,
       messages: [
