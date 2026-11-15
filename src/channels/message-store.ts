@@ -22,6 +22,8 @@ export interface MessageRow {
   task_id: string | null;
   signature: string | null;       // fingerprint of the ledger signature
   contact_label: string | null;   // matched lead/client name, when known
+  reply_to_message_id?: string | null; // sent customer message this inbound reply is attributed to
+  reply_intent?: 'accepted' | 'interested' | 'not_interested' | 'question' | 'other' | null;
   created_at: string;
   sent_at: string | null;
   claimed_at?: string | null;
@@ -36,6 +38,7 @@ export interface MessageStore {
   sentSince(sinceIso: string, audience: Audience): Promise<number>;
   duplicateSince(number: string, text: string, sinceIso: string): Promise<boolean>;
   inboundByProviderId(providerId: string): Promise<MessageRow | null>;
+  latestSentTo(number: string, sinceIso: string, withDocument?: boolean): Promise<MessageRow | null>;
   blockedNumbers(): Promise<Set<string>>;
   addBlock(number: string, reason: string): Promise<void>;
 }
@@ -54,6 +57,10 @@ export class SupabaseMessageStore implements MessageStore {
     return rows.some((r) => r.text === text);
   }
   async inboundByProviderId(providerId: string) { return (await supabaseSelect<MessageRow>('organization_messages', `select=*&direction=eq.in&provider_message_id=eq.${encodeURIComponent(providerId)}&limit=1`))[0] ?? null; }
+  async latestSentTo(number: string, sinceIso: string, withDocument = false) {
+    const documentFilter = withDocument ? '&document_id=not.is.null' : '';
+    return (await supabaseSelect<MessageRow>('organization_messages', `select=*&direction=eq.out&audience=eq.client&status=eq.sent&number=eq.${encodeURIComponent(number)}&sent_at=gte.${encodeURIComponent(sinceIso)}${documentFilter}&order=sent_at.desc&limit=1`))[0] ?? null;
+  }
   async blockedNumbers() { return new Set((await supabaseSelect<{ number: string }>('organization_contact_blocks', 'select=number&limit=5000')).map((r) => r.number)); }
   async addBlock(number: string, reason: string) {
     try { await supabaseInsert('organization_contact_blocks', { number, reason }); }
@@ -72,6 +79,9 @@ export class InMemoryMessageStore implements MessageStore {
   async sentSince(sinceIso: string, audience: Audience) { return this.rows.filter((r) => r.direction === 'out' && r.status === 'sent' && r.audience === audience && (r.sent_at ?? '') >= sinceIso).length; }
   async duplicateSince(number: string, text: string, sinceIso: string) { return this.rows.some((r) => r.direction === 'out' && r.number === number && r.text === text && r.created_at >= sinceIso && ['pending_approval', 'queued', 'sent'].includes(r.status)); }
   async inboundByProviderId(id: string) { return this.rows.find((r) => r.direction === 'in' && r.provider_message_id === id) ?? null; }
+  async latestSentTo(number: string, sinceIso: string, withDocument = false) {
+    return [...this.rows].filter((r) => r.direction === 'out' && r.audience === 'client' && r.status === 'sent' && r.number === number && (r.sent_at ?? '') >= sinceIso && (!withDocument || Boolean(r.document_id))).sort((a, b) => (b.sent_at ?? '').localeCompare(a.sent_at ?? ''))[0] ?? null;
+  }
   async blockedNumbers() { return new Set(this.blocks.keys()); }
   async addBlock(number: string, reason: string) { this.blocks.set(number, reason); }
 }
