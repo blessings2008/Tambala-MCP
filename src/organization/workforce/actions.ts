@@ -4,7 +4,7 @@ import { itemInputSchema, partySchema, DOC_KINDS } from '../../documents/model.j
 
 /**
  * Real-world actions an employee can request at the end of their work. They are validated strictly and checked against
- * the employee's permissions. Customer-facing WhatsApp is held for Founder approval except a first-contact outreach message from the Sales & Business Development director, which may be sent autonomously only when the shared outbox verifies the destination as a CRM lead and enforces the Founder-approved daily cap, cooldown and opt-out rules.
+ * the employee's permissions. Every customer-facing WhatsApp message is held for Founder approval. No employee trust score or CRM status bypasses this approval gate.
  */
 const phone = z.string().trim().min(8).max(30);
 const msg = z.string().trim().min(2).max(1500);
@@ -163,9 +163,9 @@ export function parseActions(body: string): ParsedActions {
 export function actionHelp(agent: string): string {
   const allowed = allowedActionTypes(agent);
   const lines = [
-    'You can request real actions by ending your answer with a heading line ACTIONS: followed by one JSON object per line; fenced JSON and a JSON array are also accepted. First-contact outreach may be sent autonomously only for the Sales & Business Development director and only after the shared outbox verifies the destination as a CRM lead. All follow-ups, replies, invoice reminders and other customer-facing messages remain subject to Founder approval.',
+    'You can request real actions by ending your answer with a heading line ACTIONS: followed by one JSON object per line; fenced JSON and a JSON array are also accepted. Every customer-facing message, including first-contact outreach, follow-ups, replies and invoice reminders, remains subject to Founder approval.',
     'Use only phone numbers, names, prices and links that appear in the supplied data. Never invent them. If something you need is missing, say so in your answer instead of guessing.',
-    'Never send unresolved placeholders such as [Name], [Company], {{name}} or the literal word Name as a recipient. If no verified person name is supplied, address the organisation by its exact verified business name followed by team. For first-contact outreach, finish with ACTIONS: on its own line and one valid WhatsApp JSON action; a draft without an ACTIONS block is not an executed action.',
+    'Never send unresolved placeholders such as [Name], [Company], {{name}} or the literal word Name as a recipient. If no verified person name is supplied, address the organisation by its exact verified business name followed by team. For customer outreach, finish with ACTIONS: on its own line and one valid WhatsApp JSON action; the message will wait in the Founder approval inbox.',
     'Do not claim Tambala has served similar businesses, delivered past results, has testimonials, or guarantees outcomes unless the exact claim is supported by approved portfolio evidence in the supplied context.',
   ];
   if (allowed.includes('notify_founder')) lines.push('- Message the Founder: {"type":"notify_founder","text":"..."}  (only when he genuinely needs to know or decide something).');
