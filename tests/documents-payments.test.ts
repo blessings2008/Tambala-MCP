@@ -50,11 +50,11 @@ test('quotations: price-list lines, custom lines, totals, numbering, signature a
     const d = q.data as any;
     assert.equal(d.totals.subtotalMinor, 45000000 + 15000100);          // 450,000.00 + 150,001.00
     assert.equal(d.totals.vatMinor, Math.round(60000100 * 0.165)); assert.equal(q.total_minor, d.totals.totalMinor);
-    assert.equal(d.validUntil.slice(0, 10), '2026-11-23');               // 14 days by default
+    assert.equal(d.validUntil.slice(0, 10), '2026-12-09');               // 30 days by default
     const pdf = Buffer.from(q.pdf_base64, 'base64');
     assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
     assert.equal(createHash('sha256').update(pdf).digest('hex'), q.pdf_sha256);
-    assert.equal(pages(pdf), 1);
+    assert.equal(pages(pdf), 2);
     assert.match(q.signature!, /^[0-9A-F]{4}(-[0-9A-F]{4}){3}$/);
 
     const q2 = await createDocument({ kind: 'quotation', client: { name: 'B' }, items: [{ sku: 'WEB-STD' }] }, SALES, { store });
