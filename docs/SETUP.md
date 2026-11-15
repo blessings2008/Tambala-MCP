@@ -1,13 +1,13 @@
 # Getting Tambala MCP fully functional
 
 1. **Run the migrations** in `supabase/migrations/` in filename order (SQL editor). They are idempotent. Apply `20261108_whatsapp_outbox_claims.sql` after `20261101_channels_documents_payments.sql` and before enabling the WhatsApp worker.
-2. Apply `supabase/migrations/20261115_runtime_reliability.sql` after the existing migrations. It creates the durable duty heartbeat and Founder-controlled global pause state. **Activate the agents you want working:** review then run `supabase/manual/activate_agent_roles.sql`.
-   Execution only happens for `active` roles; this is deliberately not a migration.
-3. **Set environment variables** from `.env.example` (at minimum the Supabase key, the orchestrator and each
+2. Apply `supabase/migrations/20261115_runtime_reliability.sql` after the existing migrations. It creates the durable duty heartbeat and Founder-controlled global pause state.
+3. **Activate the agents you want working:** review then run `supabase/manual/activate_agent_roles.sql`. Execution only happens for `active` roles; this is deliberately not a migration.
+4. **Set environment variables** from `.env.example` (at minimum the Supabase key, the orchestrator and each
    specialist's key/base URL/model, and `TAMBALA_WEB_SEARCH_API_KEY` for research tasks).
-4. **Deploy, then open `/chat-live`**, paste `TAMBALA_CHAT_TEST_TOKEN`, run a task. The completion message shows
+5. **Deploy, then open `/chat-live`**, paste `TAMBALA_CHAT_TEST_TOKEN`, run a task. The completion message shows
    whether the run was recorded (`organization_tasks` / `organization_task_events`).
-5. **Turn on role enforcement (recommended):** connect your Claude connector through OAuth, read your client id from
+6. **Turn on role enforcement (recommended):** connect your Claude connector through OAuth, read your client id from
    `organization_audit_events`, run `supabase/manual/bind_founder.sql` with it, then set
    `TAMBALA_ENFORCE_ROLE_BINDINGS=true`. Write tools (CRM changes, Tambala Pay creation, report email, approvals)
    then require a bound active role; Founder-only tools reject every other role. Do the binding BEFORE enabling
