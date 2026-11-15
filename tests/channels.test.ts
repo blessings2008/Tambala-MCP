@@ -165,33 +165,37 @@ test('outbox: customer follow-ups wait for approval, tell the Founder, and go ou
   assert.equal((await h.store.byId(r.id))!.status, 'sent');
 });
 
-test('outbox: autonomous first contact removes internal analysis and routing notes', async () => {
+test('outbox: first-contact drafts remove internal analysis and routing notes before Founder approval', async () => {
   const h = outboxHarness();
   const result = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello, we build business websites.\nInternal analysis: prioritise this prospect.\nRouting note: assign to CEO.', purpose: 'outreach', contactLabel: 'Verified Test Lodge (lead)' });
-  assert.equal(result.status, 'queued');
+  assert.equal(result.status, 'pending_approval');
   assert.match(h.store.rows[0].text, /Hello, we build business websites/);
   assert.doesNotMatch(h.store.rows[0].text, /Internal analysis|Routing note|prioritise this prospect|assign to CEO/i);
 });
 
-test('outbox: first-contact Outreach is queued autonomously and strips internal employee metadata', async () => {
+test('outbox: first-contact Outreach waits for Founder approval and strips internal employee metadata', async () => {
   const h = outboxHarness({ cooldownMs: 90_000 });
   const r = await queueMessage(h.deps, {
     ...sales, to: '0888123456',
     text: 'Hello Lakeview Lodge, we build professional websites for businesses.\n\nPrepared by CEO · TT-001',
     purpose: 'outreach', contactLabel: 'Lakeview Lodge (lead)',
   });
-  assert.equal(r.status, 'queued');
-  assert.equal(h.approvals.length, 0);
+  assert.equal(r.status, 'pending_approval');
+  assert.equal(h.approvals.length, 1);
   const row = (await h.store.byId(r.id))!;
   assert.match(row.text, /professional websites/);
   assert.doesNotMatch(row.text, /Reply STOP to opt out|opt out/i);
   assert.doesNotMatch(row.text, /CEO|TT[- ]?001|Prepared by/i);
+  const beforeApproval = await processOutbox(h.deps);
+  assert.notEqual(beforeApproval.find((item) => item.id === r.id)?.status, 'sent');
+  assert.equal(h.sent.some((item) => item.number === '265888123456'), false);
+  await onApprovalDecided(h.deps, r.id, 'approved', null);
   const sent = await processOutbox(h.deps);
   assert.equal(sent.find((item) => item.id === r.id)?.status, 'sent');
   assert.doesNotMatch(h.sent.at(-1)!.text, /CEO|TT[- ]?001|Prepared by/i);
 });
 
-test('outbox: autonomous first contact rejects unsupported past-work claims', async () => {
+test('outbox: first-contact drafts reject unsupported past-work claims', async () => {
   const h = outboxHarness();
   await assert.rejects(
     queueMessage(h.deps, { ...sales, to: '0888123456', text: "We've helped similar firms attract more clients.", purpose: 'outreach' }),
@@ -209,19 +213,20 @@ test('outbox: first-contact messages with unresolved placeholders are never queu
   assert.equal(h.store.rows.filter((row) => row.audience === 'client').length, 0);
 });
 
-test('outbox: autonomous first contact is rejected when the number is not a CRM lead', async () => {
+test('outbox: first-contact messages outside CRM still require explicit Founder approval', async () => {
   const h = outboxHarness({ verifyOutreachLead: async () => null });
-  await assert.rejects(
-    queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello there.', purpose: 'outreach', contactLabel: 'Unverified Prospect' }),
-    /matching CRM lead/,
-  );
-  assert.equal(h.store.rows.length, 0);
+  const result = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello there.', purpose: 'outreach', contactLabel: 'Unverified Prospect' });
+  assert.equal(result.status, 'pending_approval');
+  assert.equal(h.approvals.length, 1);
+  assert.equal(h.sent.some((item) => item.number === '265888123456'), false);
 });
 
 test('outbox: at most one customer message is attempted per scheduler pass', async () => {
   const h = outboxHarness();
   const first = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello first prospect.', purpose: 'outreach' });
   const second = await queueMessage(h.deps, { ...sales, to: '0888777888', text: 'Hello second prospect.', purpose: 'outreach' });
+  await onApprovalDecided(h.deps, first.id, 'approved', null);
+  await onApprovalDecided(h.deps, second.id, 'approved', null);
   const firstPass = await processOutbox(h.deps);
   assert.equal(firstPass.find((item) => item.id === first.id)?.status, 'sent');
   assert.equal(firstPass.find((item) => item.id === second.id)?.status, 'waiting');
@@ -233,9 +238,11 @@ test('outbox: at most one customer message is attempted per scheduler pass', asy
 test('outbox: customer cooldown is enforced between separate worker runs', async () => {
   const h = outboxHarness({ cooldownMs: 90_000 });
   const first = await queueMessage(h.deps, { ...sales, to: '0888123456', text: 'Hello first prospect.', purpose: 'outreach', contactLabel: 'First Lodge' });
+  await onApprovalDecided(h.deps, first.id, 'approved', null);
   await processOutbox(h.deps);
   assert.equal((await h.store.byId(first.id))!.status, 'sent');
   const second = await queueMessage(h.deps, { ...sales, to: '0888777888', text: 'Hello second prospect.', purpose: 'outreach', contactLabel: 'Second Lodge' });
+  await onApprovalDecided(h.deps, second.id, 'approved', null);
   const early = await processOutbox(h.deps);
   assert.equal(early.find((item) => item.id === second.id)?.status, 'waiting');
   assert.match(early.find((item) => item.id === second.id)?.reason ?? '', /cooldown/i);
