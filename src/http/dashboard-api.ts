@@ -14,6 +14,7 @@ import { buildWorkforce } from '../organization/workforce/duty-service.js';
 import { getAgentOperationalInfo, type AgentName } from '../services/ai.js';
 import { getDutyHeartbeat } from '../organization/workforce/heartbeat.js';
 import { getRuntimeControl } from '../organization/runtime-control.js';
+import { getDailyAIUsage } from '../services/ai/spend.js';
 
 export type Section<T> = { ok: true; data: T } | { ok: false; error: string };
 type Row = Record<string, unknown>;
@@ -93,7 +94,7 @@ export async function buildDashboard() {
     return supabaseSelect<T>(path, query);
   };
 
-  const [organization, tasks, events, approvals, decisions, audit, bindings, runs, actions, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, goals, runtime] = await Promise.all([
+  const [organization, tasks, events, approvals, decisions, audit, bindings, runs, actions, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, goals, aiSpend, runtime] = await Promise.all([
     section(async () => {
       const snap = await getOrganizationSnapshot();
       return {
@@ -158,6 +159,29 @@ export async function buildDashboard() {
       };
     }),
     section(async () => {
+      const rows = await getDailyAIUsage();
+      const byEmployee: Record<string, { requests: number; promptTokens: number; completionTokens: number; pricedCostUsd: number; unpricedRequests: number }> = {};
+      for (const row of rows) {
+        const item = byEmployee[row.employee_number] ??= { requests: 0, promptTokens: 0, completionTokens: 0, pricedCostUsd: 0, unpricedRequests: 0 };
+        item.requests++;
+        item.promptTokens += Number(row.prompt_tokens ?? 0);
+        item.completionTokens += Number(row.completion_tokens ?? 0);
+        if (row.cost_usd === null || row.cost_status !== 'priced') item.unpricedRequests++;
+        else item.pricedCostUsd += Number(row.cost_usd);
+      }
+      const pricedCostUsd = rows.reduce((sum, row) => sum + (row.cost_status === 'priced' && row.cost_usd !== null ? Number(row.cost_usd) : 0), 0);
+      return {
+        window: 'UTC calendar day',
+        requests: rows.length,
+        promptTokens: rows.reduce((sum, row) => sum + Number(row.prompt_tokens ?? 0), 0),
+        completionTokens: rows.reduce((sum, row) => sum + Number(row.completion_tokens ?? 0), 0),
+        pricedCostUsd: Number(pricedCostUsd.toFixed(8)),
+        unpricedRequests: rows.filter((row) => row.cost_status !== 'priced' || row.cost_usd === null).length,
+        byEmployee,
+        caps: { enforcement: 'not_enabled', note: 'Founder-approved per-employee and organization-wide USD caps and authoritative model pricing are still required before enforcement.' },
+      };
+    }),
+    section(async () => {
       const since = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
       const [control, heartbeat, dutyRuns] = await Promise.all([
         getRuntimeControl(), getDutyHeartbeat(), db<Row>('organization_duty_runs', `select=id,status,started_at,completed_at&started_at=gte.${encodeURIComponent(since)}&order=started_at.desc&limit=500`),
@@ -206,7 +230,7 @@ export async function buildDashboard() {
       deniedRecent,
     },
     organization, tasks, taskSummary: taskSummary ? { ok: true as const, data: taskSummary } : { ok: false as const, error: tasks.ok ? '' : tasks.error },
-    events, approvals, decisions, audit, bindings, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, goals, runtime, automation: { runs, pendingActions: actions }, agents,
+    events, approvals, decisions, audit, bindings, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, goals, aiSpend, runtime, automation: { runs, pendingActions: actions }, agents,
     config: {
       database: dbConfigured,
       oauth: flag('TAMBALA_OAUTH_SECRET') && flag('TAMBALA_OAUTH_APPROVAL_CODE'),
