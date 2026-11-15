@@ -175,7 +175,7 @@ test('outbox: attached document is marked sent only after the provider accepts d
   await onApprovalDecided(h.deps, queued.id, 'approved', null);
   const result = await processOutbox(h.deps);
   assert.equal(result.find((item) => item.id === queued.id)?.status, 'sent');
-  assert.deepEqual(marked, [{ id: 'doc-1', at: MON_10AM }]);
+  assert.deepEqual(marked, [{ id: 'doc-1', at: '2026-11-09T08:00:00.000Z' }]);
 });
 
 test('outbox: first-contact drafts remove internal analysis and routing notes before Founder approval', async () => {
