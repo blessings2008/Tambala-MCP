@@ -62,7 +62,7 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
   if (outreachCopy && /\[(?:name|company|business(?: name)?|contact(?: name)?|recipient)\]|\{\{\s*(?:name|company|business(?:_name)?|contact(?:_name)?)\s*\}\}|(?:^|[\s,])(?:hi|hello)\s+name\b/i.test(input.text)) {
     throw new OutboxError('First-contact message contains an unresolved placeholder. No customer message was queued.');
   }
-  if (autonomousOutreach && /\b(?:we|our team)\s+(?:have|has|had)\s+(?:helped|worked with|served|built|delivered|supported|generated|increased|grown|achieved)\b|\bwe['’]ve\s+(?:helped|worked with|served|built|delivered|supported|generated|increased|grown|achieved)\b/i.test(input.text)) {
+  if (outreachCopy && /\b(?:we|our team)\s+(?:have|has|had)\s+(?:helped|worked with|served|built|delivered|supported|generated|increased|grown|achieved)\b|\bwe['’]ve\s+(?:helped|worked with|served|built|delivered|supported|generated|increased|grown|achieved)\b/i.test(input.text)) {
     throw new OutboxError('First-contact message contains an unverified past-work or results claim. Remove it unless approved portfolio evidence supports it.');
   }
   const verifiedContactLabel = input.contactLabel?.trim() || null;
