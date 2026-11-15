@@ -93,7 +93,7 @@ export async function buildDashboard() {
     return supabaseSelect<T>(path, query);
   };
 
-  const [organization, tasks, events, approvals, decisions, audit, bindings, runs, actions, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, runtime] = await Promise.all([
+  const [organization, tasks, events, approvals, decisions, audit, bindings, runs, actions, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, goals, runtime] = await Promise.all([
     section(async () => {
       const snap = await getOrganizationSnapshot();
       return {
@@ -123,6 +123,40 @@ export async function buildDashboard() {
     section(() => payHealthCached()),
     section(() => db<Row>('organization_task_rooms', 'select=id,handoff_id,parent_task_id,owner_role_id,owner_agent,opened_by_role_id,objective,status,deliverable,blocker,opened_at,updated_at,closed_at&order=updated_at.desc&limit=100')),
     section(() => db<Row>('organization_task_room_events', 'select=id,room_id,event_type,actor_role_id,payload,created_at&order=created_at.desc&limit=100')),
+    section(async () => {
+      const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+      const [prospects, quotes, invoicesRows, messagesRows] = await Promise.all([
+        db<Row>('lead_discovery_queue', 'select=id,processing_status,created_at&order=created_at.desc&limit=5000'),
+        db<Row>('organization_documents', `select=id,status,total_minor,currency,created_by_role_id,created_at&kind=eq.quotation&created_at=gte.${encodeURIComponent(since)}&limit=2000`),
+        db<Row>('organization_invoices', `select=id,status,amount_minor,currency,created_by_role_id,created_at&created_at=gte.${encodeURIComponent(since)}&limit=2000`),
+        db<Row>('organization_messages', `select=id,direction,status,audience,from_role_id,number,created_at,sent_at&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=3000`),
+      ]);
+      const statusCount = (rows: Row[], field: string) => rows.reduce<Record<string, number>>((out, row) => {
+        const key = String(row[field] ?? 'unknown'); out[key] = (out[key] ?? 0) + 1; return out;
+      }, {});
+      const paidInvoices = invoicesRows.filter((row) => String(row.status).toLowerCase() === 'paid');
+      const revenueMinor = paidInvoices.reduce((sum, row) => sum + Number(row.amount_minor ?? 0), 0);
+      const byEmployee: Record<string, { quotations: number; invoices: number; paidInvoices: number; revenueMinor: number; customerMessagesSent: number }> = {};
+      const employee = (role: unknown) => String(role ?? 'unattributed');
+      const bucket = (role: unknown) => byEmployee[employee(role)] ??= { quotations: 0, invoices: 0, paidInvoices: 0, revenueMinor: 0, customerMessagesSent: 0 };
+      for (const row of quotes) bucket(row.created_by_role_id).quotations++;
+      for (const row of invoicesRows) {
+        const item = bucket(row.created_by_role_id); item.invoices++;
+        if (String(row.status).toLowerCase() === 'paid') { item.paidInvoices++; item.revenueMinor += Number(row.amount_minor ?? 0); }
+      }
+      for (const row of messagesRows.filter((item) => item.direction === 'out' && item.audience === 'client' && item.status === 'sent')) bucket(row.from_role_id).customerMessagesSent++;
+      const inboundReplies = messagesRows.filter((row) => row.direction === 'in' && row.audience === 'client').length;
+      const quotesSent = quotes.filter((row) => row.status === 'sent').length;
+      return {
+        windowDays: 30,
+        prospects: { total: prospects.length, byStatus: statusCount(prospects, 'processing_status') },
+        quotations: { created: quotes.length, sent: quotesSent, accepted: null, acceptanceRate: null, acceptanceNote: 'Quotation acceptance is not currently captured as a structured event; this metric is unavailable, not zero.' },
+        invoices: { created: invoicesRows.length, paid: paidInvoices.length, unpaid: invoicesRows.length - paidInvoices.length, paidRevenueMinor: revenueMinor, currency: 'MWK' },
+        customerCommunication: { sent: messagesRows.filter((row) => row.direction === 'out' && row.audience === 'client' && row.status === 'sent').length, replies: inboundReplies, replyRate: null, replyRateNote: 'Replies are counted from inbound client messages; reliable message-to-message attribution is not yet stored, so a reply rate is unavailable.' },
+        byEmployee,
+        source: 'Supabase CRM discovery queue, quotation documents, invoice ledger and WhatsApp message ledger; rolling 30-day window.',
+      };
+    }),
     section(async () => {
       const since = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
       const [control, heartbeat, dutyRuns] = await Promise.all([
@@ -172,7 +206,7 @@ export async function buildDashboard() {
       deniedRecent,
     },
     organization, tasks, taskSummary: taskSummary ? { ok: true as const, data: taskSummary } : { ok: false as const, error: tasks.ok ? '' : tasks.error },
-    events, approvals, decisions, audit, bindings, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, runtime, automation: { runs, pendingActions: actions }, agents,
+    events, approvals, decisions, audit, bindings, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, goals, runtime, automation: { runs, pendingActions: actions }, agents,
     config: {
       database: dbConfigured,
       oauth: flag('TAMBALA_OAUTH_SECRET') && flag('TAMBALA_OAUTH_APPROVAL_CODE'),
