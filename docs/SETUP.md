@@ -3,6 +3,7 @@
 1. **Run the migrations** in `supabase/migrations/` in filename order (SQL editor). They are idempotent. Apply `20261108_whatsapp_outbox_claims.sql` after `20261101_channels_documents_payments.sql` and before enabling the WhatsApp worker.
 2. Apply `supabase/migrations/20261115_runtime_reliability.sql` after the existing migrations. It creates the durable duty heartbeat and Founder-controlled global pause state.
 3. **Activate the agents you want working:** review then run `supabase/manual/activate_agent_roles.sql`. Execution only happens for `active` roles; this is deliberately not a migration.
+3a. Apply `supabase/migrations/20261115_customer_outcomes.sql` after the WhatsApp/document migration. It adds inbound-to-outbound reply attribution and explicit quotation acceptance fields.
 4. **Set environment variables** from `.env.example` (at minimum the Supabase key, the orchestrator and each
    specialist's key/base URL/model, and `TAMBALA_WEB_SEARCH_API_KEY` for research tasks).
 5. **Deploy, then open `/chat-live`**, paste `TAMBALA_CHAT_TEST_TOKEN`, run a task. The completion message shows
@@ -109,6 +110,13 @@ Add these variables to the Tambala MCP web service. Do not paste secrets into ch
 6. From a second phone, send a simple test message to the connected business number. Confirm the inbound message appears in **Messages** and a notification reaches the Founder. This live inbound delivery cannot be proven by a local mock-server test.
 7. Reply to the business number from the Founder phone with `PENDING`; confirm the approvals list arrives. Use a test approval only if a harmless test approval is actually pending. Do not approve a real customer message just to test the channel.
 8. If a customer-facing test is necessary, use a test contact that has explicitly agreed to receive it. Create a draft through the normal approval path and verify it is not delivered before Founder approval.
+
+### Customer outcomes and quotation acceptance
+
+- Customer replies are linked to the latest sent customer message to that number within 90 days. The inbound record stores the linked outbound message ID and a deterministic intent label; the CEO metrics group replies by the originating employee.
+- `interested`, `question`, `not_interested` and `other` are reply categories, not sales. Only explicit wording such as “we accept the quotation” or “go ahead with the project” can trigger acceptance processing.
+- An attached document is marked `sent` only after Evolution accepts the send request. A quotation changes to `accepted` only when an explicit acceptance reply can be linked to a sent quotation. The customer text and inbound message ID are retained for audit.
+- If no matching sent message or sent quotation can be verified, the reply is still stored and forwarded, but no employee attribution or accepted-quotation metric is fabricated.
 
 ### How it behaves
 
