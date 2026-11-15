@@ -106,6 +106,8 @@ registerApprovalHook(ROLE_SUBJECT, async (approval: ApprovalRow, decision: 'appr
   if (!snapshot.organization.units.some((unit) => unit.id === proposal.unitId) || !snapshot.organization.roles.some((role) => role.id === proposal.reportsToRoleId)) {
     throw new Error('The organizational structure changed since this proposal was submitted; Founder review is required again.');
   }
+  // Approval hooks may be retried after a transient failure; do not duplicate an already activated role.
+  if (snapshot.organization.roles.some((role) => role.id === parsed.id)) return;
   await supabaseInsert('organization_roles', {
     id: parsed.id,
     title: proposal.title,
