@@ -6,7 +6,6 @@ import { roleIdFor } from './profiles.js';
 import { localTime, OFFICE_TZ, periodKey, runsToday, timeReached, type LocalTime } from './schedule.js';
 import type { DutyRun, DutyStore } from './duty-store.js';
 import type { OrganizationTaskTransition } from '../task-lifecycle.js';
-import { persistDiscoveredProspects } from './lead-discovery-persistence.js';
 
 export type DutyOutcomeStatus = 'completed' | 'awaiting_approval' | 'skipped' | 'failed' | 'not_due' | 'already_running';
 export interface DutyOutcome { dutyId: string; status: DutyOutcomeStatus; reason?: string; taskId?: string; runId?: string; handoffs?: number }
@@ -51,9 +50,6 @@ export function buildDutyPrompt(duty: StandingDuty, lt: LocalTime, who?: { emplo
     `DELIVERABLE: ${duty.deliverable}`,
     'Keep it under 350 words, plain and scannable.',
   ];
-  if (duty.id === 'daily-lead-discovery') {
-    parts.push('STRUCTURED OUTPUT CONTROL: The DISCOVERED_PROSPECTS block is machine-parsed and must be complete valid JSON inside the exact fenced wrapper. The JSON block is excluded from the 350-word narrative limit. Do not truncate fields, add comments, or place prose inside the JSON array. Use [] when no prospects meet the evidence standard.');
-  }
   if (duty.id === 'morning-board-minutes') {
     parts.push('BOARD MINUTES CONTROL: The supplied context.boardMeeting object is the authoritative attendance and department-report matrix. Include the Chair opening and all four departmentUpdates. Use its status exactly: mark the minutes COMPLETE only when boardMeeting.status is COMPLETE; otherwise mark PARTIAL and name every entry in missingItems. Quote findings only from boardMeeting.opening.report and each departmentUpdates.report. Do not infer a missing report from another department’s summary.');
   }
@@ -125,10 +121,6 @@ export async function runDuty(deps: DutyDeps, duty: StandingDuty, opts: { force?
       const who = await deps.employee(duty.agent);
       body = (await deps.ask(duty, buildDutyPrompt(duty, lt, who), context)).trim();
       if (!body) throw new Error('The employee returned no work product.');
-      if (duty.id === 'daily-lead-discovery') {
-        const persisted = await persistDiscoveredProspects(body);
-        body = `${persisted.cleanBody}\n\nDatabase result: ${persisted.saved} prospect(s) saved to the discovery queue; ${persisted.duplicates} duplicate(s) skipped; ${persisted.rejected} item(s) rejected.\n${persisted.details.join('\n')}`;
-      }
       if (!duty.report) {
         const parsed = extractHandoffs(body, duty.agent);
         const acted = parseActions(body);

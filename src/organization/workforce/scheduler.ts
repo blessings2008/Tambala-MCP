@@ -1,4 +1,25 @@
-import { dispatchNewDiscoveryQueue, dispatchQualifiedDiscoveryApprovals, runDutiesOnce } from './duty-service.js';
+import { dispatchNewDiscoveryQueue, dispatchReviewingDiscoveryQueue, dispatchQualifiedDiscoveryApprovals, runDutiesOnce } from './duty-service.js';
+
+export interface ScheduledQueueMaintenanceDeps {
+  dispatchNew: (maxCount: number) => Promise<number>;
+  dispatchReviewing: (maxCount: number) => Promise<number>;
+  dispatchApprovals: () => Promise<number>;
+  runDuties: (options: { skipDiscoveryQueue: true }) => Promise<{ outcomes: Array<{ dutyId: string; status: string }>; handoffs: Array<{ toAgent: string; status: string }> }>;
+}
+
+/** Keep recovery and intake within the five-handoff worker budget in every scheduler mode. */
+export async function runScheduledQueueMaintenance(deps: ScheduledQueueMaintenanceDeps = {
+  dispatchNew: dispatchNewDiscoveryQueue,
+  dispatchReviewing: dispatchReviewingDiscoveryQueue,
+  dispatchApprovals: dispatchQualifiedDiscoveryApprovals,
+  runDuties: runDutiesOnce,
+}) {
+  const recoveredReviews = await deps.dispatchReviewing(5);
+  const newClaims = await deps.dispatchNew(Math.max(0, 5 - recoveredReviews));
+  const promotionApprovals = await deps.dispatchApprovals();
+  const cycle = await deps.runDuties({ skipDiscoveryQueue: true });
+  return { newClaims, recoveredReviews, promotionApprovals, ...cycle };
+}
 
 /**
  * Optional in-process clock. Each tick runs whatever duties are due; duties are idempotent per period,
@@ -9,11 +30,10 @@ export function startDutyScheduler(): void {
   const minutes = Math.max(1, Number(process.env.TAMBALA_DUTY_INTERVAL_MINUTES) || 5);
   const tick = async () => {
     try {
-      const discoveryClaims = await dispatchNewDiscoveryQueue();
-      if (discoveryClaims) console.log('Discovery queue claimed for Sales:', discoveryClaims);
-      const promotionApprovals = await dispatchQualifiedDiscoveryApprovals();
+      const { newClaims, recoveredReviews, promotionApprovals, outcomes, handoffs } = await runScheduledQueueMaintenance();
+      if (newClaims) console.log('Discovery queue claimed for Research:', newClaims);
+      if (recoveredReviews) console.log('Legacy discovery queue rows routed to Research:', recoveredReviews);
       if (promotionApprovals) console.log('Founder approvals created for qualified prospects:', promotionApprovals);
-      const { outcomes, handoffs } = await runDutiesOnce({ skipDiscoveryQueue: true });
       const worked = [...outcomes.filter((o) => o.status !== 'skipped').map((o) => `${o.dutyId}:${o.status}`), ...handoffs.filter((h) => h.status !== 'waiting').map((h) => `handoff-${h.toAgent}:${h.status}`)];
       if (worked.length) console.log('Duty cycle:', JSON.stringify(worked));
     } catch (error) {

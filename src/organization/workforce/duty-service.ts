@@ -1,4 +1,5 @@
 import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../../lib/supabase.js';
+import { fetchAllPages, hasDiscoveryQueueHandoff } from './discovery-queue-utils.js';
 import { getBusinessSummary, getDetailedCRMContext, getVerifiedCompanyContext } from '../../services/ai/context.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../../services/ai.js';
 import { getOrganizationSnapshot } from '../service.js';
@@ -137,19 +138,33 @@ async function invoicesContext(now: Date): Promise<Row> {
 async function organizationContext(store: DutyStore, now: Date): Promise<Row> {
   const day = new Date(now.getTime() - 24 * 3_600_000).toISOString();
   const week = new Date(now.getTime() - 7 * 24 * 3_600_000).toISOString();
-  const [audit, tasks, failedEvents, bindings, runs] = await Promise.all([
-    recentRows('organization_audit_events', `select=action,outcome,reason,created_at&created_at=gte.${encodeURIComponent(day)}&order=created_at.desc&limit=100`),
-    recentRows('organization_tasks', `select=objective,status,assigned_role_id,error_message,created_at&created_at=gte.${encodeURIComponent(week)}&order=created_at.desc&limit=100`),
-    recentRows('organization_task_events', `select=task_id,event_type,stage,actor_role_id,department_id,payload,created_at&event_type=eq.stage_failed&created_at=gte.${encodeURIComponent(week)}&order=created_at.desc&limit=100`),
+  const [audit, tasks, failedEvents, bindings, runs, deniedAudit] = await Promise.all([
+    recentRows('organization_audit_events', `select=action,outcome,reason,created_at&created_at=gte.${encodeURIComponent(day)}&order=created_at.desc&limit=20`),
+    recentRows('organization_tasks', `select=objective,status,assigned_role_id,error_message,created_at&created_at=gte.${encodeURIComponent(week)}&order=created_at.desc&limit=30`),
+    recentRows('organization_task_events', `select=task_id,event_type,stage,actor_role_id,department_id,payload,created_at&event_type=eq.stage_failed&created_at=gte.${encodeURIComponent(week)}&order=created_at.desc&limit=30`),
     recentRows('organization_actor_bindings', 'select=role_id,active&active=eq.true'),
-    store.recent(week),
+    store.recent(week).then((rows) => rows.slice(0, 25)),
+    recentRows('organization_audit_events', `select=action,outcome,reason,created_at&created_at=gte.${encodeURIComponent(day)}&outcome=neq.success&order=created_at.desc&limit=500`),
   ]);
+  const compactText = (value: unknown, max = 180) => typeof value === 'string' ? value.slice(0, max) : value ?? null;
+  const compactPayload = (value: unknown): Row => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return { detail: compactText(value) };
+    const input = value as Row;
+    const selected: Row = {};
+    for (const key of ['error', 'message', 'reason', 'dutyId', 'summary', 'status', 'category']) {
+      if (input[key] !== undefined) selected[key] = compactText(input[key]);
+    }
+    return selected;
+  };
   return {
-    audit_last_24h: audit,
-    tasks_last_7d: tasks,
-    failed_task_events_last_7d: failedEvents,
-    active_role_bindings: bindings.length,
-    duty_runs_last_7d: runs.map((r) => ({ duty: r.duty_id, role: r.role_id, status: r.status, attempts: r.attempts, error: r.error, when: r.started_at })),
+    audit_last_24h: audit.slice(0, 10).map((row) => ({ action: compactText(row.action, 100), outcome: row.outcome, reason: compactText(row.reason), created_at: row.created_at })),
+    audit_non_success_last_24h: deniedAudit.slice(0, 30).map((row) => ({ action: compactText(row.action, 100), outcome: row.outcome, reason: compactText(row.reason), created_at: row.created_at })),
+    audit_denials_truncated: deniedAudit.length > 30 || deniedAudit.length >= 500,
+    tasks_last_7d: tasks.slice(0, 15).map((row) => ({ objective: compactText(row.objective), status: row.status, assigned_role_id: row.assigned_role_id, error_message: compactText(row.error_message), created_at: row.created_at })),
+    failed_task_events_last_7d: failedEvents.slice(0, 15).map((row) => ({ task_id: row.task_id, event_type: row.event_type, stage: row.stage, actor_role_id: row.actor_role_id, department_id: row.department_id, payload: compactPayload(row.payload), created_at: row.created_at })),
+    active_role_bindings: bindings.map((row) => row.role_id).slice(0, 40),
+    active_role_binding_count: bindings.length,
+    duty_runs_last_7d: runs.slice(0, 15).map((r) => ({ duty: r.duty_id, role: r.role_id, status: r.status, attempts: r.attempts, error: compactText(r.error), when: r.started_at })),
     office_hours_note: 'Office hours are Mon-Fri 08:00-17:00 Africa/Blantyre. Activity outside them is unusual.',
   };
 }
@@ -182,19 +197,19 @@ type DiscoveryQueueRow = {
 let discoveryQueueDispatchRunning = false;
 
 /**
- * Claim newly researched prospects and create one durable Sales room for the batch.
+ * Claim newly researched prospects and create one durable Research review room per record.
  * The queue status transition is conditional (new -> reviewing), so concurrent
  * scheduler instances cannot claim the same record. If handoff creation fails,
  * claims are released back to new for the next five-minute pass.
  */
-export async function dispatchNewDiscoveryQueue(): Promise<number> {
-  if (!dbConfigured() || discoveryQueueDispatchRunning) return 0;
+export async function dispatchNewDiscoveryQueue(maxCount = 5): Promise<number> {
+  if (!dbConfigured() || discoveryQueueDispatchRunning || maxCount <= 0) return 0;
   discoveryQueueDispatchRunning = true;
   let claimed: DiscoveryQueueRow[] = [];
   try {
     const pending = await supabaseSelect<DiscoveryQueueRow>(
       'lead_discovery_queue',
-      'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message&processing_status=eq.new&order=created_at.asc&limit=2',
+      `select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message&processing_status=eq.new&order=created_at.asc&limit=${Math.min(5, Math.floor(maxCount))}`,
     );
     if (!pending.length) return 0;
 
@@ -225,24 +240,24 @@ export async function dispatchNewDiscoveryQueue(): Promise<number> {
             website: prospect.website,
             sector: prospect.sector,
             service_fit: prospect.service_fit,
-            reason_for_fit: prospect.reason_for_fit?.slice(0, 120) ?? null,
+            reason_for_fit: prospect.reason_for_fit?.slice(0, 800) ?? null,
             decision_maker_name: prospect.decision_maker_name,
             decision_maker_title: prospect.decision_maker_title,
             public_email: prospect.public_email,
             public_phone: prospect.public_phone,
-            source_url: Array.isArray(prospect.source_urls) ? prospect.source_urls[0] ?? null : null,
+            source_urls: Array.isArray(prospect.source_urls) ? prospect.source_urls.filter((value): value is string => typeof value === 'string').slice(0, 8) : [],
             verification_status: prospect.verification_status,
           },
         });
 
         await queueHandoff(handoffStore(), {
           fromRoleId: 'ceo',
-          toAgent: 'outreach',
+          toAgent: 'research',
           sourceDutyId: 'lead-discovery-queue-watcher',
           request: [
-            'Review this single researched Tambala prospect using the attached record.',
-            'Return its organisation name, service fit, source evidence, available public contact, and a qualify / investigate / reject recommendation.',
-            'Do not repeat research. If the service fit is supported and at least one verified public organisation email or phone is supplied, the recommendation MUST be QUALIFY. A named decision-maker is optional enrichment: do not treat its absence as a blocker, do not downgrade the prospect to investigate for that reason, and do not request more research solely to find a personal contact. Never invent contacts. Do not contact the prospect in this review assignment.',
+            'You are Central Research & Intelligence reviewing one existing lead_discovery_queue record. Do not run a new prospect search and do not contact the organisation.',
+            'Return the exact organisation name, queue record ID, service-fit evidence, source URLs, public organisational contact evidence, verification gaps, and one clear recommendation: QUALIFY, INVESTIGATE, or REJECT.',
+            'A named decision-maker is optional enrichment and MUST NOT be a qualification requirement. A missing decision-maker alone is never a reason to downgrade. QUALIFY only when service fit is supported by credible source evidence, the organisation is genuinely relevant to an active Tambala service, and at least one public organisational email or phone is verified in the supplied record. If a contact is present but not evidenced, INVESTIGATE and name the exact check needed. Never invent or infer contact details. Do not contact the prospect.',
             `Queue record ID: ${prospect.id}.`,
           ].join(' '),
           contextSummary,
@@ -250,7 +265,7 @@ export async function dispatchNewDiscoveryQueue(): Promise<number> {
         });
         dispatched.add(prospect.id);
       }
-      console.log('Discovery queue Sales handoffs created:', JSON.stringify({
+      console.log('Discovery queue Research handoffs created:', JSON.stringify({
         count: dispatched.size,
         ids: [...dispatched],
       }));
@@ -272,6 +287,68 @@ export async function dispatchNewDiscoveryQueue(): Promise<number> {
   } finally {
     discoveryQueueDispatchRunning = false;
   }
+}
+
+/**
+ * Re-review records already left in "reviewing" by the earlier Sales-owned
+ * workflow. A separate source duty ID makes this one-shot and idempotent:
+ * each record is sent to Research at most once by this recovery pass.
+ */
+export async function dispatchReviewingDiscoveryQueue(maxCount = 5): Promise<number> {
+  if (!dbConfigured() || maxCount <= 0) return 0;
+  const [pending, previous] = await Promise.all([
+    fetchAllPages((offset, limit) => supabaseSelect<DiscoveryQueueRow>(
+      'lead_discovery_queue',
+      `select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id&processing_status=eq.reviewing&order=created_at.asc&offset=${offset}&limit=${limit}`,
+    )),
+    supabaseSelect<{ request: string; status: string }>(
+      'organization_handoffs',
+      'select=request,status&source_duty_id=in.(lead-discovery-queue-watcher,lead-discovery-queue-research-review)&limit=5000',
+    ),
+  ]);
+  let dispatched = 0;
+  for (const prospect of pending) {
+    if (dispatched >= Math.min(5, Math.floor(maxCount))) break;
+    const marker = 'Queue record ID: ' + prospect.id + '.';
+    if (hasDiscoveryQueueHandoff(prospect.id, previous)) continue;
+    const contextSummary = JSON.stringify({
+      source: 'public.lead_discovery_queue',
+      instruction: 'Recovery review of an existing queue record. Use only the supplied evidence; no new web discovery while the engine is paused.',
+      prospect: {
+        id: prospect.id,
+        organisation_name: prospect.organisation_name,
+        website: prospect.website,
+        sector: prospect.sector,
+        service_fit: prospect.service_fit,
+        reason_for_fit: prospect.reason_for_fit?.slice(0, 800) ?? null,
+        decision_maker_name: prospect.decision_maker_name,
+        decision_maker_title: prospect.decision_maker_title,
+        public_email: prospect.public_email,
+        public_phone: prospect.public_phone,
+        source_urls: Array.isArray(prospect.source_urls) ? prospect.source_urls.filter((value): value is string => typeof value === 'string').slice(0, 8) : [],
+        verification_status: prospect.verification_status,
+        processing_status: prospect.processing_status,
+        crm_lead_id: prospect.crm_lead_id ?? null,
+      },
+    });
+    await queueHandoff(handoffStore(), {
+      fromRoleId: 'ceo',
+      toAgent: 'research',
+      sourceDutyId: 'lead-discovery-queue-research-review',
+      request: [
+        'Central Research & Intelligence: re-assess this existing queue record because the previous workflow left it in reviewing.',
+        'Use only the supplied record and its listed source URLs; do not run broad discovery and do not contact the organisation.',
+        'Return the exact organisation name, queue record ID, supported service fit, public organisational contact evidence, remaining verification gaps, and QUALIFY / INVESTIGATE / REJECT.',
+        'A named decision-maker is optional. Do not invent facts or upgrade partial verification without explicit evidence. If the supplied record is insufficient, state the exact missing evidence.',
+        marker,
+      ].join(' '),
+      contextSummary,
+      sign: signWork,
+    });
+    dispatched++;
+  }
+  if (dispatched) console.log('Discovery queue recovery handoffs sent to Research:', dispatched);
+  return dispatched;
 }
 
 let discoveryApprovalDispatchRunning = false;
@@ -479,7 +556,7 @@ async function applyDiscoveryCrmApproval(approval: ApprovalRow, decision: 'appro
 registerApprovalHook('lead_discovery_queue', applyDiscoveryCrmApproval);
 
 /**
- * Convert completed Sales QUALIFY decisions into Founder approval requests.
+ * Convert completed Research QUALIFY decisions into Founder approval requests.
  * No CRM row is created until the Founder approves the request.
  */
 export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
@@ -493,7 +570,7 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
       ),
       supabaseSelect<{ id: string; request: string; result: string | null; status: string }>(
         'organization_handoffs',
-        'select=id,request,result,status&source_duty_id=eq.lead-discovery-queue-watcher&status=eq.completed&order=created_at.desc&limit=300',
+        'select=id,request,result,status&source_duty_id=in.(lead-discovery-queue-watcher,lead-discovery-queue-research-review)&status=eq.completed&order=created_at.desc&limit=300',
       ),
       supabaseSelect<ApprovalRow>(
         'organization_approval_requests',
@@ -723,7 +800,31 @@ export function productionDeps(store: DutyStore = dutyStore(), now: () => Date =
         if (kind === 'briefing') out.briefing = await briefingContext(store, at);
         if (kind === 'catalog') out.catalog = await catalogContext();
         if (kind === 'invoices') out.invoices = await invoicesContext(at);
-        if (kind === 'discovery') out.discovery = { note: 'Research-only queue. New entries await Sales review; do not create CRM leads or contact prospects.', prospects: await supabaseSelect<Row>('lead_discovery_queue', 'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status&processing_status=in.(new,reviewing)&order=research_date.desc,created_at.desc&limit=50') };
+        if (kind === 'discovery') {
+          const prospects = await fetchAllPages((offset, limit) => supabaseSelect<Row>(
+            'lead_discovery_queue',
+            `select=organisation_name,verification_status,processing_status&order=created_at.asc&offset=${offset}&limit=${limit}`,
+          ));
+          const processingCounts: Record<string, number> = {};
+          const verificationCounts: Record<string, number> = {};
+          for (const prospect of prospects) {
+            const processing = String(prospect.processing_status ?? 'unknown');
+            const verification = String(prospect.verification_status ?? 'unknown');
+            processingCounts[processing] = (processingCounts[processing] ?? 0) + 1;
+            verificationCounts[verification] = (verificationCounts[verification] ?? 0) + 1;
+          }
+          out.discovery = {
+            note: 'Complete paginated live lead_discovery_queue snapshot. Central Research & Intelligence owns review; CRM promotion and customer contact remain separately controlled.',
+            total: prospects.length,
+            processing_status_counts: processingCounts,
+            verification_status_counts: verificationCounts,
+            records: prospects.map((prospect) => [
+              String(prospect.organisation_name ?? 'Unknown organisation'),
+              String(prospect.verification_status ?? 'unknown'),
+              String(prospect.processing_status ?? 'unknown'),
+            ].join(' | ')),
+          };
+        }
       }
       return out;
     },
@@ -766,7 +867,10 @@ export async function runDutiesOnce(opts: { dutyId?: string; force?: boolean; ha
   running = true;
   try {
     const outcomes = opts.handoffsOnly ? [] : await runDueDuties(productionDeps(), opts);
-    if (!opts.skipDiscoveryQueue) await dispatchNewDiscoveryQueue();
+    if (!opts.skipDiscoveryQueue) {
+      const recovered = await dispatchReviewingDiscoveryQueue(5);
+      await dispatchNewDiscoveryQueue(Math.max(0, 5 - recovered));
+    }
     try { await dispatchPromotedProspectsToSales(); }
     catch (error) { console.error('Promoted-prospect dispatch failed; existing handoffs will still be processed:', error); }
     const handoffs = await processHandoffs(productionHandoffDeps());
