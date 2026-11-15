@@ -14,6 +14,7 @@ const proposal = {
   deliverable: 'A concise report of verified issues, evidence, recommendations and unavailable data.',
   requiresApproval: true,
   enabled: true,
+  evidence: [{ type: 'duty_run', reference: 'organization_duty_runs:recent', summary: 'Recent duty history shows this recurring quality review is not currently assigned.' }],
 };
 
 test('duty proposals reject employees outside HR and Strategy', async () => {
@@ -34,6 +35,7 @@ test('role proposals reject non-HR/Strategy proposers before accessing persisten
     unitId: 'operations-administration',
     reportsToRoleId: 'ceo',
     purpose: 'Coordinate office operations and internal administration.',
+    evidence: [{ type: 'organization_report', reference: 'organization_reports:workforce-review', summary: 'The workforce review identifies a repeated operations coordination gap.' }],
   }), /Only People\/HR or Strategy/);
 });
 
@@ -47,4 +49,13 @@ test('approved duty activation uses validated config storage and is idempotent',
   assert.match(first.id, /^founder-approved-/);
   assert.equal((await store.customs()).length, 1);
   assert.equal((await store.customs())[0].requires_approval, true);
+});
+
+
+test('governed proposals require traceable evidence and HTTPS for web sources', async () => {
+  await assert.rejects(proposeDutyChange(roleIdFor('people'), { ...proposal, evidence: [] }), /1 to 8 evidence items/);
+  await assert.rejects(proposeDutyChange(roleIdFor('strategy'), {
+    ...proposal,
+    evidence: [{ type: 'web_source', reference: 'source:1', summary: 'A source summary with enough detail.', sourceUrl: 'http://example.com' }],
+  }), /HTTPS source URL/);
 });
