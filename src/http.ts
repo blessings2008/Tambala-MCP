@@ -575,6 +575,8 @@ const server = createHttpServer(async (req, res) => {
     if (!schedulerTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized.' }); return; }
     if (!founderNumber()) { json(res, 503, { error: 'Founder WhatsApp number is not configured; heartbeat alert cannot be delivered.' }); return; }
     try {
+      const control = await getRuntimeControl();
+      if (control.paused) { json(res, 200, { ok: true, paused: true, stale: false, message: 'Global pause is active; watchdog alerting is suppressed.' }); return; }
       const stale = await claimStaleDutyAlert();
       if (!stale) { json(res, 200, { ok: true, stale: false, message: 'No overdue duty cycle needs an alert.' }); return; }
       const last = stale.last_completed_at ?? stale.last_started_at ?? 'unknown';
