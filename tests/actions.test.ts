@@ -130,14 +130,14 @@ test('a whatsapp action waits for approval, and an unauthorised role is refused'
   assert.equal(bad.ok, false); assert.match(bad.detail, /not a valid phone number/);
 });
 
-test('first-contact outreach action reports queued status, not Founder approval', async () => {
+test('first-contact outreach action waits for Founder approval', async () => {
   const h = harness();
   const outreach = parse(WA.replace('"purpose":"followup"', '"purpose":"outreach"'));
   const [r] = await executeActions(h.deps, ctx('outreach'), outreach);
   assert.equal(r.ok, true);
-  assert.match(r.detail, /queued for sending; delivery is not confirmed yet/i);
-  assert.doesNotMatch(r.detail, /waiting for the Founder|awaiting Founder approval/i);
-  assert.equal(h.store.rows.find((m) => m.number === '265888123456')?.status, 'queued');
+  assert.match(r.detail, /awaiting Founder approval/i);
+  assert.doesNotMatch(r.detail, /queued for sending/i);
+  assert.equal(h.store.rows.find((m) => m.number === '265888123456')?.status, 'pending_approval');
 });
 
 test('notify_founder reaches the Founder immediately, and says so honestly when no number is set', async () => {
