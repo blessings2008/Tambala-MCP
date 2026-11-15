@@ -158,7 +158,7 @@ Do not treat sent quotations as accepted or invoice creation as revenue. Paid re
 
 ### AI spend ledger (configuration still required)
 
-`organization_ai_usage` stores employee number, agent, provider, model, token usage and USD cost where a trusted per-model price is configured. Unknown model prices must remain unpriced, never estimated. Daily spend caps are not activated by this migration; the Founder must approve per-employee and organization-wide USD limits and provide authoritative model prices before enforcement can be switched on.
+`organization_ai_usage` stores employee number, agent, provider, model and actual token usage. Set `TAMBALA_MODEL_PRICING_USD_PER_1M` to a JSON object keyed by exact provider model ID, with `inputUsd` and `outputUsd` rates per one million tokens, only after verifying those rates against the provider's current pricing. Unknown or malformed model prices remain unpriced; no estimate is substituted. The dashboard shows token counts, priced spend and unpriced request counts by employee. Daily spend caps are not activated yet: the Founder must approve per-employee and organization-wide USD limits and authoritative model rates before strict enforcement can be enabled.
 
 ## PDF documents
 
