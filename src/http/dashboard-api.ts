@@ -15,6 +15,7 @@ import { getAgentOperationalInfo, type AgentName } from '../services/ai.js';
 import { getDutyHeartbeat } from '../organization/workforce/heartbeat.js';
 import { getRuntimeControl } from '../organization/runtime-control.js';
 import { getDailyAIUsage } from '../services/ai/spend.js';
+import { getEmployeeTrust } from '../organization/workforce/trust-ledger.js';
 
 export type Section<T> = { ok: true; data: T } | { ok: false; error: string };
 type Row = Record<string, unknown>;
@@ -94,7 +95,7 @@ export async function buildDashboard() {
     return supabaseSelect<T>(path, query);
   };
 
-  const [organization, tasks, events, approvals, decisions, audit, bindings, runs, actions, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, goals, aiSpend, runtime] = await Promise.all([
+  const [organization, tasks, events, approvals, decisions, audit, bindings, runs, actions, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, goals, trust, aiSpend, runtime] = await Promise.all([
     section(async () => {
       const snap = await getOrganizationSnapshot();
       return {
@@ -158,6 +159,12 @@ export async function buildDashboard() {
         source: 'Supabase CRM discovery queue, quotation documents, invoice ledger and WhatsApp message ledger; rolling 30-day window.',
       };
     }),
+    section(async () => ({
+      threshold: 20,
+      eligibleActionTypes: ['prepared_followups', 'prepared_work', 'prepared_content', 'prepared_internal_task'],
+      employees: await getEmployeeTrust(),
+      note: 'Standing approval status is a trust signal only. It does not alter roles or grant permissions. Rejections, edited approvals, customer complaints and STOP requests demote trust.',
+    })),
     section(async () => {
       const rows = await getDailyAIUsage();
       const byEmployee: Record<string, { requests: number; promptTokens: number; completionTokens: number; pricedCostUsd: number; unpricedRequests: number }> = {};
@@ -230,7 +237,7 @@ export async function buildDashboard() {
       deniedRecent,
     },
     organization, tasks, taskSummary: taskSummary ? { ok: true as const, data: taskSummary } : { ok: false as const, error: tasks.ok ? '' : tasks.error },
-    events, approvals, decisions, audit, bindings, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, goals, aiSpend, runtime, automation: { runs, pendingActions: actions }, agents,
+    events, approvals, decisions, audit, bindings, workforce, signatures, channel, messages, documents, prices, invoices, payments, rooms, roomEvents, goals, trust, aiSpend, runtime, automation: { runs, pendingActions: actions }, agents,
     config: {
       database: dbConfigured,
       oauth: flag('TAMBALA_OAUTH_SECRET') && flag('TAMBALA_OAUTH_APPROVAL_CODE'),
