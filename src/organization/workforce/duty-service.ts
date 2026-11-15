@@ -13,6 +13,7 @@ import { dbConfigured as dbOn } from './db-util.js';
 import { loadDuties, requireConfigStore, saveBuiltinOverride, saveCustomDuty, SupabaseDutyConfigStore, type DutyConfigStore } from './duty-config.js';
 import { InMemoryHandoffStore, SupabaseHandoffStore, processHandoffs, queueHandoff, resumeFounderTaskRoom, type Handoff, type HandoffDeps, type HandoffOutcome, type HandoffStore } from './handoffs.js';
 import { identityMark, signingAvailable } from './signing.js';
+import { assertRuntimeActive } from '../runtime-control.js';
 import { signWork, signatureStore } from './sign-work.js';
 import { describeResults, executeActions, type ActionExecDeps } from './actions-exec.js';
 import type { Action } from './actions.js';
