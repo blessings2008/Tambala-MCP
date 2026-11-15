@@ -49,7 +49,7 @@ function renderQuotation(doc: StoredDocument, design: DocDesign, signer: Signer)
       labels.forEach((label, i) => { pdf.fillColor(c.navy).font('Helvetica-Bold').fontSize(7.5).text(label, x, y + 6, { width: widths[i] - 10, lineBreak: false, align: i === labels.length - 1 ? 'right' : 'left' }); x += widths[i]; });
       return y + 20;
     };
-    // PAGE 1 — project, scope, support and payment heading.
+    // PAGE 1 — project, scope and ongoing support.
     header(1);
     pdf.fillColor(c.navy).font('Helvetica-Bold').fontSize(20).text('QUOTATION', m, 53, { lineBreak: false });
     pdf.fillColor(c.muted).font('Helvetica').fontSize(8.5).text(`Ref: ${safe(doc.reference ?? doc.number)}\nDate: ${date(doc.issuedAt)}`, right - 190, 54, { width: 190, align: 'right', lineGap: 4 });
@@ -79,7 +79,7 @@ function renderQuotation(doc: StoredDocument, design: DocDesign, signer: Signer)
       const descH = pdf.heightOfString(safe(item.description), { width: widths[1] - 12, lineGap: 1 });
       const rowH = Math.max(22, descH + 9);
       if (i % 2 === 0) pdf.rect(m, y, cw, rowH).fill('#f8fafc');
-      pdf.fillColor(c.text).font('Helvetica-Bold').fontSize(7.6).text(safe(item.description), m + 7, y + 6, { width: widths[0] - 12 });
+      pdf.fillColor(c.text).font('Helvetica-Bold').fontSize(7.6).text(safe(item.component ?? item.description), m + 7, y + 6, { width: widths[0] - 12 });
       pdf.font('Helvetica').fontSize(7.6).text(safe(item.description), m + widths[0] + 6, y + 6, { width: widths[1] - 12 });
       pdf.font('Helvetica').fontSize(7.6).text(money(item.amountMinor), m + widths[0] + widths[1], y + 6, { width: widths[2] - 7, align: 'right', lineBreak: false });
       y += rowH; line(m, y, right, y);
@@ -94,7 +94,7 @@ function renderQuotation(doc: StoredDocument, design: DocDesign, signer: Signer)
     const feeWidths = [cw - 125, 125];
     y = drawTableHeader(y, feeWidths, ['Management service', 'Monthly fee']);
     fees.forEach((fee, i) => {
-      const value = fee.included ? 'Included' : money(fee.amountMinor ?? 0);
+      const value = fee.included ? 'Included' : fee.amountMinor === undefined ? 'Not specified' : money(fee.amountMinor);
       pdf.fillColor(c.text).font('Helvetica').fontSize(7.5).text(safe(fee.description), m + 7, y + 5, { width: feeWidths[0] - 12 });
       pdf.text(value, m + feeWidths[0], y + 5, { width: feeWidths[1] - 8, align: 'right', lineBreak: false });
       y += 17; line(m, y, right, y);
@@ -103,7 +103,6 @@ function renderQuotation(doc: StoredDocument, design: DocDesign, signer: Signer)
     pdf.fillColor(c.navy).font('Helvetica-Bold').fontSize(8).text('MONTHLY MANAGEMENT FEE', m + 7, y + 6, { lineBreak: false });
     pdf.text(monthly ? money(monthly) : 'As agreed separately', right - 180, y + 6, { width: 173, align: 'right', lineBreak: false });
     y += 25;
-    sectionTitle(4, 'Payment Terms', y);
     // PAGE 2 — milestones, conditions and acceptance.
     pdf.addPage({ size: 'A4', margin: 0 });
     header(2);
