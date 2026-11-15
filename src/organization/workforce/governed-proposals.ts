@@ -118,19 +118,27 @@ export async function proposeRoleChange(proposedByRoleId: string, proposal: Role
   return approvalId;
 }
 
-registerApprovalHook(ROLE_SUBJECT, async (approval: ApprovalRow, decision: 'approved' | 'rejected') => {
-  if (decision !== 'approved') return;
+export type RoleProposalActivationDeps = {
+  getSnapshot?: () => ReturnType<typeof getPersistedOrganizationSnapshot>;
+  insertRole?: (row: Record<string, unknown>) => Promise<unknown>;
+};
+
+export async function activateApprovedRoleProposal(
+  approval: Pick<ApprovalRow, 'content'>,
+  deps: RoleProposalActivationDeps = {},
+): Promise<boolean> {
   if (!approval.content) throw new Error('Approved role proposal has no stored content.');
   const parsed = JSON.parse(approval.content) as { version?: unknown; id?: unknown; proposal?: unknown };
   if (parsed.version !== 1 || typeof parsed.id !== 'string' || !parsed.proposal || typeof parsed.proposal !== 'object') throw new Error('Role proposal content version is invalid.');
   const proposal = parsed.proposal as RoleProposal;
-  const snapshot = await getPersistedOrganizationSnapshot();
+  validateProposalEvidence(proposal.evidence);
+  const snapshot = await (deps.getSnapshot ?? getPersistedOrganizationSnapshot)();
   if (!snapshot.organization.units.some((unit) => unit.id === proposal.unitId) || !snapshot.organization.roles.some((role) => role.id === proposal.reportsToRoleId)) {
     throw new Error('The organizational structure changed since this proposal was submitted; Founder review is required again.');
   }
-  // Approval hooks may be retried after a transient failure; do not duplicate an already activated role.
-  if (snapshot.organization.roles.some((role) => role.id === parsed.id)) return;
-  await supabaseInsert('organization_roles', {
+  if (snapshot.organization.roles.some((role) => role.id === parsed.id)) return false;
+  const insertRole = deps.insertRole ?? ((row: Record<string, unknown>) => supabaseInsert('organization_roles', row));
+  await insertRole({
     id: parsed.id,
     title: proposal.title,
     kind: proposal.kind,
@@ -140,4 +148,10 @@ registerApprovalHook(ROLE_SUBJECT, async (approval: ApprovalRow, decision: 'appr
     capabilities: [],
     activation: 'active',
   });
+  return true;
+}
+
+registerApprovalHook(ROLE_SUBJECT, async (approval: ApprovalRow, decision: 'approved' | 'rejected') => {
+  if (decision !== 'approved') return;
+  await activateApprovedRoleProposal(approval);
 });
