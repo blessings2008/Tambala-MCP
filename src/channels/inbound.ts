@@ -108,7 +108,7 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
     const label = number ? await deps.contactLookup(number).catch(() => null) : null;
     const pushName = typeof m.pushName === 'string' ? m.pushName.slice(0, 60) : null;
 
-    await deps.store.add({
+    const receivedMessage = await deps.store.add({
       direction: 'in', number, audience: null, purpose: 'inbound', from_role_id: null, text, document_id: null, approval_id: null,
       status: 'received', reason: number ? null : 'WhatsApp did not reveal this sender’s phone number.', provider_message_id: providerId, attempts: 0,
       task_id: null, signature: null, contact_label: label ?? pushName, created_at: deps.now().toISOString(), sent_at: null,
@@ -179,7 +179,7 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
     }
 
     const intent = classifyCustomerReply(text);
-    const received = (await deps.store.recent(1))[0];
+    const received = receivedMessage;
     const since = new Date(deps.now().getTime() - 90 * 86_400_000).toISOString();
     let attributedTo: MessageRow | null = null;
     if (intent === 'accepted') attributedTo = await deps.store.latestSentTo(number, since, true);
