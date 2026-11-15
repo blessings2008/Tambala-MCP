@@ -5,6 +5,8 @@ import { assignWork, buildWorkforce, getLatestBriefing, runDutiesOnce } from '..
 import { verifySignature } from '../organization/workforce/sign-work.js';
 import { HandoffError } from '../organization/workforce/handoffs.js';
 import { AGENT_DIRECTORY } from '../services/ai/models.js';
+import { resolveOrganizationIdentity } from '../organization/identity-service.js';
+import { proposeDutyChange } from '../organization/workforce/governed-proposals.js';
 
 function text(value: unknown, isError = false) {
   return { ...(isError ? { isError: true } : {}), content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] };
@@ -73,6 +75,34 @@ export function registerWorkforceTools(server: McpServer): void {
     } catch (error) {
       if (error instanceof HandoffError) return text({ error: error.message }, true);
       throw error;
+    }
+  });
+
+  server.registerTool('propose_organization_duty', {
+    description: 'People/HR or Strategy may propose a new standing duty for an existing employee. The proposal goes to the Founder approval inbox. It is not activated until the Founder approves it. This cannot change employee permissions, trust thresholds, pricing, spending caps or regulatory policy.',
+    inputSchema: {
+      title: z.string().min(3).max(120),
+      employee: z.enum(Object.keys(AGENT_DIRECTORY) as [string, ...string[]]),
+      cadence: z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal('weekdays') }),
+        z.object({ kind: z.literal('weekly'), day: z.number().int().min(1).max(7) }),
+      ]),
+      time: z.string().regex(/^([01]\\d|2[0-3]):[0-5]\\d$/),
+      contexts: z.array(z.enum(['crm', 'company', 'organization', 'catalog', 'invoices'])).max(5),
+      job: z.string().min(10).max(2000),
+      deliverable: z.string().min(5).max(1000),
+    },
+  }, async ({ title, employee, cadence, time, contexts, job, deliverable }) => {
+    const identity = await resolveOrganizationIdentity();
+    if (!identity.authenticated || !identity.role) return text({ error: 'A trusted OAuth role binding is required.' }, true);
+    try {
+      const approvalId = await proposeDutyChange(identity.role.id, {
+        title, agent: employee as keyof typeof AGENT_DIRECTORY, cadence, time, contexts, job, deliverable,
+        requiresApproval: true, enabled: true,
+      });
+      return text({ status: 'pending_founder_approval', approvalId, summary: `Proposed duty “${title}” for ${employee}. It is not active until Founder approval.` });
+    } catch (error) {
+      return text({ error: error instanceof Error ? error.message : 'Could not submit duty proposal.' }, true);
     }
   });
 
