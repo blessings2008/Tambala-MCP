@@ -17,6 +17,7 @@ import { FOUNDER_DAILY_LIMIT } from './policy.js';
 import { maskNumber, normalizePhone } from './phone.js';
 import { localTime } from '../organization/workforce/schedule.js';
 import { isCompanyStatusRequest, isFounderKnowledgeQuestion, runCompanyStatusReport } from './founder-execution.js';
+import { getRuntimeControl, setRuntimePaused } from '../organization/runtime-control.js';
 
 /** The Founder's own WhatsApp number, where employees reach him. Set TAMBALA_FOUNDER_WHATSAPP. */
 export function founderNumber(): string | null {
@@ -310,6 +311,10 @@ export function productionInboundDeps(store: MessageStore = messageStore()): Inb
     },
     contactLookup: contactLabel,
     handleFounderInstruction,
+    runtimeControl: {
+      get: async () => { const state = await getRuntimeControl(); return { paused: state.paused, reason: state.reason }; },
+      set: async (paused, reason) => { await setRuntimePaused(paused, reason, 'founder'); },
+    },
     approvals: {
       pending: async () => (dbConfigured() ? (await listPendingApprovals()).map((a) => ({ id: a.id, summary: a.summary })) : []),
       async decide(prefix, decision, note) {
