@@ -170,8 +170,8 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
     const researchHeavyOutreach = agent === 'outreach' && input.includes('WEB RESEARCH RESULT');
     const queueOnlyResearch = agent === 'research' && /STANDING DUTY: Daily prospect queue intelligence|STANDING DUTY: Research department queue assessment/i.test(input);
     const securityReview = agent === 'security' && input.includes('STANDING DUTY: Daily incident monitoring and security review');
-    const userInputLimit = researchHeavyOutreach ? 5_500 : queueOnlyResearch ? 2_000 : MAX_USER_INPUT_CHARS;
-    const contextLimit = researchHeavyOutreach ? 250 : queueOnlyResearch ? 3_500 : securityReview ? 3_000 : MAX_CONTEXT_CHARS;
+    const userInputLimit = researchHeavyOutreach ? 5_500 : queueOnlyResearch ? 1_800 : MAX_USER_INPUT_CHARS;
+    const contextLimit = researchHeavyOutreach ? 250 : queueOnlyResearch ? 6_500 : securityReview ? 3_000 : MAX_CONTEXT_CHARS;
     const userInput = boundText(input, userInputLimit);
     const contextText = context === undefined ? '' : '\n\nTambala business context:\n' + serializeBoundedContext(context, contextLimit);
     const userMessage = boundText(userInput + contextText, userInputLimit + contextLimit + 40);
