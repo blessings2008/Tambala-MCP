@@ -1,4 +1,4 @@
-import { dispatchNewDiscoveryQueue, dispatchQualifiedDiscoveryApprovals, runDutiesOnce } from './duty-service.js';
+import { dispatchNewDiscoveryQueue, dispatchReviewingDiscoveryQueue, dispatchQualifiedDiscoveryApprovals, runDutiesOnce } from './duty-service.js';
 
 /**
  * Optional in-process clock. Each tick runs whatever duties are due; duties are idempotent per period,
@@ -11,6 +11,8 @@ export function startDutyScheduler(): void {
     try {
       const discoveryClaims = await dispatchNewDiscoveryQueue();
       if (discoveryClaims) console.log('Discovery queue claimed for Sales:', discoveryClaims);
+      const recoveredReviews = await dispatchReviewingDiscoveryQueue();
+      if (recoveredReviews) console.log('Legacy discovery queue rows routed to Research:', recoveredReviews);
       const promotionApprovals = await dispatchQualifiedDiscoveryApprovals();
       if (promotionApprovals) console.log('Founder approvals created for qualified prospects:', promotionApprovals);
       const { outcomes, handoffs } = await runDutiesOnce({ skipDiscoveryQueue: true });
