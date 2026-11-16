@@ -17,7 +17,7 @@ import { handleEvolutionWebhook, type FounderMessageEnvelope, type InboundDeps, 
 import { messageStore, type MessageStore } from './message-store.js';
 import { onApprovalDecided, processOutbox, queueMessage, type OutboxDeps, type QueueInput, type QueueResult, type SendOutcome } from './outbox.js';
 import { FOUNDER_DAILY_LIMIT } from './policy.js';
-import { maskNumber, normalizePhone } from './phone.js';
+import { maskNumber, normalizePhone, normalizePhoneFromLabel } from './phone.js';
 import { localTime } from '../organization/workforce/schedule.js';
 import { isCompanyStatusRequest, isFounderKnowledgeQuestion, runCompanyStatusReport } from './founder-execution.js';
 import { getRuntimeControl, setRuntimePaused } from '../organization/runtime-control.js';
