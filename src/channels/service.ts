@@ -1,4 +1,4 @@
-import { supabaseSelect } from '../lib/supabase.js';
+import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../lib/supabase.js';
 import { createApprovalRequest, decideApproval, listPendingApprovals, registerApprovalHook } from '../organization/workforce/approvals-service.js';
 import { dbConfigured } from '../organization/workforce/db-util.js';
 import { identityForRole, labelForRole } from '../organization/workforce/profiles.js';
@@ -46,11 +46,104 @@ export async function queueWhatsApp(input: QueueInput): Promise<QueueResult> {
 }
 
 let sending = false;
+
+/**
+ * Keep the workforce task state aligned with the authoritative WhatsApp outbox result.
+ * A message being queued is not the same as being sent; a later permanent send failure
+ * must return the first-contact task to Founder review instead of leaving it completed.
+ */
+async function reconcileOutreachOutbox(outcomes: SendOutcome[]): Promise<void> {
+  if (!dbConfigured()) return;
+  for (const outcome of outcomes) {
+    if (outcome.status === 'waiting') continue;
+    try {
+      const message = await messageStore().byId(outcome.id);
+      if (!message?.task_id || message.direction !== 'out' || message.audience !== 'client' || message.purpose !== 'outreach') continue;
+      const handoffs = await supabaseSelect<{ id: string; room_id: string | null; status: string }>(
+        'organization_handoffs',
+        `select=id,room_id,status&task_id=eq.${encodeURIComponent(message.task_id)}&source_duty_id=eq.approved-prospect-first-contact&limit=5`,
+      );
+      if (!handoffs.length) continue;
+
+      const reason = (outcome.reason ?? message.reason ?? '').slice(0, 300);
+      const needsFounder = outcome.status === 'failed'
+        && /exists.*false|not registered|no destination number|invalid phone/i.test(reason);
+      const nextStatus = outcome.status === 'sent' ? 'completed' : needsFounder ? 'awaiting_founder' : 'failed';
+      const sentAt = message.sent_at ?? new Date().toISOString();
+      const payload = {
+        summary: outcome.status === 'sent'
+          ? 'Founder-approved WhatsApp first-contact message was sent successfully.'
+          : needsFounder
+            ? 'WhatsApp could not deliver to this destination; Founder correction is required before another attempt.'
+            : 'WhatsApp outbox reached a terminal failure for this first-contact message.',
+        message_id: message.id,
+        outbox_status: outcome.status,
+        delivery_confirmed: outcome.status === 'sent',
+        provider_message_id: message.provider_message_id,
+        sent_at: message.sent_at,
+        reason: reason || null,
+      };
+      await supabaseUpdate('organization_tasks', {
+        status: nextStatus,
+        current_stage: nextStatus === 'completed' ? 'complete' : nextStatus === 'awaiting_founder' ? 'founder' : 'failed',
+        result: payload,
+        error_message: nextStatus === 'completed' ? null : (reason || 'WhatsApp outbox failed.'),
+        completed_at: nextStatus === 'completed' ? sentAt : null,
+        updated_at: new Date().toISOString(),
+      }, `id=eq.${encodeURIComponent(message.task_id)}`);
+
+      for (const handoff of handoffs) {
+        const changed = handoff.status !== nextStatus;
+        await supabaseUpdate('organization_handoffs', {
+          status: nextStatus,
+          result: JSON.stringify(payload),
+          error: nextStatus === 'completed' ? null : (reason || 'WhatsApp outbox failed.'),
+          completed_at: nextStatus === 'completed' ? sentAt : null,
+        }, `id=eq.${encodeURIComponent(handoff.id)}`);
+        if (handoff.room_id) {
+          await supabaseUpdate('organization_task_rooms', {
+            status: nextStatus === 'completed' ? 'archived' : nextStatus,
+            deliverable: nextStatus === 'completed' ? 'WhatsApp first-contact message sent successfully.' : null,
+            blocker: nextStatus === 'completed' ? null : (reason || 'WhatsApp outbox failed.'),
+            closed_at: nextStatus === 'completed' ? sentAt : null,
+            updated_at: new Date().toISOString(),
+          }, `id=eq.${encodeURIComponent(handoff.room_id)}`);
+          if (changed) {
+            await supabaseInsert('organization_task_room_events', {
+              room_id: handoff.room_id,
+              event_type: 'whatsapp_outbox_reconciled',
+              actor_role_id: 'ceo',
+              payload,
+            });
+          }
+        }
+        if (changed) {
+          await supabaseInsert('organization_task_events', {
+            task_id: message.task_id,
+            event_type: 'whatsapp_outbox_reconciled',
+            stage: nextStatus === 'completed' ? 'complete' : nextStatus === 'awaiting_founder' ? 'founder' : 'failed',
+            actor_role_id: 'ceo',
+            payload,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('WhatsApp outbox task reconciliation failed:', outcome.id, error instanceof Error ? error.message : 'unknown error');
+    }
+  }
+}
+
 /** Send whatever is due. One pass at a time per process. */
 export async function runOutbox(): Promise<SendOutcome[]> {
   if (sending) return [];
   sending = true;
-  try { return await processOutbox(productionOutboxDeps()); } finally { sending = false; }
+  try {
+    const outcomes = await processOutbox(productionOutboxDeps());
+    await reconcileOutreachOutbox(outcomes);
+    return outcomes;
+  } finally {
+    sending = false;
+  }
 }
 
 // When the Founder decides on a message approval, release or retire the message right away.
