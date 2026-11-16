@@ -56,7 +56,7 @@ export async function getDailyAIUsage(now = new Date()) {
 /** Free-only is the default. Unknown provider/model pricing is never treated as free. */
 export function assertFreeAIModel(provider: string, model: string): void {
   if (process.env.TAMBALA_AI_FREE_ONLY === 'false') return;
-  if (provider === 'openrouter' && /:free$/i.test(model)) return;
+  if (provider === 'openrouter' && (/:free$/i.test(model) || model === 'openrouter/free')) return;
   const allowlist = (process.env.TAMBALA_FREE_AI_MODEL_ALLOWLIST ?? '')
     .split(',')
     .map((entry) => entry.trim())
