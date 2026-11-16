@@ -11,7 +11,8 @@ export const ORGANIZATION_TASK_TRANSITIONS: Readonly<Record<OrganizationTaskStat
   needs_more_work: ['ceo_analyzing', 'delegated', 'awaiting_founder', 'failed'],
   awaiting_founder: ['ceo_analyzing', 'failed'],
   completed: [],
-  failed: ['ceo_analyzing'],
+  failed: ['ceo_analyzing', 'awaiting_founder', 'superseded'],
+  superseded: [],
 };
 
 export function isAllowedOrganizationTaskTransition(
