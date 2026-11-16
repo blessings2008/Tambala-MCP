@@ -377,11 +377,14 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
   if (active.length) return false;
   approvedProspectDispatching.add(leadId);
   try {
-  const previous = await supabaseSelect<{ request: string; status: string }>(
+  const previous = await supabaseSelect<{ status: string }>(
     'organization_handoffs',
-    'select=request,status&source_duty_id=eq.approved-prospect-first-contact&order=created_at.desc&limit=500',
+    `select=status&source_duty_id=eq.approved-prospect-first-contact&request=ilike.${encodeURIComponent(`*CRM lead ID: ${leadId}.*`)}&limit=25`,
   );
-  if (previous.some((item) => item.request.includes(`CRM lead ID: ${leadId}.`) && ['queued', 'running', 'awaiting_founder', 'failed'].includes(item.status))) return false;
+  // Any prior handoff for this CRM lead is authoritative, including completed work.
+  // A completed handoff without a sent message must be reviewed/retried explicitly;
+  // silently creating another handoff on the next duty cycle risks duplicate outreach.
+  if (previous.length) return false;
 
   const leads = await supabaseSelect<Row>('leads',
     `select=id,name,business_name,phone,whatsapp,status,notes&id=eq.${encodeURIComponent(leadId)}&limit=1`,
