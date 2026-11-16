@@ -6,6 +6,7 @@ import { roleIdFor } from './profiles.js';
 import { localTime, OFFICE_TZ, periodKey, runsToday, timeReached, type LocalTime } from './schedule.js';
 import type { DutyRun, DutyStore } from './duty-store.js';
 import type { OrganizationTaskTransition } from '../task-lifecycle.js';
+import { isPermanentAgentFailure } from './retry-policy.js';
 
 export type DutyOutcomeStatus = 'completed' | 'awaiting_approval' | 'skipped' | 'failed' | 'not_due' | 'already_running';
 export interface DutyOutcome { dutyId: string; status: DutyOutcomeStatus; reason?: string; taskId?: string; runId?: string; handoffs?: number }
@@ -68,7 +69,7 @@ function dueNow(duty: StandingDuty, lt: LocalTime, existing: DutyRun | null, now
   if (!existing) return true;
   if (existing.status === 'skipped') return true;
   const maxAttempts = duty.id === 'daily-lead-discovery' ? 5 : MAX_ATTEMPTS;
-  if (existing.status === 'failed') return existing.attempts < maxAttempts;
+  if (existing.status === 'failed') return !isPermanentAgentFailure(existing.error ?? '') && existing.attempts < maxAttempts;
   if (existing.status === 'running') return nowMs - Date.parse(existing.started_at) > STALE_RUNNING_MS && existing.attempts < maxAttempts;
   return false;
 }
