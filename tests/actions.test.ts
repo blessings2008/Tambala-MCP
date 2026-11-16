@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { actionHelp, allowedActionTypes, mayDo, parseActions, MAX_ACTIONS_PER_RUN, type Action } from '../src/organization/workforce/actions.ts';
 import { describeResults, executeActions, type ActionExecDeps } from '../src/organization/workforce/actions-exec.ts';
-import { extractHandoffs } from '../src/organization/workforce/handoffs.ts';
+import { approvedFirstContactTarget, extractHandoffs } from '../src/organization/workforce/handoffs.ts';
 import { splitBlocks } from '../src/organization/workforce/blocks.ts';
 import { InMemoryMessageStore } from '../src/channels/message-store.ts';
 import type { OutboxDeps } from '../src/channels/outbox.ts';
@@ -71,6 +71,33 @@ ACTIONS:
   assert.equal(mixed.actions.length, 1);
   assert.equal(mixed.rejected.length, 1);
   assert.match(mixed.rejected[0], /teleport/);
+});
+
+test('approved first-contact target normalizes labeled Malawi numbers and rejects ambiguous or malformed numbers', () => {
+  const valid = approvedFirstContactTarget(JSON.stringify({
+    crm_lead: { whatsapp: 'Lilongwe: +265 888 826 648 (office)' },
+    prospect: { organisation_name: 'SFS Property Consultants' },
+  }));
+  assert.deepEqual(valid, { phone: '265888826648', contact: 'SFS Property Consultants' });
+
+  const local = approvedFirstContactTarget(JSON.stringify({
+    crm_lead: { phone: 'Limbe: 0888 123 456' },
+    prospect: { organisation_name: 'Example Lodge' },
+  }));
+  assert.deepEqual(local, { phone: '265888123456', contact: 'Example Lodge' });
+
+  assert.equal(approvedFirstContactTarget(JSON.stringify({
+    crm_lead: { phone: '+265 1 832 085' },
+    prospect: { organisation_name: 'Landline Ltd' },
+  })), null);
+  assert.equal(approvedFirstContactTarget(JSON.stringify({
+    crm_lead: { phone: '322' },
+    prospect: { organisation_name: 'Incomplete Contact' },
+  })), null);
+  assert.equal(approvedFirstContactTarget(JSON.stringify({
+    crm_lead: { phone: '+265 888 123 456 / +265 999 123 456' },
+    prospect: { organisation_name: 'Ambiguous Contact' },
+  })), null);
 });
 
 test('legacy security notify payload is normalized to the current safe action schema', () => {
