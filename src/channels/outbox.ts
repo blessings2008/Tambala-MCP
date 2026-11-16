@@ -25,7 +25,7 @@ export interface OutboxDeps {
   pauseMs?: number;
   /** Minimum gap between customer sends, including across separate worker runs. */
   cooldownMs?: number;
-  /** Legacy compatibility only; customer messages are never sent autonomously. */
+  /** CRM/WhatsApp verification used only by the explicitly Founder-approved first-contact workflow. */
   verifyOutreachLead?: (number: string) => Promise<string | null>;
   sleep?: (ms: number) => Promise<void>;
 }
