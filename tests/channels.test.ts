@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer, type IncomingMessage } from 'node:http';
 import { jidToNumber, maskNumber, normalizePhone, normalizePhoneFromLabel } from '../src/channels/phone.ts';
 import { CLIENT_FACING_AGENTS, decide, sendWindowOpen, validateText, OPT_OUT_PATTERN } from '../src/channels/policy.ts';
-import { connectionState, EvolutionError, evolutionConfigured, isWhatsAppNumber, sendDocument, sendText } from '../src/channels/evolution.ts';
+import { connectionState, EvolutionError, evolutionConfigured, findMessages, isWhatsAppNumber, sendDocument, sendText } from '../src/channels/evolution.ts';
 import { InMemoryMessageStore } from '../src/channels/message-store.ts';
 import { onApprovalDecided, OutboxError, processOutbox, queueMessage, sanitizeCustomerMessage, type OutboxDeps } from '../src/channels/outbox.ts';
 import { classifyCustomerReply, handleEvolutionWebhook, messageText, senderNumber, type InboundDeps } from '../src/channels/inbound.ts';
@@ -609,5 +609,55 @@ test('outbox: global pause blocks new queues and stops already queued delivery',
     else process.env.TAMBALA_PAUSE_ALL = previousPause;
     if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
+  }
+});
+
+
+test('Evolution provider history lookup filters by the exact WhatsApp JID and paginates', async () => {
+  const oldUrl = process.env.EVOLUTION_API_URL;
+  const oldKey = process.env.EVOLUTION_API_KEY;
+  const oldInstance = process.env.EVOLUTION_INSTANCE;
+  const mock = await mockEvolution((req, body) => {
+    assert.equal(req.method, 'POST');
+    assert.equal(req.url, '/chat/findMessages/test-instance');
+    const payload = JSON.parse(body);
+    assert.equal(payload.where.key.remoteJid, '265888123456@s.whatsapp.net');
+    assert.equal(typeof payload.page, 'number');
+    return { status: 200, json: { messages: { total: 1, records: [{ key: { id: 'provider-1', fromMe: true, remoteJid: '265888123456@s.whatsapp.net' }, message: { conversation: 'Hello' }, messageTimestamp: 1794816000 }] } } };
+  });
+  process.env.EVOLUTION_API_URL = mock.url;
+  process.env.EVOLUTION_API_KEY = 'test-key';
+  process.env.EVOLUTION_INSTANCE = 'test-instance';
+  try {
+    const result = await findMessages('265888123456');
+    assert.equal(result.complete, true);
+    assert.equal(result.records.length, 1);
+    assert.equal((result.records[0].key as Record<string, unknown>).id, 'provider-1');
+    assert.equal(mock.seen.length, 1);
+  } finally {
+    mock.close();
+    if (oldUrl === undefined) delete process.env.EVOLUTION_API_URL; else process.env.EVOLUTION_API_URL = oldUrl;
+    if (oldKey === undefined) delete process.env.EVOLUTION_API_KEY; else process.env.EVOLUTION_API_KEY = oldKey;
+    if (oldInstance === undefined) delete process.env.EVOLUTION_INSTANCE; else process.env.EVOLUTION_INSTANCE = oldInstance;
+  }
+});
+
+test('Evolution provider history lookup treats an unknown response shape as incomplete', async () => {
+  const oldUrl = process.env.EVOLUTION_API_URL;
+  const oldKey = process.env.EVOLUTION_API_KEY;
+  const oldInstance = process.env.EVOLUTION_INSTANCE;
+  const mock = await mockEvolution(() => ({ status: 200, json: {} }));
+  process.env.EVOLUTION_API_URL = mock.url;
+  process.env.EVOLUTION_API_KEY = 'test-key';
+  process.env.EVOLUTION_INSTANCE = 'test-instance';
+  try {
+    const result = await findMessages('265888123456');
+    assert.equal(result.complete, false);
+    assert.equal(result.records.length, 0);
+  } finally {
+    mock.close();
+    if (oldUrl === undefined) delete process.env.EVOLUTION_API_URL; else process.env.EVOLUTION_API_URL = oldUrl;
+    if (oldKey === undefined) delete process.env.EVOLUTION_API_KEY; else process.env.EVOLUTION_API_KEY = oldKey;
+    if (oldInstance === undefined) delete process.env.EVOLUTION_INSTANCE; else process.env.EVOLUTION_INSTANCE = oldInstance;
   }
 });
