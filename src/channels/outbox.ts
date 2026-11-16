@@ -35,6 +35,8 @@ export interface QueueInput {
   documentId?: string | null; taskId?: string | null; contactLabel?: string | null;
   /** The Founder himself pressed send in the dashboard: no approval needed. Ignored for every other sender. */
   founderApproved?: boolean;
+  /** Server-only provenance from the approved-prospect-first-contact handoff; verification still runs and send still needs Founder approval. */
+  founderApprovedFirstContact?: boolean;
 }
 export interface QueueResult { id: string; status: MessageRow['status']; reason?: string; approvalId?: string | null }
 
@@ -66,7 +68,16 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
   if (outreachCopy && /\b(?:we|our team)\s+(?:have|has|had)\s+(?:helped|worked with|served|built|delivered|supported|generated|increased|grown|achieved)\b|\bwe['’]ve\s+(?:helped|worked with|served|built|delivered|supported|generated|increased|grown|achieved)\b/i.test(input.text)) {
     throw new OutboxError('First-contact message contains an unverified past-work or results claim. Remove it unless approved portfolio evidence supports it.');
   }
-  const verifiedContactLabel = input.contactLabel?.trim() || null;
+  let verifiedContactLabel = input.contactLabel?.trim() || null;
+  if (input.founderApprovedFirstContact) {
+    if (input.agent !== 'outreach' || input.roleId !== 'director-sales-business-development' || input.purpose !== 'outreach' || !input.taskId) {
+      throw new OutboxError('Founder-approved first-contact verification is restricted to the approved Outreach workflow.');
+    }
+    if (!deps.verifyOutreachLead) throw new OutboxError('The CRM/WhatsApp verification service is unavailable; no customer message was queued.');
+    const verified = await deps.verifyOutreachLead(to);
+    if (!verified) throw new OutboxError('Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number.');
+    verifiedContactLabel = verified;
+  }
   const founder = deps.founderNumber();
   const blocked = await deps.store.blockedNumbers();
   const base = decide({ to, purpose: input.purpose, agent: input.agent, text: input.text, hasDocument: Boolean(input.documentId) }, { founderNumber: founder, blocked });
