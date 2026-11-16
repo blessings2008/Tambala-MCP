@@ -230,7 +230,13 @@ export interface AgentRuntimeConfig {
 export function getAgentRuntimeConfig(agent: AgentName): AgentRuntimeConfig {
   const upper = agent.toUpperCase();
   const dedicatedKeyName = `TAMBALA_${upper}_API_KEY`;
-  const requestedProvider = process.env[`TAMBALA_${upper}_PROVIDER`]?.toLowerCase();
+  // Temporary recovery profile: preserve the previous routing even if stale per-agent
+  // environment overrides still point at OpenRouter. Research remains on its known
+  // OpenRouter model; every other agent uses its established Groq default.
+  const forceLegacyGroqRouting = process.env.TAMBALA_FORCE_LEGACY_GROQ_ROUTING === 'true';
+  const requestedProvider = forceLegacyGroqRouting
+    ? (agent === 'research' ? 'openrouter' : 'groq')
+    : process.env[`TAMBALA_${upper}_PROVIDER`]?.toLowerCase();
   const useOpenRouter = requestedProvider === 'openrouter';
   const normalizeCredential = (value: string | undefined): string | undefined => {
     const trimmed = value?.trim();
@@ -266,7 +272,9 @@ export function getAgentRuntimeConfig(agent: AgentName): AgentRuntimeConfig {
     : requestedProvider === 'groq'
       ? GROQ_BASE_URL
       : configuredBaseURL || GROQ_BASE_URL;
-  const model = process.env[`TAMBALA_${upper}_MODEL`]?.trim() || AGENT_DEFAULT_MODELS[agent];
+  const model = forceLegacyGroqRouting
+    ? AGENT_DEFAULT_MODELS[agent]
+    : process.env[`TAMBALA_${upper}_MODEL`]?.trim() || AGENT_DEFAULT_MODELS[agent];
   if (!apiKey) throw new Error(useOpenRouter
     ? `No OpenRouter API key configured for the ${agent} agent. Set OPENROUTER_API_KEY.`
     : `No API key configured for the ${agent} agent. Set ${dedicatedKeyName}; specialist agents do not fall back to GROQ_API_KEY unless shared-key mode is enabled.`);
@@ -279,7 +287,10 @@ export function getAgentRuntimeConfig(agent: AgentName): AgentRuntimeConfig {
 export function getAgentRuntimeInfo(agent: AgentName) {
   const upper = agent.toUpperCase();
   const dedicatedKeyName = `TAMBALA_${upper}_API_KEY`;
-  const requestedProvider = process.env[`TAMBALA_${upper}_PROVIDER`]?.toLowerCase();
+  const forceLegacyGroqRouting = process.env.TAMBALA_FORCE_LEGACY_GROQ_ROUTING === 'true';
+  const requestedProvider = forceLegacyGroqRouting
+    ? (agent === 'research' ? 'openrouter' : 'groq')
+    : process.env[`TAMBALA_${upper}_PROVIDER`]?.toLowerCase();
   const useOpenRouter = requestedProvider === 'openrouter';
   const legacyOrchestratorKey = agent === 'orchestrator' && Boolean(process.env.GROQ_API_KEY?.trim());
   const sharedGroqEnabled = process.env.TAMBALA_ALLOW_SHARED_GROQ_KEY === 'true';
@@ -294,7 +305,9 @@ export function getAgentRuntimeInfo(agent: AgentName) {
     : requestedProvider === 'groq'
       ? GROQ_BASE_URL
       : configuredBaseURL || GROQ_BASE_URL;
-  const model = process.env[`TAMBALA_${upper}_MODEL`]?.trim() || AGENT_DEFAULT_MODELS[agent];
+  const model = forceLegacyGroqRouting
+    ? AGENT_DEFAULT_MODELS[agent]
+    : process.env[`TAMBALA_${upper}_MODEL`]?.trim() || AGENT_DEFAULT_MODELS[agent];
   return {
     agent,
     ...AGENT_DIRECTORY[agent],
