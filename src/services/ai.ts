@@ -11,10 +11,10 @@ import { formatResearchContext, webResearch, webResearchMany } from './web-resea
 const clients = new Map<AgentName, OpenAI>();
 
 // Preserve the full organization and grounding rules while keeping total requests below provider TPM limits.
-const MAX_SYSTEM_PROMPT_CHARS = 6_000;
-const MAX_USER_INPUT_CHARS = 3_000;
-const MAX_CONTEXT_CHARS = 1_800;
-const MAX_COMPLETION_TOKENS = 750;
+const MAX_SYSTEM_PROMPT_CHARS = 3_600;
+const MAX_USER_INPUT_CHARS = 1_800;
+const MAX_CONTEXT_CHARS = 1_200;
+const MAX_COMPLETION_TOKENS = 3_200;
 
 function boundText(value: string, maxChars: number): string {
   const normalized = value.replace(/[ \t]+/g, ' ').replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
@@ -176,11 +176,11 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
     const queueOnlyResearch = agent === 'research' && /STANDING DUTY: Daily prospect queue intelligence|STANDING DUTY: Research department queue assessment/i.test(input);
     const securityReview = agent === 'security' && input.includes('STANDING DUTY: Daily incident monitoring and security review');
     const userInputLimit = researchHeavyOutreach ? 5_500 : queueOnlyResearch ? 1_800 : MAX_USER_INPUT_CHARS;
-    const contextLimit = researchHeavyOutreach ? 250 : queueOnlyResearch ? 6_500 : securityReview ? 3_000 : MAX_CONTEXT_CHARS;
+    const contextLimit = researchHeavyOutreach ? 250 : queueOnlyResearch ? 2_800 : securityReview ? 2_200 : MAX_CONTEXT_CHARS;
     const userInput = boundText(input, userInputLimit);
     const contextText = context === undefined ? '' : '\n\nTambala business context:\n' + serializeBoundedContext(context, contextLimit);
     const userMessage = boundText(userInput + contextText, userInputLimit + contextLimit + 40);
-    const completionBudget = queueOnlyResearch ? 900 : agent === 'operations' ? 1_200 : researchHeavyOutreach ? (input.includes('discovery pass') ? 700 : 1_100) : agent === 'research' ? 1_100 : MAX_COMPLETION_TOKENS;
+    const completionBudget = queueOnlyResearch ? 2_600 : agent === 'operations' ? 3_200 : researchHeavyOutreach ? (input.includes('discovery pass') ? 1_200 : 1_600) : agent === 'research' ? 2_800 : MAX_COMPLETION_TOKENS;
     const requestPayload = {
       model: config.model,
       messages: [
@@ -277,7 +277,7 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
       // gpt-oss models can spend the entire completion allowance on reasoning and
       // return no user-visible content. This recovery is shared by every agent,
       // not just Operations. Keep the retry bounded to protect Groq TPM budgets.
-      const retryCompletionBudget = Math.min(2_800, Math.max(2_400, completionBudget * 2));
+      const retryCompletionBudget = Math.min(4_200, Math.max(3_800, completionBudget + 1_000));
       console.warn('AI provider returned an empty or length-truncated completion; retrying once with a larger bounded budget', JSON.stringify({
         agent,
         provider: config.provider,
