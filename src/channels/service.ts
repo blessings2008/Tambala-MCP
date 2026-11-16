@@ -12,7 +12,7 @@ import { signWork } from '../organization/workforce/sign-work.js';
 import { loadPdfForSending } from '../documents/service.js';
 import { documentStore } from '../documents/store.js';
 import { markDocumentSent, recordQuotationAcceptance } from '../documents/acceptance.js';
-import { connectionState, evolutionConfig, evolutionConfigured, isWhatsAppNumber, sendDocument, sendText } from './evolution.js';
+import { connectionState, evolutionConfig, evolutionConfigured, findMessages, isWhatsAppNumber, sendDocument, sendText } from './evolution.js';
 import { handleEvolutionWebhook, type FounderMessageEnvelope, type InboundDeps, type InboundSummary } from './inbound.js';
 import { messageStore, type MessageStore } from './message-store.js';
 import { onApprovalDecided, processOutbox, queueMessage, type OutboxDeps, type QueueInput, type QueueResult, type SendOutcome } from './outbox.js';
@@ -134,10 +134,102 @@ async function reconcileOutreachOutbox(outcomes: SendOutcome[]): Promise<void> {
 }
 
 /** Send whatever is due. One pass at a time per process. */
+/**
+ * Recover only the specific worker-lease failures whose delivery result is unknown.
+ * Provider history is authoritative: a unique exact outbound match reconciles to sent;
+ * a complete history with no match requeues the same approved row. Unknown/incomplete
+ * history, multiple matches, revoked approvals, and media messages remain held.
+ */
+async function recoverUncertainOutbox(): Promise<void> {
+  if (!dbConfigured()) return;
+  const rows = (await messageStore().recent(200)).filter((row) =>
+    row.direction === 'out' &&
+    row.audience === 'client' &&
+    row.status === 'failed' &&
+    Boolean(row.approval_id) &&
+    row.reason?.includes('Worker lease expired; delivery outcome is unknown.') &&
+    !row.document_id &&
+    Boolean(row.number),
+  );
+  for (const row of rows) {
+    try {
+      const approvals = await supabaseSelect<{ status: string }>(
+        'organization_approval_requests',
+        `select=status&id=eq.${encodeURIComponent(row.approval_id!)}&limit=1`,
+      );
+      if (approvals[0]?.status !== 'approved') {
+        console.info('WhatsApp recovery held: approval is not currently approved.', { messageId: row.id });
+        continue;
+      }
+      const history = await findMessages(row.number!);
+      const targetTime = new Date(row.created_at).getTime();
+      const matches = history.records.filter((record) => {
+        const key = record.key && typeof record.key === 'object' ? record.key as Record<string, unknown> : {};
+        const message = record.message && typeof record.message === 'object' ? record.message as Record<string, unknown> : {};
+        const extended = message.extendedTextMessage && typeof message.extendedTextMessage === 'object'
+          ? message.extendedTextMessage as Record<string, unknown> : {};
+        const image = message.imageMessage && typeof message.imageMessage === 'object'
+          ? message.imageMessage as Record<string, unknown> : {};
+        const video = message.videoMessage && typeof message.videoMessage === 'object'
+          ? message.videoMessage as Record<string, unknown> : {};
+        const document = message.documentMessage && typeof message.documentMessage === 'object'
+          ? message.documentMessage as Record<string, unknown> : {};
+        const body = String(message.conversation ?? extended.text ?? image.caption ?? video.caption ?? document.caption ?? '');
+        const timestampRaw = record.messageTimestamp ?? record.message_timestamp;
+        const timestamp = typeof timestampRaw === 'number' ? timestampRaw * 1000
+          : typeof timestampRaw === 'string' && /^\d+$/.test(timestampRaw) ? Number(timestampRaw) * 1000
+          : NaN;
+        return key.fromMe === true &&
+          key.remoteJid === `${row.number}@s.whatsapp.net` &&
+          body === row.text &&
+          Number.isFinite(timestamp) &&
+          Math.abs(timestamp - targetTime) <= 15 * 60_000;
+      });
+      if (matches.length === 1) {
+        const match = matches[0];
+        const key = match.key as Record<string, unknown>;
+        const timestampRaw = match.messageTimestamp ?? match.message_timestamp;
+        const sentAt = new Date(Number(timestampRaw) * 1000).toISOString();
+        await messageStore().update(row.id, {
+          status: 'sent',
+          provider_message_id: typeof key.id === 'string' ? key.id : null,
+          sent_at: sentAt,
+          claimed_at: null,
+          reason: 'Recovered from Evolution provider history; exact outbound message confirmed.',
+        });
+        console.info('WhatsApp recovery reconciled provider-confirmed send.', { messageId: row.id });
+      } else if (matches.length > 1) {
+        await messageStore().update(row.id, {
+          claimed_at: null,
+          reason: 'Delivery remains uncertain: multiple matching provider messages found. Held to prevent a duplicate.',
+        });
+      } else if (history.complete) {
+        await messageStore().update(row.id, {
+          status: 'queued',
+          claimed_at: null,
+          reason: 'Provider history checked; no matching outbound message found. Original Founder approval retained; safe retry queued.',
+        });
+        console.info('WhatsApp recovery requeued verified non-delivery.', { messageId: row.id });
+      } else {
+        await messageStore().update(row.id, {
+          claimed_at: null,
+          reason: 'Delivery remains uncertain: Evolution history response was incomplete. Held to prevent a duplicate.',
+        });
+      }
+    } catch (error) {
+      console.warn('WhatsApp recovery could not reconcile message; original record retained.', {
+        messageId: row.id,
+        error: error instanceof Error ? error.message : 'Unknown provider-history error',
+      });
+    }
+  }
+}
+
 export async function runOutbox(): Promise<SendOutcome[]> {
   if (sending) return [];
   sending = true;
   try {
+    await recoverUncertainOutbox();
     // Claim one customer message per pass. Claiming a batch and then processing only one can strand the rest as `sending` if the worker restarts mid-pass.
     const outcomes = await processOutbox(productionOutboxDeps(), 1);
     await reconcileOutreachOutbox(outcomes);

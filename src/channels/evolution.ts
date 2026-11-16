@@ -94,3 +94,41 @@ export async function connectionState(): Promise<{ state: string }> {
   const state = typeof inner?.state === 'string' ? inner.state : typeof data.state === 'string' ? data.state : 'unknown';
   return { state };
 }
+
+
+export interface EvolutionStoredMessages {
+  records: Record<string, unknown>[];
+  complete: boolean;
+}
+
+/**
+ * Read the recent provider-side history for one WhatsApp conversation.
+ * A missing/unexpected response is deliberately marked incomplete: callers must
+ * never interpret an API error or an unknown response shape as proof of non-delivery.
+ */
+export async function findMessages(number: string): Promise<EvolutionStoredMessages> {
+  const digits = number.replace(/\D/g, '');
+  if (!/^\d{8,15}$/.test(digits)) throw new EvolutionError('Cannot inspect WhatsApp history for an invalid number.', false);
+  const remoteJid = `${digits}@s.whatsapp.net`;
+  const records: Record<string, unknown>[] = [];
+  const pageSize = 100;
+  for (let page = 1; page <= 5; page += 1) {
+    const data = await call('/chat/findMessages/{instance}', {
+      method: 'POST',
+      json: { where: { key: { remoteJid } }, page, offset: pageSize },
+    });
+    const messages = data.messages;
+    const rows = Array.isArray(messages)
+      ? messages
+      : messages && typeof messages === 'object' && Array.isArray((messages as Record<string, unknown>).records)
+        ? (messages as { records: unknown[] }).records
+        : Array.isArray(data.records) ? data.records : null;
+    if (!rows) return { records, complete: false };
+    for (const row of rows) if (row && typeof row === 'object') records.push(row as Record<string, unknown>);
+    const total = messages && typeof messages === 'object' && typeof (messages as Record<string, unknown>).total === 'number'
+      ? Number((messages as Record<string, unknown>).total)
+      : typeof data.total === 'number' ? Number(data.total) : null;
+    if (rows.length < pageSize || (total !== null && records.length >= total)) return { records, complete: true };
+  }
+  return { records, complete: false };
+}
