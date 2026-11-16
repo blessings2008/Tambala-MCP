@@ -5,6 +5,7 @@ import type { OrganizationTaskTransition } from '../task-lifecycle.js';
 import { actionHelp, parseActions, type Action } from './actions.js';
 import { splitBlocks } from './blocks.js';
 import { roleIdFor } from './profiles.js';
+import { isPermanentAgentFailure } from './retry-policy.js';
 
 export const MAX_HANDOFFS_PER_DUTY = 2;
 export const MAX_HANDOFF_ATTEMPTS = 5;
@@ -446,7 +447,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'completed', taskId, roomId: h.room_id ?? undefined });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Handoff failed.';
-      const final = attempt >= MAX_HANDOFF_ATTEMPTS;
+      const final = attempt >= MAX_HANDOFF_ATTEMPTS || isPermanentAgentFailure(message);
       if (final) {
         await deps.tasks.fail(taskId, message, agent);
       } else {
