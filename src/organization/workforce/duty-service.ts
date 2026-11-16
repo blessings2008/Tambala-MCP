@@ -698,7 +698,7 @@ async function dispatchIncidentToIT(input: RuntimeIncident & {
     return;
   }
   const message = input.message.slice(0, 180);
-  const key = `${input.taskId ?? 'no-task'}|${input.source}|${message.toLowerCase().replace(/\s+/g, ' ').slice(0, 240)}`;
+  const key = `${input.source}|${input.agent ?? 'unknown'}|${input.provider ?? 'unknown'}|${input.model ?? 'unknown'}|${message.toLowerCase().replace(/\s+/g, ' ').slice(0, 240)}`;
   const now = Date.now();
   for (const [known, at] of incidentDispatchKeys) if (now - at > 10 * 60_000) incidentDispatchKeys.delete(known);
   if (incidentDispatchKeys.has(key)) return;
@@ -707,9 +707,10 @@ async function dispatchIncidentToIT(input: RuntimeIncident & {
   const recent = await store.recent(new Date(now - 10 * 60_000).toISOString());
   const duplicate = recent.some((h) =>
     h.to_agent === 'security' &&
-    h.source_task_id === (input.taskId ?? null) &&
+    h.request.includes(`Source: ${input.source}`) &&
+    h.request.includes(`Agent/provider/model: ${input.agent ?? 'unknown'} / ${input.provider ?? 'unknown'} / ${input.model ?? 'unknown'}`) &&
     h.request.includes(message.slice(0, 100)) &&
-    (h.status === 'queued' || h.status === 'running' || h.status === 'awaiting_founder'),
+    (h.status === 'queued' || h.status === 'running' || h.status === 'awaiting_founder' || h.status === 'failed' || h.status === 'completed'),
   );
   if (duplicate) { incidentDispatchKeys.set(key, now); return; }
 
