@@ -237,7 +237,9 @@ const publishedWhatsAppAlternatives: Record<string, string[]> = {
   "MJ's Restaurant": ['265990861433'], // current business listing contact
   'Automotive Products Limited': ['265888838113'], // company-published Managing Director contact
   'Kingfisher Insurance Brokers & Consultants Limited': ['265884024930'], // official Blantyre branch contact
-  'Continental Asset Management Limited': ['265887376469'], // official company contact
+  'Alwayn Consulting Group': ['265999228229'], // Malawi Accountants Board public listing (2021)
+  'Casa Mia Lodge & Restaurant': ['265888955242', '265996963111'], // public guest/contact listings
+  'Continental Asset Management Limited': ['265887376469', '265999971579', '265888899538', '265999165444'], // official Blantyre and Lilongwe contacts
   'Boyds Property Centre Ltd (Boyds)': ['265888364885'], // official company contact
 };
 
