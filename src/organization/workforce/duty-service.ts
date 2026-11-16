@@ -659,7 +659,7 @@ const actionDeps = (): ActionExecDeps => ({
   createInvoice: (input) => createClientInvoice(input),
 });
 
-async function runActions(ctx: { agent: AgentName; roleId: string; taskId: string | null }, actions: Action[], rejected: string[]): Promise<string> {
+async function runActions(ctx: { agent: AgentName; roleId: string; taskId: string | null; founderApprovedFirstContact?: boolean }, actions: Action[], rejected: string[]): Promise<string> {
   if (!actions.length && !rejected.length) return '';
   const results = await executeActions(actionDeps(), ctx, actions);
   await runOutbox().catch(() => undefined); // messages to the Founder go out straight away
