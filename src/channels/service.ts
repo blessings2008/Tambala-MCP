@@ -177,7 +177,7 @@ async function recoverUncertainOutbox(): Promise<void> {
         const body = String(message.conversation ?? extended.text ?? image.caption ?? video.caption ?? document.caption ?? '');
         const timestampRaw = record.messageTimestamp ?? record.message_timestamp;
         const timestamp = typeof timestampRaw === 'number' ? timestampRaw * 1000
-          : typeof timestampRaw === 'string' && /^\\d+$/.test(timestampRaw) ? Number(timestampRaw) * 1000
+          : typeof timestampRaw === 'string' && /^\d+$/.test(timestampRaw) ? Number(timestampRaw) * 1000
           : NaN;
         return key.fromMe === true &&
           key.remoteJid === `${row.number}@s.whatsapp.net` &&
