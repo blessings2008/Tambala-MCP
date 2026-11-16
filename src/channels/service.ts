@@ -138,7 +138,8 @@ export async function runOutbox(): Promise<SendOutcome[]> {
   if (sending) return [];
   sending = true;
   try {
-    const outcomes = await processOutbox(productionOutboxDeps());
+    // Claim one customer message per pass. Claiming a batch and then processing only one can strand the rest as `sending` if the worker restarts mid-pass.
+    const outcomes = await processOutbox(productionOutboxDeps(), 1);
     await reconcileOutreachOutbox(outcomes);
     return outcomes;
   } finally {
