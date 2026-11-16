@@ -9,6 +9,7 @@ export type OrganizationTaskStatus =
   | 'department_review'
   | 'returned_to_ceo'
   | 'needs_more_work'
+  | 'awaiting_founder'
   | 'completed'
   | 'failed';
 
