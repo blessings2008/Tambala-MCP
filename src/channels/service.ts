@@ -67,7 +67,7 @@ async function reconcileOutreachOutbox(outcomes: SendOutcome[]): Promise<void> {
 
       const reason = (outcome.reason ?? message.reason ?? '').slice(0, 300);
       const needsFounder = outcome.status === 'failed'
-        && /exists.*false|not registered|no destination number|invalid phone/i.test(reason);
+        && /exists.*false|not registered|no destination number|invalid phone|worker lease expired|delivery outcome is unknown|unknown delivery outcome/i.test(reason);
       const nextStatus = outcome.status === 'sent' ? 'completed' : needsFounder ? 'awaiting_founder' : 'failed';
       const sentAt = message.sent_at ?? new Date().toISOString();
       const payload = {
