@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { normalizePhone } from '../../channels/phone.js';
 import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../../lib/supabase.js';
 import { AGENT_DIRECTORY, type AgentName } from '../../services/ai/models.js';
 import type { OrganizationTaskTransition } from '../task-lifecycle.js';
@@ -183,15 +184,22 @@ export interface HandoffOutcome { handoffId: string; toAgent: string; status: 'c
 
 const RULES = 'Use ONLY the supplied data. If something is missing, say so plainly. Do not sign or add a sign-off: the system signs your work with your employee number. Never invent leads, clients, amounts, dates or results. Anything addressed to a customer is a DRAFT; never claim it was sent. Do not hand work on to anyone else. If the assignment is ambiguous, explicitly label your response "Clarification Required", ask the Founder one precise question, and do not present a guessed answer as completed work.';
 
-function approvedFirstContactTarget(contextSummary: string | null): { phone: string; contact: string } | null {
+export function approvedFirstContactTarget(contextSummary: string | null): { phone: string; contact: string } | null {
   if (!contextSummary) return null;
   try {
     const root = JSON.parse(contextSummary) as Record<string, unknown>;
     const lead = root.crm_lead && typeof root.crm_lead === 'object' ? root.crm_lead as Record<string, unknown> : {};
     const prospect = root.prospect && typeof root.prospect === 'object' ? root.prospect as Record<string, unknown> : {};
-    const phone = [lead.whatsapp, lead.phone].find((value) => typeof value === 'string' && value.trim()) as string | undefined;
+    const rawPhone = [lead.whatsapp, lead.phone].find((value) => typeof value === 'string' && value.trim()) as string | undefined;
     const contact = [prospect.organisation_name, lead.business_name, lead.name].find((value) => typeof value === 'string' && value.trim()) as string | undefined;
-    return phone && contact ? { phone, contact } : null;
+    if (!rawPhone || !contact) return null;
+    // CRM values sometimes include a city/contact label, e.g. "Lilongwe: +265 888 826 648".
+    // Extract exactly one numeric candidate, then run the shared Malawi-aware normalizer.
+    // Multiple numbers are ambiguous and must not be guessed.
+    const candidates = rawPhone.match(/\\+?\\d[\\d\\s().-]*\\d/g) ?? [];
+    if (candidates.length !== 1) return null;
+    const phone = normalizePhone(candidates[0]);
+    return phone ? { phone, contact } : null;
   } catch {
     return null;
   }
