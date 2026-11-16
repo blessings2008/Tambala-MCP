@@ -69,7 +69,10 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
     throw new OutboxError('First-contact message contains an unverified past-work or results claim. Remove it unless approved portfolio evidence supports it.');
   }
   let verifiedContactLabel = input.contactLabel?.trim() || null;
-  if (input.founderApprovedFirstContact) {
+  const founder = deps.founderNumber();
+  const blocked = await deps.store.blockedNumbers();
+  const base = decide({ to, purpose: input.purpose, agent: input.agent, text: input.text, hasDocument: Boolean(input.documentId) }, { founderNumber: founder, blocked });
+  if (input.founderApprovedFirstContact && base.verdict !== 'block') {
     if (input.agent !== 'outreach' || input.roleId !== 'director-sales-business-development' || input.purpose !== 'outreach' || !input.taskId) {
       throw new OutboxError('Founder-approved first-contact verification is restricted to the approved Outreach workflow.');
     }
@@ -78,9 +81,6 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
     if (!verified) throw new OutboxError('Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number.');
     verifiedContactLabel = verified;
   }
-  const founder = deps.founderNumber();
-  const blocked = await deps.store.blockedNumbers();
-  const base = decide({ to, purpose: input.purpose, agent: input.agent, text: input.text, hasDocument: Boolean(input.documentId) }, { founderNumber: founder, blocked });
   const customerCopy = base.audience === 'client' ? sanitizeCustomerMessage(input.text.trim()) : input.text.trim();
   if (base.audience === 'client' && customerCopy.length < 2) throw new OutboxError('The customer message contains no usable business content after internal notes were removed.');
   const text = customerCopy;
