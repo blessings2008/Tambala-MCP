@@ -10,10 +10,11 @@ export type OrganizationTaskStatus =
   | 'returned_to_ceo'
   | 'needs_more_work'
   | 'awaiting_founder'
+  | 'superseded'
   | 'completed'
   | 'failed';
 
-export type OrganizationTaskStage = 'founder' | 'ceo' | 'department' | 'review' | 'complete' | 'failed';
+export type OrganizationTaskStage = 'founder' | 'ceo' | 'department' | 'review' | 'complete' | 'failed' | 'superseded';
 
 export type OrganizationTask = {
   id: string;
