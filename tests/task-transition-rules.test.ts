@@ -16,6 +16,7 @@ test('task transition map covers every persisted task status', () => {
     'needs_more_work',
     'returned_to_ceo',
     'waiting_for_tool',
+    'superseded',
   ].sort());
 });
 
@@ -44,4 +45,10 @@ test('Founder-blocked work is distinct from department revision work and resumes
   assert.equal(isAllowedOrganizationTaskTransition('awaiting_founder', 'ceo_analyzing'), true);
   assert.equal(isAllowedOrganizationTaskTransition('awaiting_founder', 'failed'), true);
   assert.equal(isAllowedOrganizationTaskTransition('awaiting_founder', 'completed'), false);
+});
+
+test('superseded work is terminal and can only be reclassified from failed history', () => {
+  assert.equal(isAllowedOrganizationTaskTransition('failed', 'superseded'), true);
+  assert.equal(isAllowedOrganizationTaskTransition('superseded', 'ceo_analyzing'), false);
+  assert.equal(isAllowedOrganizationTaskTransition('superseded', 'completed'), false);
 });
