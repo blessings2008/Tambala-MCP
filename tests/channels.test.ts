@@ -308,6 +308,8 @@ test('outbox: at most one customer message is attempted per scheduler pass', asy
   assert.equal(firstPass.find((item) => item.id === first.id)?.status, 'sent');
   assert.equal(firstPass.find((item) => item.id === second.id)?.status, 'waiting');
   assert.match(firstPass.find((item) => item.id === second.id)?.reason ?? '', /one customer message per outbox pass/i);
+  assert.equal((await h.store.byId(second.id))?.status, 'queued');
+  assert.equal((await h.store.byId(second.id))?.claimed_at, null);
   const secondPass = await processOutbox(h.deps);
   assert.equal(secondPass.find((item) => item.id === second.id)?.status, 'sent');
 });
