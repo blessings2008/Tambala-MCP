@@ -80,6 +80,16 @@ test('legacy security notify payload is normalized to the current safe action sc
   assert.deepEqual(parsed.rejected, []);
 });
 
+test('legacy action discriminator is normalized but still validated and permission-checked', () => {
+  const parsed = parseActions('Done.\nACTIONS:\n{ "action": "notify_founder", "text": "Review the incident report." }');
+  assert.deepEqual(parsed.actions, [{ type: 'notify_founder', text: 'Review the incident report.' }]);
+  assert.deepEqual(parsed.rejected, []);
+  assert.equal(mayDo('security', parsed.actions[0]), null);
+  const invalid = parseActions('Done.\nACTIONS:\n{ "action": "teleport", "text": "No." }');
+  assert.equal(invalid.actions.length, 0);
+  assert.match(invalid.rejected[0], /teleport/);
+});
+
 test('outreach action help forbids placeholders and requires an executable ACTIONS block', () => {
   const help = actionHelp('outreach');
   assert.match(help, /ACTIONS:/);
