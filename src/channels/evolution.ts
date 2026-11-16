@@ -107,8 +107,8 @@ export interface EvolutionStoredMessages {
  * never interpret an API error or an unknown response shape as proof of non-delivery.
  */
 export async function findMessages(number: string): Promise<EvolutionStoredMessages> {
-  const digits = number.replace(/\\D/g, '');
-  if (!/^\\d{8,15}$/.test(digits)) throw new EvolutionError('Cannot inspect WhatsApp history for an invalid number.', false);
+  const digits = number.replace(/\D/g, '');
+  if (!/^\d{8,15}$/.test(digits)) throw new EvolutionError('Cannot inspect WhatsApp history for an invalid number.', false);
   const remoteJid = `${digits}@s.whatsapp.net`;
   const records: Record<string, unknown>[] = [];
   const pageSize = 100;
