@@ -294,7 +294,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       : RULES;
     const reviewRule = autonomousFirstContact
       ? 'For this Founder-approved first-contact only, accept when the action result confirms the WhatsApp message was queued or sent after outbox verification. If queued, report queued, not delivered. Reject a draft-only response or any blocked/failed action. Never accept a claim of sent unless the action result confirms sent.'
-      : 'Accept only if the requested deliverable is actually present and any required evidence is included. If it is incomplete, request a specific revision. If the subject or instructions are ambiguous, ask the Founder.';
+      : 'Accept when the requested work is complete against the supplied evidence, including a clear account of limitations and unavailable sources. Do not demand provider logs, account metrics, credentials or actions that the employee cannot access. If missing Founder-controlled access, data or a decision prevents completion, return FOUNDER_INPUT_REQUIRED and ask one precise question. Return REVISION_REQUIRED only when the employee omitted work or made an unsupported claim that can be corrected from the supplied context.';
     const taskId = h.task_id ?? (await deps.tasks.begin(`[Room ${h.room_id ?? h.id}] [Handoff from ${sender}] ${h.request.slice(0, 160)}`)).taskId;
     try {
       await deps.store.update(h.id, { attempts: attempt, task_id: taskId, error: null });
@@ -367,7 +367,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       if (isFounderClarificationRequest(result)) {
         const question = result.slice(0, 8000);
         await deps.tasks.advance(taskId, [
-          { status: 'needs_more_work', stage: 'ceo', eventType: 'handoff_waiting_for_founder', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, clarification: question } },
+          { status: 'awaiting_founder', stage: 'founder', eventType: 'handoff_waiting_for_founder', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, clarification: question } },
         ]);
         await deps.store.update(h.id, { status: 'awaiting_founder', result: stamped.slice(0, 8000), error: 'Awaiting Founder clarification.', completed_at: null });
         if (h.room_id) {
@@ -404,16 +404,16 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         'Review only whether the employee completed the exact request. Use the request and deliverable below; do not add facts or assume missing work was done.',
         'Return exactly one first-line decision: DECISION: ACCEPT, DECISION: REVISION_REQUIRED, or DECISION: FOUNDER_INPUT_REQUIRED. Follow it with a short reason.',
         `ORIGINAL REQUEST: ${h.request}`,
-        `EMPLOYEE DELIVERABLE: ${stamped.slice(0, 7000)}`,
+        `EMPLOYEE DELIVERABLE: ${stamped.slice(0, 4500)}`,
         reviewRule,
-      ].join('\n\n'), contextPacket)).trim();
-      const decision = review.match(/^\s*DECISION:\s*(ACCEPT|REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)\b/im)?.[1];
+      ].join('\n\n'), {})).trim();
+      const decision = review.match(/^\s*(?:\*\*)?DECISION:\s*(ACCEPT|REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)\b/im)?.[1];
       if (decision !== 'ACCEPT') {
         const reason = review.slice(0, 1500) || 'CEO review did not return a recognized decision.';
-        await deps.tasks.advance(taskId, [
-          { status: 'needs_more_work', stage: 'ceo', eventType: decision === 'REVISION_REQUIRED' ? 'ceo_revision_requested' : 'ceo_review_waiting_for_founder', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, review: reason } },
-        ]);
         const awaitingFounder = decision !== 'REVISION_REQUIRED';
+        await deps.tasks.advance(taskId, [
+          { status: awaitingFounder ? 'awaiting_founder' : 'needs_more_work', stage: awaitingFounder ? 'founder' : 'ceo', eventType: decision === 'REVISION_REQUIRED' ? 'ceo_revision_requested' : 'ceo_review_waiting_for_founder', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, review: reason } },
+        ]);
         const revisionExhausted = !awaitingFounder && attempt >= MAX_HANDOFF_ATTEMPTS;
         const contextSummary = [h.context_summary, `CEO REVIEW FEEDBACK: ${reason}`].filter(Boolean).join('\n\n').slice(0, 3000);
         if (revisionExhausted) {
