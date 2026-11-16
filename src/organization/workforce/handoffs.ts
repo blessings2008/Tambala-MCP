@@ -476,11 +476,17 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       const founderActionCheck = autonomousFirstContact && (
         /WhatsApp action did not confirm a queued or sent result/i.test(message)
         || /Approved first-contact is missing its CRM destination or verified organisation name/i.test(message)
+        || /Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number/i.test(message)
+        || /CRM\/WhatsApp verification service is unavailable/i.test(message)
       );
       if (founderActionCheck) {
         const reason = /missing its CRM destination/i.test(message)
           ? 'Founder input required: CRM destination or verified organisation name is missing; do not send.'
-          : 'Founder input required: the outbox did not confirm queued/sent. Verify delivery before any retry to prevent duplicate outreach.';
+          : /verified WhatsApp number/i.test(message)
+            ? 'Founder input required: the CRM number is not verified as WhatsApp-registered. Correct the CRM number or verify its WhatsApp registration; no message was queued.'
+            : /verification service is unavailable/i.test(message)
+              ? 'Founder input required: the CRM/WhatsApp verification service is unavailable. No message was queued; retry after service is restored.'
+              : 'Founder input required: the outbox did not confirm queued/sent. Verify delivery before any retry to prevent duplicate outreach.';
         await deps.tasks.advance(taskId, [
           { status: 'awaiting_founder', stage: 'founder', eventType: 'handoff_waiting_for_founder', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, reason, noRetryUntilFounderVerifies: true } },
         ]);
