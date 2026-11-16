@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { normalizePhone } from '../../channels/phone.js';
+import { normalizePhoneFromLabel } from '../../channels/phone.js';
 import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../../lib/supabase.js';
 import { AGENT_DIRECTORY, type AgentName } from '../../services/ai/models.js';
 import type { OrganizationTaskTransition } from '../task-lifecycle.js';
@@ -169,7 +169,7 @@ export interface HandoffDeps {
   agentUnavailableReason(agent: AgentName): Promise<string | null>;
   senderLabel(roleId: string): Promise<string>;
   recipientLabel(agent: AgentName): Promise<string>;
-  actions: { run(ctx: { agent: AgentName; roleId: string; taskId: string }, actions: Action[], rejected: string[]): Promise<string> };
+  actions: { run(ctx: { agent: AgentName; roleId: string; taskId: string; founderApprovedFirstContact?: boolean }, actions: Action[], rejected: string[]): Promise<string> };
   sign(input: { roleId: string; kind: 'handoff_result'; subjectId: string; content: string }): Promise<{ block: string }>;
   buildContext(): Promise<Record<string, unknown>>;
   askAgent(agent: AgentName, prompt: string, context: Record<string, unknown>): Promise<string>;
@@ -196,9 +196,7 @@ export function approvedFirstContactTarget(contextSummary: string | null): { pho
     // CRM values sometimes include a city/contact label, e.g. "Lilongwe: +265 888 826 648".
     // Extract exactly one numeric candidate, then run the shared Malawi-aware normalizer.
     // Multiple numbers are ambiguous and must not be guessed.
-    const candidates = rawPhone.match(/\+?\d[\d\s().-]*\d/g) ?? [];
-    if (candidates.length !== 1) return null;
-    const phone = normalizePhone(candidates[0]);
+    const phone = normalizePhoneFromLabel(rawPhone);
     return phone ? { phone, contact } : null;
   } catch {
     return null;
@@ -262,6 +260,10 @@ function confirmsQueuedOrSentAction(value: string): boolean {
   // contain the word 'queued' (for example, 'No customer message was queued').
   return /^\s*Actions:\s*\r?\n\s*✔\s*whatsapp:\s*[^\r\n]*\b(?:queued|sent)\b/i.test(value);
 }
+
+function confirmsPendingApprovalAction(value: string): boolean {
+  return /^\s*Actions:\s*\r?\n\s*✔\s*whatsapp:\s*[^\r\n]*\bawaiting Founder approval\b/i.test(value);
+}
 /** Each delegation runs in an isolated, durable room. A room closes only after its deliverable is accepted. */
 export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<HandoffOutcome[]> {
   const outcomes: HandoffOutcome[] = [];
@@ -297,11 +299,11 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
     const taskRules = autonomousFirstContact
       ? RULES.replace(
           'Anything addressed to a customer is a DRAFT; never claim it was sent.',
-          'Exception: this exact Founder-approved first-contact may execute one WhatsApp outreach action using ACTIONS. The shared outbox verifies the CRM lead and WhatsApp registration and enforces sending safeguards. Do not claim prior client work, similar customers served, testimonials or results unless approved portfolio evidence supports the exact claim. Never claim sent unless the action result confirms sent; if the result says queued, call it queued and not delivered. All other customer-facing messages remain drafts.',
+          'Exception: this exact Founder-approved first-contact may prepare one WhatsApp outreach action using ACTIONS. The shared outbox verifies the CRM lead and WhatsApp registration, then places the message in the Founder approval inbox. Do not claim prior client work, similar customers served, testimonials or results unless approved portfolio evidence supports the exact claim. Never claim sent. All other customer-facing messages remain drafts.',
         )
       : RULES;
     const reviewRule = autonomousFirstContact
-      ? 'For this Founder-approved first-contact only, accept when the action result confirms the WhatsApp message was queued or sent after outbox verification. If queued, report queued, not delivered. Reject a draft-only response or any blocked/failed action. Never accept a claim of sent unless the action result confirms sent.'
+      ? 'For this Founder-approved first-contact only, accept when the action result confirms the message was placed in the Founder approval inbox, queued, or sent after CRM and WhatsApp verification. Report the exact state. A pending-approval message is not delivered; never claim sent unless the action result confirms sent.'
       : 'Accept when the requested work is complete against the supplied evidence, including a clear account of limitations and unavailable sources. Do not demand provider logs, account metrics, credentials or actions that the employee cannot access. If missing Founder-controlled access, data or a decision prevents completion, return FOUNDER_INPUT_REQUIRED and ask one precise question. Return REVISION_REQUIRED only when the employee omitted work or made an unsupported claim that can be corrected from the supplied context.';
     const taskId = h.task_id ?? (await deps.tasks.begin(`[Room ${h.room_id ?? h.id}] [Handoff from ${sender}] ${h.request.slice(0, 160)}`)).taskId;
     try {
@@ -353,7 +355,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       if (!result && autonomousFirstContact && firstContactTarget) result = `Prepared the first-contact WhatsApp action for ${firstContactTarget.contact}.`;
       if (!result) throw new Error('The employee returned no work product.');
       if (autonomousFirstContact && isFounderClarificationRequest(result)) throw new Error('Do not ask the Founder to confirm WhatsApp registration or first-contact permission; the approved destination is supplied and the shared outbox performs verification.');
-      const actionsText = await deps.actions.run({ agent, roleId: h.to_role_id, taskId }, acted.actions, acted.rejected);
+      const actionsText = await deps.actions.run({ agent, roleId: h.to_role_id, taskId, founderApprovedFirstContact: autonomousFirstContact }, acted.actions, acted.rejected);
       if (autonomousFirstContact && /✘\s*whatsapp:.*Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number/i.test(actionsText)) {
         const reason = 'The supplied CRM number could not be verified as a WhatsApp-registered lead. No message was queued. Correct the CRM number or verify its WhatsApp registration before retrying.';
         const blockedResult = result + '\n\n' + actionsText;
@@ -366,12 +368,25 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'failed', reason, taskId, roomId: h.room_id ?? undefined });
         continue;
       }
-      if (autonomousFirstContact && !confirmsQueuedOrSentAction(actionsText)) {
+      if (autonomousFirstContact && !confirmsQueuedOrSentAction(actionsText) && !confirmsPendingApprovalAction(actionsText)) {
         throw new Error('The WhatsApp action did not confirm a queued or sent result; no first-contact message is recorded as complete.');
       }
       const stamp = await deps.sign({ roleId: h.to_role_id, kind: 'handoff_result', subjectId: h.id, content: result });
       const stamped = `${result}${actionsText ? `\n\n${actionsText}` : ''}\n\n${stamp.block}`;
       if (h.room_id) await deps.store.roomEvent(h.room_id, 'employee_deliverable_submitted', h.to_role_id, { response: result.slice(0, 8000), actions: actionsText || null });
+      if (autonomousFirstContact && confirmsPendingApprovalAction(actionsText)) {
+        const reason = 'The verified first-contact message is waiting in the Founder approval inbox; it has not been sent.';
+        await deps.tasks.advance(taskId, [
+          { status: 'awaiting_founder', stage: 'founder', eventType: 'first_contact_waiting_for_founder_approval', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, summary: stamped.slice(0, 8000), messageStatus: 'pending_approval' } },
+        ]);
+        await deps.store.update(h.id, { status: 'awaiting_founder', result: stamped.slice(0, 8000), error: reason, completed_at: null });
+        if (h.room_id) {
+          await deps.store.updateRoom(h.room_id, { status: 'awaiting_founder', deliverable: stamped.slice(0, 8000), blocker: reason });
+          await deps.store.roomEvent(h.room_id, 'first_contact_waiting_for_founder_approval', 'ceo', { taskId, messageStatus: 'pending_approval', sent: false });
+        }
+        outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason, taskId, roomId: h.room_id ?? undefined });
+        continue;
+      }
       if (isFounderClarificationRequest(result)) {
         const question = result.slice(0, 8000);
         await deps.tasks.advance(taskId, [
