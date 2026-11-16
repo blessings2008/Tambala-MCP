@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type IncomingMessage } from 'node:http';
-import { jidToNumber, maskNumber, normalizePhone } from '../src/channels/phone.ts';
+import { jidToNumber, maskNumber, normalizePhone, normalizePhoneFromLabel } from '../src/channels/phone.ts';
 import { CLIENT_FACING_AGENTS, decide, sendWindowOpen, validateText, OPT_OUT_PATTERN } from '../src/channels/policy.ts';
 import { connectionState, EvolutionError, evolutionConfigured, isWhatsAppNumber, sendDocument, sendText } from '../src/channels/evolution.ts';
 import { InMemoryMessageStore } from '../src/channels/message-store.ts';
@@ -26,6 +26,14 @@ test('phone numbers normalise to international digits', () => {
   assert.equal(jidToNumber('103899771998284@lid'), null);
   assert.equal(jidToNumber('1203630@g.us'), null);
   assert.equal(maskNumber('265888123456'), '26588***56');
+});
+
+test('CRM phone labels normalize only when exactly one valid number is present', () => {
+  assert.equal(normalizePhoneFromLabel('Lilongwe: +265 888 826 648 (office)'), '265888826648');
+  assert.equal(normalizePhoneFromLabel('Limbe: 0888 123 456'), '265888123456');
+  assert.equal(normalizePhoneFromLabel('+265 1 832 085'), null);
+  assert.equal(normalizePhoneFromLabel('322'), null);
+  assert.equal(normalizePhoneFromLabel('+265 888 123 456 / +265 999 123 456'), null);
 });
 
 test('policy: customers always need approval, the Founder never does, rules are enforced', () => {
@@ -206,6 +214,47 @@ test('outbox: first-contact Outreach waits for Founder approval and strips inter
   const sent = await processOutbox(h.deps);
   assert.equal(sent.find((item) => item.id === r.id)?.status, 'sent');
   assert.doesNotMatch(h.sent.at(-1)!.text, /CEO|TT[- ]?001|Prepared by/i);
+});
+
+test('outbox: approved-prospect first-contact verifies CRM and WhatsApp, then waits for Founder approval', async () => {
+  const verified: string[] = [];
+  const h = outboxHarness({
+    verifyOutreachLead: async (number) => { verified.push(number); return 'Verified Test Lodge (lead)'; },
+  });
+  const r = await queueMessage(h.deps, {
+    ...sales, to: '0888 123 456', text: 'Hello Lakeview Lodge, we build professional websites for businesses.',
+    purpose: 'outreach', contactLabel: 'Lakeview Lodge', taskId: 'task-first-contact',
+    founderApprovedFirstContact: true,
+  });
+  assert.deepEqual(verified, ['265888123456']);
+  assert.equal(r.status, 'pending_approval');
+  assert.equal(h.approvals.length, 1);
+  assert.equal((await h.store.byId(r.id))?.contact_label, 'Verified Test Lodge (lead)');
+  await processOutbox(h.deps);
+  assert.equal(h.sent.some((item) => item.number === '265888123456'), false);
+  await onApprovalDecided(h.deps, r.id, 'approved', null);
+  const sent = await processOutbox(h.deps);
+  assert.equal(sent.find((item) => item.id === r.id)?.status, 'sent');
+});
+
+test('outbox: approved first-contact is blocked when CRM/WhatsApp verification fails', async () => {
+  const h = outboxHarness({ verifyOutreachLead: async () => null });
+  await assert.rejects(queueMessage(h.deps, {
+    ...sales, to: '0888 123 456', text: 'Hello Lakeview Lodge, we build professional websites for businesses.',
+    purpose: 'outreach', contactLabel: 'Lakeview Lodge', taskId: 'task-first-contact',
+    founderApprovedFirstContact: true,
+  }), /matching CRM lead with a verified WhatsApp number/i);
+  assert.equal(h.store.rows.length, 0);
+  assert.equal(h.approvals.length, 0);
+});
+
+test('outbox: first-contact verification flag cannot be used by another role', async () => {
+  const h = outboxHarness();
+  await assert.rejects(queueMessage(h.deps, {
+    roleId: 'director-operations-administration', agent: 'operations', to: '0888 123 456',
+    text: 'Hello there.', purpose: 'outreach', taskId: 'task-1', founderApprovedFirstContact: true,
+  }), /restricted to the approved Outreach workflow/i);
+  assert.equal(h.store.rows.length, 0);
 });
 
 test('outbox: first-contact drafts reject unsupported past-work claims', async () => {
