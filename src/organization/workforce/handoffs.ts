@@ -455,6 +455,28 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'completed', taskId, roomId: h.room_id ?? undefined });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Handoff failed.';
+      // An uncertain outbox result must never be replayed automatically: the message may
+      // already have been accepted by WhatsApp. Missing CRM destinations also need Founder
+      // correction, not another identical attempt.
+      const founderActionCheck = autonomousFirstContact && (
+        /WhatsApp action did not confirm a queued or sent result/i.test(message)
+        || /Approved first-contact is missing its CRM destination or verified organisation name/i.test(message)
+      );
+      if (founderActionCheck) {
+        const reason = /missing its CRM destination/i.test(message)
+          ? 'Founder input required: CRM destination or verified organisation name is missing; do not send.'
+          : 'Founder input required: the outbox did not confirm queued/sent. Verify delivery before any retry to prevent duplicate outreach.';
+        await deps.tasks.advance(taskId, [
+          { status: 'awaiting_founder', stage: 'founder', eventType: 'handoff_waiting_for_founder', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, reason, noRetryUntilFounderVerifies: true } },
+        ]);
+        await deps.store.update(h.id, { status: 'awaiting_founder', error: reason, completed_at: null });
+        if (h.room_id) {
+          await deps.store.updateRoom(h.room_id, { status: 'awaiting_founder', blocker: reason, closed_at: null });
+          await deps.store.roomEvent(h.room_id, 'first_contact_waiting_for_founder', 'ceo', { reason, attempt, noRetryUntilFounderVerifies: true });
+        }
+        outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason, taskId, roomId: h.room_id ?? undefined });
+        continue;
+      }
       const final = attempt >= MAX_HANDOFF_ATTEMPTS || isPermanentAgentFailure(message);
       if (final) {
         await deps.tasks.fail(taskId, message, agent);
