@@ -196,7 +196,7 @@ export function approvedFirstContactTarget(contextSummary: string | null): { pho
     // CRM values sometimes include a city/contact label, e.g. "Lilongwe: +265 888 826 648".
     // Extract exactly one numeric candidate, then run the shared Malawi-aware normalizer.
     // Multiple numbers are ambiguous and must not be guessed.
-    const candidates = rawPhone.match(/\\+?\\d[\\d\\s().-]*\\d/g) ?? [];
+    const candidates = rawPhone.match(/\+?\d[\d\s().-]*\d/g) ?? [];
     if (candidates.length !== 1) return null;
     const phone = normalizePhone(candidates[0]);
     return phone ? { phone, contact } : null;
