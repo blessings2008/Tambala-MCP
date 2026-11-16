@@ -6,6 +6,7 @@ test('task transition map covers every persisted task status', () => {
   const statuses = Object.keys(ORGANIZATION_TASK_TRANSITIONS).sort();
   assert.deepEqual(statuses, [
     'ceo_analyzing',
+    'awaiting_founder',
     'completed',
     'created',
     'delegated',
@@ -36,4 +37,11 @@ test('invalid state jumps and changes after completion are rejected', () => {
 test('failed tasks may be explicitly retried through CEO analysis', () => {
   assert.equal(isAllowedOrganizationTaskTransition('failed', 'ceo_analyzing'), true);
   assert.equal(isAllowedOrganizationTaskTransition('failed', 'delegated'), false);
+});
+
+test('Founder-blocked work is distinct from department revision work and resumes cleanly', () => {
+  assert.equal(isAllowedOrganizationTaskTransition('executing', 'awaiting_founder'), true);
+  assert.equal(isAllowedOrganizationTaskTransition('awaiting_founder', 'ceo_analyzing'), true);
+  assert.equal(isAllowedOrganizationTaskTransition('awaiting_founder', 'failed'), true);
+  assert.equal(isAllowedOrganizationTaskTransition('awaiting_founder', 'completed'), false);
 });

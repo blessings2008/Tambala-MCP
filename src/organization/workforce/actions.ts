@@ -130,6 +130,11 @@ function normalizeLegacyAction(value: unknown): unknown {
     const text = [subject, message].filter(Boolean).join(' — ');
     return text ? { type: 'notify_founder', text } : value;
   }
+  // Some agents still emit the documented action discriminator instead of the current "type" field.
+  // Normalize only the discriminator; the full Zod schema and role permission checks still apply.
+  if (typeof item.type !== 'string' && typeof item.action === 'string') {
+    return { ...item, type: item.action };
+  }
   return value;
 }
 
