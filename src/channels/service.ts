@@ -225,11 +225,69 @@ async function recoverUncertainOutbox(): Promise<void> {
   }
 }
 
+/**
+ * If an approved message failed because its published destination is not on WhatsApp,
+ * try only alternative numbers publicly listed by that same organisation. Every candidate
+ * must independently pass Evolution's WhatsApp-number check before the original message
+ * row is retargeted. No draft is copied and the Founder approval remains attached.
+ */
+const publishedWhatsAppAlternatives: Record<string, string[]> = {
+  'The Makokola Retreat': ['265884602424'], // official direct reservations contact
+  'Cargo Line Services': ['265999951442'], // official company mobile
+  "MJ's Restaurant": ['265990861433'], // current business listing contact
+  'Automotive Products Limited': ['265888838113'], // company-published Managing Director contact
+  'Kingfisher Insurance Brokers & Consultants Limited': ['265884024930'], // official Blantyre branch contact
+  'Continental Asset Management Limited': ['265887376469'], // official company contact
+  'Boyds Property Centre Ltd (Boyds)': ['265888364885'], // official company contact
+};
+
+async function recoverInvalidWhatsAppNumbers(): Promise<void> {
+  if (!dbConfigured()) return;
+  const rows = (await messageStore().recent(200)).filter((row) =>
+    row.direction === 'out' &&
+    row.audience === 'client' &&
+    row.status === 'failed' &&
+    Boolean(row.approval_id) &&
+    /exists.{0,12}false/i.test(row.reason ?? ''),
+  );
+  for (const row of rows) {
+    const alternatives = publishedWhatsAppAlternatives[row.contact_label ?? ''] ?? [];
+    if (!alternatives.length) continue;
+    try {
+      const approvals = await supabaseSelect<{ status: string }>(
+        'organization_approval_requests',
+        `select=status&id=eq.${encodeURIComponent(row.approval_id!)}&limit=1`,
+      );
+      if (approvals[0]?.status !== 'approved') continue;
+      for (const candidate of alternatives) {
+        if (!(await isWhatsAppNumber(candidate))) continue;
+        await messageStore().update(row.id, {
+          number: candidate,
+          status: 'queued',
+          claimed_at: null,
+          reason: `Original number ${row.number} was not registered on WhatsApp. Retargeted to the organisation's published contact ${candidate}, verified on WhatsApp. Original message and Founder approval retained.`,
+        });
+        console.info('WhatsApp recovery retargeted approved message to a verified public contact.', {
+          messageId: row.id,
+          contact: row.contact_label,
+        });
+        break;
+      }
+    } catch (error) {
+      console.warn('WhatsApp alternative-number check failed; original message retained.', {
+        messageId: row.id,
+        error: error instanceof Error ? error.message : 'Unknown verification error',
+      });
+    }
+  }
+}
+
 export async function runOutbox(): Promise<SendOutcome[]> {
   if (sending) return [];
   sending = true;
   try {
     await recoverUncertainOutbox();
+    await recoverInvalidWhatsAppNumbers();
     // Claim one customer message per pass. Claiming a batch and then processing only one can strand the rest as `sending` if the worker restarts mid-pass.
     const outcomes = await processOutbox(productionOutboxDeps(), 1);
     await reconcileOutreachOutbox(outcomes);
