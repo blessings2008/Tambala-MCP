@@ -26,6 +26,7 @@ test('free-only policy accepts explicit OpenRouter free models and blocks unveri
   delete process.env.TAMBALA_AI_FREE_ONLY;
   delete process.env.TAMBALA_FREE_AI_MODEL_ALLOWLIST;
   assert.doesNotThrow(() => assertFreeAIModel('openrouter', 'nvidia/example:free'));
+  assert.doesNotThrow(() => assertFreeAIModel('openrouter', 'openrouter/free'));
   assert.throws(() => assertFreeAIModel('groq', 'openai/gpt-oss-20b'), /free-only policy/);
   assert.throws(() => assertFreeAIModel('custom', 'some-model'), /No paid fallback was attempted/);
 });
