@@ -68,7 +68,7 @@ async function contacts() {
   for (const table of ['clients', 'leads'] as const) {
     const data = await supabaseSelect<Record<string, unknown>>(table, 'select=name,business_name,phone,whatsapp&limit=2000');
     for (const r of data) {
-      const numbers = [r.phone, r.whatsapp].map((v) => normalizePhone(v)).filter(Boolean) as string[];
+      const numbers = [r.phone, r.whatsapp].map((v) => normalizePhoneFromLabel(v)).filter(Boolean) as string[];
       if (numbers.length) rows.push({ type: table === 'clients' ? 'client' : 'lead', name: String(r.business_name || r.name || ''), numbers });
     }
   }
