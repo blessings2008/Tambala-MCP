@@ -280,3 +280,21 @@ The foundation is not complete until tests demonstrate that:
 This document is an architecture proposal. It does not activate roles, change production data, run migrations, alter provider settings, send external messages, execute payments or deploy services.
 
 Implementation should proceed in small reviewed pull requests, with production changes gated by explicit Founder approval.
+
+
+## 16. Current implementation boundary
+
+The current implementation branch adds the first safe execution bridge without activating it in the live Founder instruction path:
+
+- A validated CEO plan can be recorded as a versioned event on an existing organisation task.
+- Ready plan steps can be queued as existing staff handoffs and task rooms.
+- Unique database correlation keys make plan proposal events and handoff creation idempotent across retries.
+- Plan progress can be reconstructed from durable handoff statuses after a process restart.
+- Approval state remains a separate input from the approval system; a handoff record never implies approval.
+- Handoff workers claim work conditionally and refresh a heartbeat while processing.
+- A running handoff whose heartbeat expires after 30 minutes is moved to Founder review, not automatically replayed. This is deliberate: a crashed worker may have completed an external side effect before it stopped recording progress.
+- If a worker loses its lease, it stops before starting further action execution. Founder review is required to verify uncertain side effects before resuming.
+
+Three additive migrations accompany this bridge: plan-step handoff idempotency, plan-proposal event idempotency, and handoff worker lease metadata. They must be reviewed and applied in the correct deployment sequence before deploying code that depends on the new columns. They have not been applied to production.
+
+The existing `runDutiesOnce` cycle still performs one bounded pass over duties and queued handoffs. The lease and recovery safeguards improve that existing worker path, but they do not turn it into a continuously running worker service. A separately supervised worker, monitoring, graceful shutdown and deployment-time migration verification remain outstanding.
