@@ -109,6 +109,10 @@ export function preparePlanStepDispatches(
     }
 
     const owner = matches[0];
+    if (!owner) {
+      blockers.push({ stepId, roleId, reason: 'The accountable employee route could not be resolved.' });
+      continue;
+    }
     if (!owner.active) {
       blockers.push({ stepId, roleId, reason: 'The mapped employee is not active.' });
       continue;
