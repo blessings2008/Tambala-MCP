@@ -1,6 +1,6 @@
 import type { OrganizationalPlan, OrganizationalPlanStep } from './runtime-contracts.js';
 
-export type StepExecutionStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type StepExecutionStatus = 'pending' | 'queued' | 'running' | 'awaiting_founder' | 'completed' | 'failed' | 'cancelled';
 export type StepApprovalStatus = 'not_required' | 'pending' | 'approved' | 'rejected';
 
 export interface StepProgressRecord {
@@ -14,6 +14,8 @@ export type CoordinatedStepStatus =
   | 'waiting_on_dependency'
   | 'awaiting_approval'
   | 'blocked_owner_inactive'
+  | 'queued'
+  | 'awaiting_founder'
   | 'in_progress'
   | 'completed'
   | 'failed'
@@ -79,6 +81,8 @@ function classifyStep(
   });
 
   if (state.executionStatus === 'completed') return result('completed', 'The step has a recorded completion state.');
+  if (state.executionStatus === 'queued') return result('queued', 'A durable employee handoff is queued.');
+  if (state.executionStatus === 'awaiting_founder') return result('awaiting_founder', 'The employee handoff is waiting for Founder input.');
   if (state.executionStatus === 'cancelled') return result('cancelled', 'The step was cancelled.');
   if (state.executionStatus === 'failed') return result('failed', state.failureReason?.trim() || 'The step failed and needs review.');
   if (state.executionStatus === 'running') return result('in_progress', 'The step is already in progress.');
