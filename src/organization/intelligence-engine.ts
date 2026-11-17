@@ -84,17 +84,38 @@ export function assessObjective(
       const capability = DEPARTMENT_CAPABILITIES.find((item) => item.id === id)!;
       const unit = findUnit(organization, capability.unitTags);
       const role = findRole(organization, capability.roleTags, unit?.id ?? null);
-      const route = resolveExecutionRoute({
-        capabilityId: id,
-        department: unit?.name ?? null,
-        role: role?.title ?? null,
-        roleActivation: role?.activation ?? null,
-        researchQuery: capability.researchKeywords.slice(0, 4).join(', '),
-        description: capability.description,
-        deliverableHints: capability.deliverableHints,
-      });
-      const runtime = runtimeReadiness[id];
-      const checkedRoute = runtime ? requireConfiguredRuntime(route, runtime) : route;
+      const route: ExecutionRoute = !unit || !role || role.activation !== 'active'
+        ? {
+            status: 'not_activated',
+            capabilityId: id,
+            department: unit?.name ?? null,
+            role: role?.title ?? null,
+            agent: null,
+            researchQuery: capability.researchKeywords.slice(0, 4).join(', '),
+            deliverableHints: capability.deliverableHints,
+            reason: !unit
+              ? `No active organisational unit is registered for capability ${id}.`
+              : !role
+                ? `No active accountable role is registered for capability ${id}.`
+                : `The role ${role.title} is not active.`,
+          }
+        : resolveExecutionRoute({
+            capabilityId: id,
+            department: unit.name,
+            role: role.title,
+            roleActivation: role.activation,
+            researchQuery: capability.researchKeywords.slice(0, 4).join(', '),
+            description: capability.description,
+            deliverableHints: capability.deliverableHints,
+          });
+      const runtime = runtimeReadiness[id] ?? {
+        ready: false,
+        apiKeyConfigured: false,
+        apiKeyEnv: route.status === 'ready' ? `TAMBALA_${route.agent.toUpperCase()}_API_KEY` : 'AGENT_RUNTIME_CONFIGURATION',
+        baseURL: null,
+        model: null,
+      };
+      const checkedRoute = requireConfiguredRuntime(route, runtime);
       const readiness = checkedRoute.status;
       const reason = checkedRoute.status === 'needs_configuration' || checkedRoute.status === 'not_activated'
         ? checkedRoute.reason
