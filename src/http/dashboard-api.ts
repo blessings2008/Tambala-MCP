@@ -123,7 +123,7 @@ export async function buildDashboard() {
     section(() => documentStore().prices()),
     section(() => invoiceStore().recent(30)),
     section(() => payHealthCached()),
-    section(() => db<Row>('organization_task_rooms', 'select=id,handoff_id,parent_task_id,owner_role_id,owner_agent,opened_by_role_id,objective,status,deliverable,blocker,opened_at,updated_at,closed_at&order=updated_at.desc&limit=100')),
+    section(() => db<Row>('organization_task_rooms', 'select=id,handoff_id,parent_task_id,owner_role_id,owner_agent,opened_by_role_id,objective,status,deliverable,blocker,opened_at,updated_at,closed_at&order=updated_at.desc&limit=250')),
     section(() => db<Row>('organization_task_room_events', 'select=id,room_id,event_type,actor_role_id,payload,created_at&order=created_at.desc&limit=100')),
     section(async () => {
       const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
