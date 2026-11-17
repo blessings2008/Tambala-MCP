@@ -2,6 +2,7 @@ import { coordinatePlan, type StepProgressRecord, type PlanCoordinationSnapshot 
 import type { AgentName } from '../services/ai/models.js';
 import { queueHandoff, type Handoff, type HandoffStore } from './workforce/handoffs.js';
 import type { OrganizationalPlan, OrganizationalPlanStep } from './runtime-contracts.js';
+import { recordOrganizationTaskEvent } from './task-store.js';
 
 /**
  * Adapter boundary between the new planner and Tambala's existing durable
@@ -44,6 +45,7 @@ export interface PlanDispatchPreparation {
 
 export interface PlanProposalEvent {
   taskId: string;
+  eventKey: string;
   eventType: 'organizational_plan_proposed';
   stage: 'ceo';
   actorRoleId: string;
@@ -63,6 +65,7 @@ export function buildPlanProposalEvent(taskId: string, plan: OrganizationalPlan)
   if (!plan.id.trim() || !plan.objectiveId.trim()) throw new Error('Plan and objective identifiers are required.');
   return {
     taskId,
+    eventKey: `plan-proposal:${plan.id}:revision:${plan.revision}`,
     eventType: 'organizational_plan_proposed',
     stage: 'ceo',
     actorRoleId: plan.proposedByRoleId,
@@ -197,4 +200,40 @@ export async function queuePreparedPlanHandoffs(input: {
   }
 
   return { queued, blocked: [...input.prepared.blockers] };
+}
+
+
+/** Persist the validated plan once on the existing parent task before dispatching any steps. */
+export async function persistPlanProposalEvent(event: PlanProposalEvent): Promise<void> {
+  await recordOrganizationTaskEvent({
+    taskId: event.taskId,
+    eventType: event.eventType,
+    stage: event.stage,
+    actorRoleId: event.actorRoleId,
+    payload: event.payload,
+    eventKey: event.eventKey,
+  });
+}
+
+export async function persistPlanProposalAndQueueSteps(input: {
+  proposalEvent: PlanProposalEvent;
+  prepared: PlanDispatchPreparation;
+  store: HandoffStore;
+  parentTaskId: string;
+  actorRoleId: string;
+  now?: Date;
+}): Promise<QueuedPlanHandoffs> {
+  if (input.proposalEvent.taskId !== input.parentTaskId) {
+    throw new Error('The plan proposal event and step handoffs must use the same parent task.');
+  }
+  // Durable proposal first. If a later handoff fails, retrying is safe: the
+  // event key and each handoff dispatch key are independently unique.
+  await persistPlanProposalEvent(input.proposalEvent);
+  return queuePreparedPlanHandoffs({
+    prepared: input.prepared,
+    store: input.store,
+    parentTaskId: input.parentTaskId,
+    actorRoleId: input.actorRoleId,
+    now: input.now,
+  });
 }
