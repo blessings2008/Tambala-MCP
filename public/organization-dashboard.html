@@ -394,6 +394,14 @@ function renderApprovals(section){
   };
   ok.addEventListener('click',()=>act('approved'));no.addEventListener('click',()=>act('rejected'));
   const row2=h('div','btn-row');row2.append(note,ok,no);box.append(row2);el.append(box)});
+ if(history.length){
+  el.append(h('h3','','Recent approval decisions'));
+  history.slice(0,20).forEach(a=>{
+   const status=String(a.status||'unknown');
+   el.append(row(a.summary||a.action_type||'Approval request',(a.resolved_by_role_id||a.requested_by_role_id||'Unknown role')+' · '+ago(a.resolved_at||a.created_at)+(a.resolution_note?' · '+a.resolution_note:''),badge(status.replaceAll('_',' '),status==='approved'?'good':status==='rejected'?'bad':'info')));
+  });
+ }
+
 }
 
 const EMP_KIND={on_duty:'good',off_hours:'info',unequipped:'pending',inactive:'pending'};
