@@ -373,9 +373,13 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       ? 'For this Founder-approved first-contact only, accept when the action result confirms the message was placed in the Founder approval inbox, queued, or sent after CRM and WhatsApp verification. Report the exact state. A pending-approval message is not delivered; never claim sent unless the action result confirms sent.'
       : 'Accept when the requested work is complete against the supplied evidence, including a clear account of limitations and unavailable sources. Do not demand provider logs, account metrics, credentials or actions that the employee cannot access. If missing Founder-controlled access, data or a decision prevents completion, return FOUNDER_INPUT_REQUIRED and ask one precise question. Return REVISION_REQUIRED only when the employee omitted work or made an unsupported claim that can be corrected from the supplied context.';
     const taskId = h.task_id ?? (await deps.tasks.begin(`[Room ${h.room_id ?? h.id}] [Handoff from ${sender}] ${h.request.slice(0, 160)}`)).taskId;
+    let leaseLost = false;
     const heartbeatTimer = setInterval(() => {
-      void deps.store.heartbeat(h.id, deps.now().toISOString()).catch((error: unknown) => {
-        console.error('Handoff worker heartbeat failed:', error instanceof Error ? error.message : error);
+      void deps.store.heartbeat(h.id, deps.now().toISOString()).then((active) => {
+        if (!active) leaseLost = true;
+      }).catch((error: unknown) => {
+        leaseLost = true;
+        console.error('Handoff worker heartbeat failed; stopping side-effect execution:', error instanceof Error ? error.message : error);
       });
     }, HANDOFF_HEARTBEAT_INTERVAL_MS);
     heartbeatTimer.unref?.();
@@ -428,7 +432,15 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       if (!result && autonomousFirstContact && firstContactTarget) result = `Prepared the first-contact WhatsApp action for ${firstContactTarget.contact}.`;
       if (!result) throw new Error('The employee returned no work product.');
       if (autonomousFirstContact && isFounderClarificationRequest(result)) throw new Error('Do not ask the Founder to confirm WhatsApp registration or first-contact permission; the approved destination is supplied and the shared outbox performs verification.');
+      if (leaseLost) {
+        outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason: 'The worker lease was lost before action execution; work remains paused for safe recovery.', taskId, roomId: h.room_id ?? undefined });
+        continue;
+      }
       const actionsText = await deps.actions.run({ agent, roleId: h.to_role_id, taskId, founderApprovedFirstContact: autonomousFirstContact }, acted.actions, acted.rejected);
+      if (leaseLost) {
+        outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason: 'The worker lease was lost during action execution; verify side effects before resuming.', taskId, roomId: h.room_id ?? undefined });
+        continue;
+      }
       if (autonomousFirstContact && /✘\s*whatsapp:.*Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number/i.test(actionsText)) {
         const reason = 'The supplied CRM number could not be verified as a WhatsApp-registered lead. No message was queued. Correct the CRM number or verify its WhatsApp registration before retrying.';
         const blockedResult = result + '\n\n' + actionsText;
