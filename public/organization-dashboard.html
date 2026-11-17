@@ -79,7 +79,7 @@ details.emp{border:1px solid var(--line);background:#121e31;border-radius:10px;p
 <section class="view" id="view-integrations"><div class="page-head"><div><div class="eyebrow">CONNECTED SYSTEMS</div><h1>Integrations</h1><div class="sub">Whether each connection is configured. A configured key is not proof the service is healthy.</div></div></div><div class="grid two"><article class="card"><div class="section-head"><h2>Connections</h2><span>Configuration status</span></div><div class="list" id="integList"></div></article><article class="card"><div class="section-head"><h2>Outbound channels</h2><span>Policy</span></div><div class="list" id="channelList"></div></article></div></section>
 <section class="view" id="view-security"><div class="page-head"><div><div class="eyebrow">TRUST & CONTROL</div><h1>Security & audit</h1><div class="sub">Role enforcement, bindings and the audit trail, including denied attempts.</div></div></div><div class="grid stats"><article class="card"><div class="stat-top">Role enforcement <span class="stat-icon">◇</span></div><div class="stat-value" id="secEnf">—</div><div class="stat-foot" id="secEnfFoot"></div></article><article class="card"><div class="stat-top">Active bindings <span class="stat-icon">⌘</span></div><div class="stat-value" id="secBind">—</div><div class="stat-foot" id="secBindFoot"></div></article><article class="card"><div class="stat-top">Denied (recent) <span class="stat-icon">!</span></div><div class="stat-value" id="secDenied">—</div><div class="stat-foot" id="secDeniedFoot"></div></article><article class="card"><div class="stat-top">Audit rows shown <span class="stat-icon">▥</span></div><div class="stat-value" id="secRows">—</div><div class="stat-foot" id="secRowsFoot"></div></article></div><div class="grid two"><article class="card"><div class="section-head"><h2>Audit log</h2><span>Latest 40 events</span></div><div class="list" id="auditList"></div></article><article class="card"><div class="section-head"><h2>Role bindings</h2><span>Principal ids are truncated</span></div><div class="list" id="bindList"></div></article></div></section>
 <section class="view" id="view-analytics"><div class="page-head"><div><div class="eyebrow">OPERATING INTELLIGENCE</div><h1>Metrics & insights</h1><div class="sub">Live operational indicators calculated from recorded work. Missing source data stays clearly unavailable.</div></div></div><div class="grid stats"><article class="card"><div class="stat-top">Success rate <span class="stat-icon">%</span></div><div class="stat-value" id="pSuccess">—</div><div class="stat-foot" id="pSuccessFoot"></div></article><article class="card"><div class="stat-top">Avg completion <span class="stat-icon">⏱</span></div><div class="stat-value" id="pAvg">—</div><div class="stat-foot" id="pAvgFoot"></div></article><article class="card"><div class="stat-top">Completed <span class="stat-icon">✓</span></div><div class="stat-value" id="pDone">—</div><div class="stat-foot" id="pDoneFoot"></div></article><article class="card"><div class="stat-top">Failed <span class="stat-icon">!</span></div><div class="stat-value" id="pFailed">—</div><div class="stat-foot" id="pFailedFoot"></div></article></div><div class="grid stats"><article class="card"><div class="stat-top">Rooms tracked <span class="stat-icon">▣</span></div><div class="stat-value" id="metricRooms">—</div><div class="stat-foot">Loaded room records</div></article><article class="card"><div class="stat-top">Founder queue <span class="stat-icon">!</span></div><div class="stat-value" id="metricFounderRooms">—</div><div class="stat-foot">Awaiting your clarification</div></article><article class="card"><div class="stat-top">Messages loaded <span class="stat-icon">✉</span></div><div class="stat-value" id="metricMessages">—</div><div class="stat-foot">Loaded communication records</div></article><article class="card"><div class="stat-top">WhatsApp sent today <span class="stat-icon">↗</span></div><div class="stat-value" id="metricSent">—</div><div class="stat-foot">Provider-reported sent messages</div></article></div><div class="grid two" style="margin-bottom:14px"><article class="card"><div class="section-head"><h2>Room status distribution</h2><span>Current loaded rooms</span></div><div class="metric-bars" id="metricRoomBars"></div></article><article class="card"><div class="section-head"><h2>Operational health</h2><span>Recorded workforce and tasks</span></div><div class="list" id="metricHealth"></div></article></div><div class="grid two"><article class="card"><div class="section-head"><h2>Tasks by department</h2><span>Latest 100 tasks</span></div><div class="list" id="deptTaskList"></div></article><article class="card"><div class="section-head"><h2>Tasks by status</h2><span>Latest 100 tasks</span></div><div class="list" id="statusList"></div></article></div><div class="grid two" style="margin-top:14px"><article class="card"><div class="section-head"><h2>Commercial performance</h2><span id="commercialMeta">Rolling 30 days</span></div><div class="grid stats" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div><div class="stat-top">Prospects discovered</div><div class="stat-value" id="bizProspects">—</div></div><div><div class="stat-top">Quotations sent</div><div class="stat-value" id="bizQuotes">—</div></div><div><div class="stat-top">Invoices paid</div><div class="stat-value" id="bizPaid">—</div></div><div><div class="stat-top">Paid revenue</div><div class="stat-value" id="bizRevenue">—</div></div></div><div class="list" id="commercialDetails"></div></article><article class="card"><div class="section-head"><h2>AI usage & model spend</h2><span id="aiUsageMeta">UTC today</span></div><div class="grid stats" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div><div class="stat-top">Requests</div><div class="stat-value" id="aiRequests">—</div></div><div><div class="stat-top">Priced cost</div><div class="stat-value" id="aiCost">—</div></div><div><div class="stat-top">Prompt tokens</div><div class="stat-value" id="aiPromptTokens">—</div></div><div><div class="stat-top">Unpriced requests</div><div class="stat-value" id="aiUnpriced">—</div></div></div><div class="list" id="aiEmployeeUsage"></div></article></div><div class="grid two" style="margin-top:14px"><article class="card"><div class="section-head"><h2>Employee trust & approvals</h2><span>Trust signals only · not permissions</span></div><div class="list" id="trustList"></div></article><article class="card"><div class="section-head"><h2>Runtime reliability</h2><span>Last 24 hours</span></div><div class="list" id="runtimeMetrics"></div></article></div><article class="card" style="margin-top:14px"><div class="section-head"><h2>Task-room activity timeline</h2><span>Latest 100 room events</span></div><div class="list" id="roomEventTimeline"></div></article></section>
-<section class="view" id="view-chats"><div class="page-head"><div><div class="eyebrow">COMMUNICATION HUB</div><h1>Chats & messages</h1><div class="sub">Persistent internal conversations and WhatsApp communication activity. Internal chat is separate from customer messaging. <span class="sync" id="msgNote"></span></div></div><div class="actions"><button class="outline-btn" id="msgProcess">Process approved queue</button><button class="primary" id="msgTest">Send test to me</button></div></div><div class="chat-workbench"><div><h2>Internal employee conversations</h2><p>Open persistent department rooms to message the AI employee assigned to that team. Conversation history is saved in the internal chat ledger and never enters the customer WhatsApp outbox.</p></div><div class="actions"><a class="primary" href="/chat">Open internal chat ↗</a><a class="outline-btn" href="/chat-live">Open AI workbench ↗</a></div></div>
+<section class="view" <article class="card" style="margin-top:14px"><div class="section-head"><h2>Client & project portfolio</h2><span>Live CRM records</span></div><div class="list" id="portfolioList"></div></article>id="view-chats"><div class="page-head"><div><div class="eyebrow">COMMUNICATION HUB</div><h1>Chats & messages</h1><div class="sub">Persistent internal conversations and WhatsApp communication activity. Internal chat is separate from customer messaging. <span class="sync" id="msgNote"></span></div></div><div class="actions"><button class="outline-btn" id="msgProcess">Process approved queue</button><button class="primary" id="msgTest">Send test to me</button></div></div><div class="chat-workbench"><div><h2>Internal employee conversations</h2><p>Open persistent department rooms to message the AI employee assigned to that team. Conversation history is saved in the internal chat ledger and never enters the customer WhatsApp outbox.</p></div><div class="actions"><a class="primary" href="/chat">Open internal chat ↗</a><a class="outline-btn" href="/chat-live">Open AI workbench ↗</a></div></div>
 <div class="grid stats"><article class="card"><div class="stat-top">Channel <span class="stat-icon">✉</span></div><div class="stat-value" id="chState">—</div><div class="stat-foot" id="chStateFoot"></div></article><article class="card"><div class="stat-top">Sent to customers today <span class="stat-icon">↗</span></div><div class="stat-value" id="chClients">—</div><div class="stat-foot" id="chClientsFoot"></div></article><article class="card"><div class="stat-top">Sent to you today <span class="stat-icon">★</span></div><div class="stat-value" id="chFounder">—</div><div class="stat-foot" id="chFounderFoot"></div></article><article class="card"><div class="stat-top">Opted out <span class="stat-icon">⊘</span></div><div class="stat-value" id="chBlocked">—</div><div class="stat-foot">Never messaged again</div></article></div>
 <div class="grid two"><article class="card"><div class="section-head"><h2>Channel setup</h2><span>Evolution API</span></div><div class="list" id="chSetup"></div></article><article class="card"><div class="section-head"><h2>Rules</h2><span>Built in, not optional</span></div><div class="list" id="chRules"></div></article></div>
 <article class="card" style="margin-top:14px"><div class="section-head"><h2>WhatsApp conversation activity</h2><span>Latest 60 recorded messages</span></div><div id="msgList"></div></article></section>
@@ -111,7 +111,7 @@ const statusKind=s=>s==='completed'||s==='success'||s==='approved'?'good':s==='f
 const val=(id,v,foot)=>{$(id).textContent=v===null||v===undefined?'—':v;if(foot!==undefined&&$(id+'Foot'))$(id+'Foot').textContent=foot};
 function nameOf(unitId){const u=data.organization.ok?data.organization.data.units.find(x=>x.id===unitId):null;return u?u.name:(unitId||'unassigned')}
 
-function render(){
+function renderCore(){
  const d=data,H=d.headline;
  $('syncNote').textContent='Updated '+new Date(d.generatedAt).toLocaleTimeString()+' · auto-refreshes every 30s';
  const banners=[];
@@ -199,6 +199,71 @@ function render(){
  // settings
  fill('flagList',[['Role enforcement',c.roleEnforcement],['Worker signatures',c.signing],['Dev: treat agent roles as active',c.devActiveRoles],['Web research key',c.webResearch],['Pay token',c.tambalaPay],['WhatsApp flag',c.whatsapp]].map(([n,v])=>row(n,'',badge(v?'On':'Off',v?'good':'pending'))));
  fill('sourceList',[row('Organization source',c.orgSource==='supabase'?'Loaded from Supabase tables':c.orgSource==='seed-fallback'?'Built-in seed (no database verification)':'Unavailable',badge(c.orgSource||'unknown',c.orgSource==='supabase'?'good':'pending'))]);
+}
+
+
+function render(){
+ try{renderCore()}
+ catch(error){
+  console.error('Dashboard section rendering failed:',error);
+  $('syncNote').textContent='Some dashboard panels needed recovery: '+(error&&error.message?error.message:'render error')+' · data refresh continues';
+ }
+ renderCriticalSections(data);
+}
+function renderCriticalSections(d){
+ if(!d)return;
+ try{
+  if(!d.tasks||!d.tasks.ok){sec('taskList',d.tasks||{ok:false,error:'No task payload returned.'},()=>[],'No tasks','')}
+  else{
+   const tasks=Array.isArray(d.tasks.data)?d.tasks.data:[];
+   fill('taskList',tasks.slice(0,50).map(t=>row(String(t.objective||'Untitled task').slice(0,110),(t.assigned_department_id?nameOf(t.assigned_department_id)+' · ':'')+String(t.current_stage||'—')+' · '+ago(t.created_at),badge(String(t.status||'unknown').replaceAll('_',' '),statusKind(t.status)))),'No tasks recorded','The task store returned no rows.');
+  }
+  if(d.taskSummary&&d.taskSummary.ok){const t=d.taskSummary.data;val('tOpen',t.open);val('tDone',t.completed);val('tFailed',t.failed);val('tTotal',t.total)}
+ }catch(error){$('taskList').replaceChildren(h('div','err-box','Task Centre could not render: '+error.message))}
+ try{
+  if(d.workforce&&d.workforce.ok)renderWorkforce(d);else renderFallbackStaff(d);
+ }catch(error){console.error('Staff directory rendering failed:',error);renderFallbackStaff(d,error)}
+ try{renderApprovals(d.approvals||{ok:false,error:'No approvals payload returned.'})}catch(error){$('approvalList').replaceChildren(h('div','err-box','Approvals could not render: '+error.message))}
+ try{renderFounderRooms(d.rooms);renderRooms(d.rooms)}catch(error){$('roomGrid').replaceChildren(h('div','err-box','Rooms could not render: '+error.message))}
+ try{renderMessages(d)}catch(error){$('msgList').replaceChildren(h('div','err-box','Messages could not render: '+error.message))}
+ try{renderDocuments(d)}catch(error){$('docList').replaceChildren(h('div','err-box','Documents could not render: '+error.message))}
+ try{renderPortfolio(d)}catch(error){$('portfolioList').replaceChildren(h('div','err-box','Portfolio could not render: '+error.message))}
+}
+function renderFallbackStaff(d,error){
+ const grid=$('staffGrid');grid.replaceChildren();
+ const agents=Array.isArray(d&&d.agents)?d.agents:[];
+ const roles=d&&d.organization&&d.organization.ok?d.organization.data.roles:[];
+ const roleByAgent={orchestrator:'ceo',outreach:'director-sales-business-development',followup:'director-customer-relations',research:'director-research-intelligence',marketing:'director-marketing-brand',content:'director-media-content',finance:'director-finance-accounting',payments:'leader-fintech-ventures',engineering:'director-technology-engineering',strategy:'director-strategy-planning',product:'director-product-innovation',security:'director-cybersecurity-it',operations:'director-operations-administration',people:'director-people-agent-management',legal:'director-legal-risk-compliance',procurement:'director-procurement-resources',executive:'director-executive-management',rnd:'director-research-development',governance:'director-board-governance'};
+ if(!agents.length){grid.append(h('div','err-box','Staff directory unavailable: no agent directory was returned. '+(error?error.message:'')));return}
+ $('staffNote').textContent='Showing the organization’s registered AI employee directory. Live duty metrics are unavailable'+(d&&d.workforce&&!d.workforce.ok?': '+d.workforce.error:'.');
+ agents.forEach(a=>{
+  const role=roles.find(r=>r.id===roleByAgent[a.agent]);
+  const det=document.createElement('details');det.className='emp';
+  const sm=document.createElement('summary'),main=h('div','emp-main');
+  main.append(h('b','',a.title),h('small','',a.unitName+' · '+(a.reportsTo||'Reports to CEO')+' · '+(a.model||'No model configured')));
+  sm.append(main,badge(!role?'Role not mapped':role.activation==='active'?(a.ready?'Active · runtime ready':'Active · runtime not ready'):'Inactive',role&&role.activation==='active'?(a.ready?'good':'pending'):'bad'));
+  det.append(sm);const body=h('div','emp-body');
+  body.append(h('div','',a.agent+' · '+(role?role.id:'No matching role record')));
+  if(role)body.append(h('div','',role.activation+' · '+role.kind));
+  if(error||d.workforce&&!d.workforce.ok)body.append(h('div','notice','Workforce metrics could not be loaded. '+(error?error.message:d.workforce.error)));
+  det.append(body);grid.append(det);
+ });
+}
+function renderPortfolio(d){
+ const el=$('portfolioList');el.replaceChildren();
+ const clients=d.clients&&d.clients.ok?d.clients.data:null,projects=d.projects&&d.projects.ok?d.projects.data:null;
+ if(!clients){el.append(h('div','err-box','Clients unavailable: '+(d.clients&&d.clients.error||'No client payload returned.')))}
+ else{
+  el.append(row('Clients',String(clients.length)+' records',badge('CRM','info')));
+  clients.slice(0,12).forEach(x=>el.append(row(x.business_name||x.name||'Unnamed client',(x.status||'status unavailable')+' · '+(x.location||x.phone||x.email||'No contact detail recorded')+' · '+ago(x.updated_at||x.created_at))));
+  if(!clients.length)el.append(empty('No client records','The CRM client table returned no rows.'));
+ }
+ if(!projects)el.append(h('div','err-box','Projects unavailable: '+(d.projects&&d.projects.error||'No project payload returned.')));
+ else{
+  el.append(row('Projects',String(projects.length)+' records',badge('Projects','info')));
+  projects.slice(0,12).forEach(x=>el.append(row(x.name||'Unnamed project',(x.status||'status unavailable')+' · '+(x.project_type||'project')+' · '+ago(x.updated_at||x.created_at))));
+  if(!projects.length)el.append(empty('No project records','The projects table returned no rows.'));
+ }
 }
 
 
@@ -428,7 +493,7 @@ function renderWorkforce(d){
  const w=d.workforce.data;
  const openIds=new Set([...document.querySelectorAll('details.emp[open]')].map(x=>x.dataset.role));
  $('staffNote').textContent='Office time '+w.office.time+' · '+(w.office.workingHours?'working hours':'outside working hours')+(w.persistence==='memory'?' · records kept in memory only':'');
- const on=w.employees.filter(e=>e.status==='on_duty').length;
+ const on=w.employees.filter(e=>e.status==='available').length;
  val('wfOn',on,'of '+w.employees.length+' staff · availability only, not proof of active work');
  val('wfDone',w.today.done,'of '+w.today.scheduled+' scheduled today');
  val('wfBad',w.today.overdue+w.today.failed,w.today.overdue+' overdue · '+w.today.failed+' failed');
