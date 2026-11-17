@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildPlanProposalEvent, preparePlanStepDispatches, type PlanEmployeeRoute } from '../src/organization/plan-task-bridge.js';
+import { buildPlanProposalEvent, preparePlanStepDispatches, queuePreparedPlanHandoffs, type PlanEmployeeRoute } from '../src/organization/plan-task-bridge.js';
+import { InMemoryHandoffStore } from '../src/organization/workforce/handoffs.js';
 import type { OrganizationalPlan } from '../src/organization/runtime-contracts.js';
 
 const plan: OrganizationalPlan = {
@@ -73,4 +74,52 @@ test('preserves approval and dependency gates from the existing plan coordinator
     research: { executionStatus: 'pending', approvalStatus: 'approved' },
   }, new Set(['research-director', 'strategy-director']), routes);
   assert.deepEqual(afterApproval.dispatches.map((item) => item.stepId), ['research']);
+});
+
+
+test('persists ready steps as existing handoffs linked to the parent task', async () => {
+  const store = new InMemoryHandoffStore();
+  const prepared = preparePlanStepDispatches(plan, {}, new Set(['research-director', 'strategy-director']), routes);
+  const result = await queuePreparedPlanHandoffs({
+    prepared, store, parentTaskId: 'parent-123', actorRoleId: 'ceo',
+    now: new Date('2026-11-17T12:00:00.000Z'),
+  });
+  assert.equal(result.queued.length, 1);
+  assert.equal(result.queued[0]?.source_task_id, 'parent-123');
+  assert.equal(result.queued[0]?.to_agent, 'research');
+  assert.equal(result.queued[0]?.dispatch_key, 'plan:plan-growth:revision:2:step:research');
+  assert.equal(store.rooms.length, 1);
+  assert.equal(store.rooms[0]?.parent_task_id, 'parent-123');
+  assert.equal(result.blocked.length, 0);
+});
+
+test('concurrent retries for one plan step return the same handoff and room', async () => {
+  const store = new InMemoryHandoffStore();
+  const prepared = preparePlanStepDispatches(plan, {}, new Set(['research-director', 'strategy-director']), routes);
+  const input = {
+    prepared, store, parentTaskId: 'parent-123', actorRoleId: 'ceo',
+    now: new Date('2026-11-17T12:00:00.000Z'),
+  };
+  const [first, second] = await Promise.all([
+    queuePreparedPlanHandoffs(input),
+    queuePreparedPlanHandoffs(input),
+  ]);
+  assert.equal(first.queued[0]?.id, second.queued[0]?.id);
+  assert.equal(store.rows.length, 1);
+  assert.equal(store.rooms.length, 1);
+});
+
+test('rejects reuse of a dispatch key for different work', async () => {
+  const store = new InMemoryHandoffStore();
+  const prepared = preparePlanStepDispatches(plan, {}, new Set(['research-director', 'strategy-director']), routes);
+  await queuePreparedPlanHandoffs({ prepared, store, parentTaskId: 'parent-123', actorRoleId: 'ceo' });
+  const changedPlan = {
+    ...plan,
+    steps: [{ ...plan.steps[0]!, objective: 'A different assignment' }, plan.steps[1]!],
+  };
+  const changed = preparePlanStepDispatches(changedPlan, {}, new Set(['research-director', 'strategy-director']), routes);
+  await assert.rejects(
+    queuePreparedPlanHandoffs({ prepared: changed, store, parentTaskId: 'parent-123', actorRoleId: 'ceo' }),
+    /already associated with different work/,
+  );
 });
