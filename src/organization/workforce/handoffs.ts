@@ -20,7 +20,7 @@ export interface TaskRoom {
 }
 export interface Handoff {
   id: string; from_role_id: string; to_role_id: string; to_agent: string; request: string; context_summary: string | null;
-  source_task_id: string | null; source_duty_id: string | null; status: HandoffStatus; attempts: number;
+  source_task_id: string | null; source_duty_id: string | null; dispatch_key?: string | null; status: HandoffStatus; attempts: number;
   result: string | null; error: string | null; task_id: string | null; room_id: string | null; created_at: string; completed_at: string | null;
 }
 
@@ -74,6 +74,7 @@ export interface HandoffStore {
   recent(sinceIso: string): Promise<Handoff[]>;
   get(id: string): Promise<Handoff | null>;
   getByRoomId(roomId: string): Promise<Handoff | null>;
+  getByDispatchKey(dispatchKey: string): Promise<Handoff | null>;
   createRoom(room: Omit<TaskRoom, 'id'>): Promise<TaskRoom>;
   updateRoom(id: string, patch: Partial<TaskRoom>): Promise<void>;
   roomEvent(roomId: string, eventType: string, actorRoleId: string | null, payload?: unknown): Promise<void>;
@@ -90,6 +91,7 @@ export class SupabaseHandoffStore implements HandoffStore {
   recent(sinceIso: string) { return supabaseSelect<Handoff>('organization_handoffs', `select=*&created_at=gte.${encodeURIComponent(sinceIso)}&order=created_at.desc&limit=100`); }
   async get(id: string) { return (await supabaseSelect<Handoff>('organization_handoffs', `select=*&id=eq.${encodeURIComponent(id)}&limit=1`))[0] ?? null; }
   async getByRoomId(roomId: string) { return (await supabaseSelect<Handoff>('organization_handoffs', `select=*&room_id=eq.${encodeURIComponent(roomId)}&limit=1`))[0] ?? null; }
+  async getByDispatchKey(dispatchKey: string) { return (await supabaseSelect<Handoff>('organization_handoffs', `select=*&dispatch_key=eq.${encodeURIComponent(dispatchKey)}&limit=1`))[0] ?? null; }
   createRoom(room: Omit<TaskRoom, 'id'>) { return supabaseInsert<TaskRoom>('organization_task_rooms', room as unknown as Record<string, unknown>); }
   async updateRoom(id: string, patch: Partial<TaskRoom>) { await supabaseUpdate('organization_task_rooms', { ...patch, updated_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(id)}`); }
   async roomEvent(roomId: string, eventType: string, actorRoleId: string | null, payload?: unknown) {
@@ -108,25 +110,46 @@ export class InMemoryHandoffStore implements HandoffStore {
   async recent(sinceIso: string) { return this.rows.filter((r) => r.created_at >= sinceIso).reverse(); }
   async get(id: string) { return this.rows.find((r) => r.id === id) ?? null; }
   async getByRoomId(roomId: string) { return this.rows.find((r) => r.room_id === roomId) ?? null; }
+  async getByDispatchKey(dispatchKey: string) { return this.rows.find((r) => r.dispatch_key === dispatchKey) ?? null; }
   async createRoom(room: Omit<TaskRoom, 'id'>) { const row = { ...room, id: randomUUID() }; this.rooms.push(row); return row; }
   async updateRoom(id: string, patch: Partial<TaskRoom>) { const row = this.rooms.find((r) => r.id === id); if (row) Object.assign(row, patch); }
   async roomEvent(roomId: string, eventType: string, actorRoleId: string | null, payload?: unknown) { this.roomEvents.push({ room_id: roomId, event_type: eventType, actor_role_id: actorRoleId, payload }); }
 }
 
 export async function queueHandoff(store: HandoffStore, input: {
-  fromRoleId: string; toAgent: AgentName; request: string; contextSummary?: string | null; sourceTaskId?: string | null; sourceDutyId?: string | null; now?: Date;
+  fromRoleId: string; toAgent: AgentName; request: string; contextSummary?: string | null; sourceTaskId?: string | null; sourceDutyId?: string | null; dispatchKey?: string | null; now?: Date;
   sign?: (input: { roleId: string; kind: 'handoff_request'; subjectId: string; content: string }) => Promise<unknown>;
 }): Promise<Handoff> {
   if (!(input.toAgent in AGENT_DIRECTORY) || input.toAgent === 'orchestrator') throw new HandoffError('Choose an employee to assign this to.');
   const request = input.request.trim();
   if (request.length < 5 || request.length > 1000) throw new HandoffError('The request must be 5 to 1000 characters.');
-  const created = await store.create({
+  const dispatchKey = input.dispatchKey?.trim() || null;
+  if (dispatchKey) {
+    if (dispatchKey.length > 240) throw new HandoffError('The dispatch key must not exceed 240 characters.');
+    const existing = await store.getByDispatchKey(dispatchKey);
+    if (existing) {
+      if (existing.from_role_id !== input.fromRoleId || existing.to_agent !== input.toAgent || existing.request !== request || existing.source_task_id !== (input.sourceTaskId ?? null)) {
+        throw new HandoffError('This dispatch key is already associated with different work.');
+      }
+      return existing;
+    }
+  }
+  let created: Handoff;
+  try {
+    created = await store.create({
     from_role_id: input.fromRoleId, to_role_id: roleIdFor(input.toAgent), to_agent: input.toAgent, request,
     context_summary: input.contextSummary ? input.contextSummary.slice(0, 8000) : null,
-    source_task_id: input.sourceTaskId ?? null, source_duty_id: input.sourceDutyId ?? null,
+    source_task_id: input.sourceTaskId ?? null, source_duty_id: input.sourceDutyId ?? null, dispatch_key: dispatchKey,
     status: 'queued', attempts: 0, result: null, error: null, task_id: null, room_id: null,
     created_at: (input.now ?? new Date()).toISOString(), completed_at: null,
-  });
+    });
+  } catch (error) {
+    if (dispatchKey && error instanceof Error && /unique|duplicate|23505/i.test(error.message)) {
+      const existing = await store.getByDispatchKey(dispatchKey);
+      if (existing && existing.from_role_id === input.fromRoleId && existing.to_agent === input.toAgent && existing.request === request && existing.source_task_id === (input.sourceTaskId ?? null)) return existing;
+    }
+    throw error;
+  }
   try {
     const room = await store.createRoom({
       handoff_id: created.id, parent_task_id: input.sourceTaskId ?? null, owner_role_id: created.to_role_id,
