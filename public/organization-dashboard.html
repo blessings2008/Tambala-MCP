@@ -412,7 +412,7 @@ function renderExtendedInsights(d){
   const c=runtime.control||{},e=runtime.errorBudget||{};
   fill('runtimeMetrics',[
    row('Organization runtime',c.paused?'Paused':'Running',badge(c.paused?'Paused':'Active',c.paused?'bad':'good')),
-   row('Duty runs observed',String(e.observed??0),e.windowHours+'-hour window'),
+   row('Duty runs observed',String(e.observed??0)+' · '+e.windowHours+'-hour window'),
    row('Duty success target',e.targetSuccessPercent+'%',e.completed+' completed · '+e.failed+' failed'),
    row('Failure rate',e.failureRatePercent===null?'Unavailable':e.failureRatePercent+'%',e.remainingPercent===null?'No completed/failed runs to calculate error budget':e.remainingPercent+'% error budget remaining')
   ]);
