@@ -70,9 +70,7 @@ export async function sendInternalChat(channel: InternalChatChannel, message: st
 ${message}`,
       previous.length ? `PREVIOUS TEAM CONTRIBUTIONS:
 ${JSON.stringify(previous)}` : 'You are the first employee to contribute.',
-    ].join('
-
-');
+    ].join(String.fromCharCode(10, 10));
     try {
       const response = await askTambalaAI(agent, prompt);
       const row = await supabaseInsert<MessageRow>('organization_internal_chat_messages', {
