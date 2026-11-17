@@ -8,9 +8,8 @@ import { recordOrganizationTaskEvent } from './task-store.js';
  * Adapter boundary between the new planner and Tambala's existing durable
  * organization_tasks / organization_task_events / organization_handoffs model.
  *
- * This module is pure. It does not write records, create handoffs, or authorize
- * actions. A future dispatcher must persist the plan event first, then use the
- * existing handoff/task-room workflow and its approval checks.
+ * Preparation is pure. The explicit persistence functions below write only to
+ * existing task-event and handoff/task-room tables; they do not authorize actions.
  */
 
 export interface PlanEmployeeRoute {
@@ -65,7 +64,7 @@ export function buildPlanProposalEvent(taskId: string, plan: OrganizationalPlan)
   if (!plan.id.trim() || !plan.objectiveId.trim()) throw new Error('Plan and objective identifiers are required.');
   return {
     taskId,
-    eventKey: `plan-proposal:${plan.id}:revision:${plan.revision}`,
+    eventKey: `plan-proposal:${taskId}:${plan.id}:revision:${plan.revision}`,
     eventType: 'organizational_plan_proposed',
     stage: 'ceo',
     actorRoleId: plan.proposedByRoleId,
