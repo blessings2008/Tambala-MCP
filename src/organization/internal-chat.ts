@@ -14,11 +14,40 @@ const CHANNELS = {
 } as const;
 
 export type InternalChatChannel = keyof typeof CHANNELS;
+export type InternalChatActor = { type: 'founder' } | { type: 'employee'; agent: AgentName; roleId: string; name: string };
+const ROLE_AGENT: Record<string, AgentName> = {
+  ceo: 'orchestrator',
+  'director-sales-business-development': 'outreach',
+  'director-customer-relations': 'followup',
+  'director-research-intelligence': 'research',
+  'director-marketing-brand': 'marketing',
+  'director-media-content': 'content',
+  'director-finance-accounting': 'finance',
+  'leader-fintech-ventures': 'payments',
+  'director-technology-engineering': 'engineering',
+  'director-strategy-planning': 'strategy',
+  'director-product-innovation': 'product',
+  'director-cybersecurity-it': 'security',
+  'director-operations-administration': 'operations',
+  'director-people-agent-management': 'people',
+  'director-legal-risk-compliance': 'legal',
+  'director-procurement-resources': 'procurement',
+  'director-executive-management': 'executive',
+  'director-research-development': 'rnd',
+  'director-board-governance': 'governance',
+};
 type MessageRow = { id: string; channel: string; sender_type: 'founder' | 'agent'; sender_role_id: string; sender_name: string; body: string; created_at: string };
 const AGENT_NAMES = Object.keys(AGENT_DIRECTORY) as AgentName[];
 
 export function isInternalChatChannel(value: unknown): value is InternalChatChannel {
   return typeof value === 'string' && Object.hasOwn(CHANNELS, value);
+}
+
+export function internalChatAgentForRole(roleId: string): AgentName | null { return ROLE_AGENT[roleId] ?? null; }
+
+export function internalChatChannelForAgent(agent: AgentName): InternalChatChannel | null {
+  const match = Object.entries(CHANNELS).find(([, config]) => config.agent === agent);
+  return match ? match[0] as InternalChatChannel : null;
 }
 
 export function listInternalChatAgents() {
@@ -43,12 +72,12 @@ export async function sendInternalChat(channel: InternalChatChannel, message: st
   const participants = Array.isArray(requestedAgents)
     ? [...new Set(requestedAgents.filter(isInternalChatAgent))]
     : [defaultAgent];
-  if (!participants.length || participants.length > 4 || (Array.isArray(requestedAgents) && participants.length !== requestedAgents.length)) {
+  if (!participants.length || participants.length > 4 || (Array.isArray(requestedAgents) && participants.length !== requestedAgents.length) || (actor.type === 'employee' && participants.includes(actor.agent))) {
     throw new Error('Choose between one and four valid AI employees.');
   }
 
   const founderMessage = await supabaseInsert<MessageRow>('organization_internal_chat_messages', {
-    channel, sender_type: 'founder', sender_role_id: 'founder', sender_name: 'Founder', body: message,
+    channel, sender_type: actor.type === 'founder' ? 'founder' : 'agent', sender_role_id: actor.type === 'founder' ? 'founder' : actor.roleId, sender_name: actor.type === 'founder' ? 'Founder' : actor.name, body: message,
   });
 
   const contributions: Array<{ agent: AgentName; name: string; response: string }> = [];
