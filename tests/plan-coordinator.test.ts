@@ -71,3 +71,12 @@ test('keeps queued and Founder-waiting handoffs out of the ready queue', () => {
   assert.equal(snapshot.steps.find((item) => item.stepId === 'research')?.status, 'queued');
   assert.equal(snapshot.steps.find((item) => item.stepId === 'recommend')?.status, 'awaiting_founder');
 });
+
+
+test('a rejected approval overrides a queued handoff state', () => {
+  const snapshot = coordinatePlan(plan, {
+    recommend: { executionStatus: 'queued', approvalStatus: 'rejected' },
+  }, active);
+  assert.equal(snapshot.steps.find((item) => item.stepId === 'recommend')?.status, 'blocked_approval_rejected');
+  assert.equal(snapshot.readyStepIds.includes('recommend'), false);
+});
