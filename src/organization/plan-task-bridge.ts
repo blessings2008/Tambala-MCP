@@ -1,5 +1,6 @@
 import { coordinatePlan, type StepProgressRecord, type PlanCoordinationSnapshot } from './plan-coordinator.js';
 import type { AgentName } from '../services/ai/models.js';
+import { queueHandoff, type Handoff, type HandoffStore } from './workforce/handoffs.js';
 import type { OrganizationalPlan, OrganizationalPlanStep } from './runtime-contracts.js';
 
 /**
@@ -22,8 +23,8 @@ export interface PlanStepDispatch {
   stepId: string;
   step: OrganizationalPlanStep;
   roleId: string;
-  agent: string;
-  /** Stable correlation key; storage must enforce uniqueness before retries are safe. */
+  agent: AgentName;
+  /** Stable correlation key; the handoff table's unique index enforces this across retries. */
   idempotencyKey: string;
 }
 
@@ -140,4 +141,58 @@ export function preparePlanStepDispatches(
     blockers,
     requiresReplanning: coordination.requiresReplanning || blockers.length > 0,
   };
+}
+
+
+export interface QueuedPlanHandoffs {
+  queued: Handoff[];
+  blocked: PlanStepRouteBlocker[];
+}
+
+/**
+ * Persist ready steps as ordinary staff handoffs/task rooms.
+ * The existing handoff store and unique dispatch_key index provide idempotency.
+ * Callers must still enforce the Founder/actor authorization boundary before
+ * invoking this write operation.
+ */
+export async function queuePreparedPlanHandoffs(input: {
+  prepared: PlanDispatchPreparation;
+  store: HandoffStore;
+  parentTaskId: string;
+  actorRoleId: string;
+  now?: Date;
+}): Promise<QueuedPlanHandoffs> {
+  if (!input.parentTaskId.trim()) throw new Error('A parent organization task id is required.');
+  if (!input.actorRoleId.trim()) throw new Error('An accountable initiating role is required.');
+
+  const queued: Handoff[] = [];
+  for (const dispatch of input.prepared.dispatches) {
+    const step = dispatch.step;
+    const request = [
+      step.objective,
+      `Expected deliverable: ${step.expectedDeliverable}`,
+      `Acceptance criteria: ${step.acceptanceCriteria.join('; ')}`,
+    ].join('\\n').slice(0, 1000);
+    const handoff = await queueHandoff(input.store, {
+      fromRoleId: input.actorRoleId,
+      toAgent: dispatch.agent,
+      request,
+      sourceTaskId: input.parentTaskId,
+      contextSummary: JSON.stringify({
+        plan_step: {
+          step_id: dispatch.stepId,
+          plan_id: input.prepared.coordination.planId,
+          idempotency_key: dispatch.idempotencyKey,
+          risk: step.risk,
+          approval_required: step.approvalRequired,
+          capability_requirements: step.capabilityRequirements,
+        },
+      }).slice(0, 8000),
+      dispatchKey: dispatch.idempotencyKey,
+      now: input.now,
+    });
+    queued.push(handoff);
+  }
+
+  return { queued, blocked: [...input.prepared.blockers] };
 }
