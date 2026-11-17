@@ -25,7 +25,7 @@ import { documentStore } from './documents/store.js';
 import { toMinor } from './documents/model.js';
 import { createClientInvoice, InvoiceError } from './payments/invoices.js';
 import { buildDashboard } from './http/dashboard-api.js';
-import { isInternalChatChannel, readInternalChat, sendInternalChat } from './organization/internal-chat.js';
+import { isInternalChatChannel, listInternalChatAgents, readInternalChat, sendInternalChat } from './organization/internal-chat.js';
 import { setCorsHeaders } from './http/cors.js';
 import { handleHealth, handleNotFound, handleReadiness } from './http/health.js';
 import { isAuthorized, unauthorized } from './http/auth.js';
@@ -256,14 +256,14 @@ const server = createHttpServer(async (req, res) => {
       if (req.method === 'GET') {
         const channel = new URL(req.url ?? '/', 'http://localhost').searchParams.get('channel');
         if (!isInternalChatChannel(channel)) { json(res, 400, { error: 'Choose a valid internal room.' }); return; }
-        json(res, 200, await readInternalChat(channel));
+        json(res, 200, { ...(await readInternalChat(channel)), agents: listInternalChatAgents() });
         return;
       }
       if (!req.headers['content-type']?.toLowerCase().includes('application/json')) { json(res, 415, { error: 'Content-Type must be application/json.' }); return; }
-      const body = await readJsonBody(req) as { channel?: unknown; message?: unknown };
+      const body = await readJsonBody(req) as { channel?: unknown; message?: unknown; agents?: unknown };
       if (!body || !isInternalChatChannel(body.channel)) { json(res, 400, { error: 'Choose a valid internal room.' }); return; }
       if (typeof body.message !== 'string' || !body.message.trim() || body.message.length > 10000) { json(res, 400, { error: 'Write a message between 1 and 10,000 characters.' }); return; }
-      const result = await sendInternalChat(body.channel, body.message.trim());
+      const result = await sendInternalChat(body.channel, body.message.trim(), body.agents);
       json(res, 200, result);
     } catch (error) {
       console.error('Internal chat request failed:', error instanceof Error ? error.message : error);
