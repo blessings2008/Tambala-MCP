@@ -1,4 +1,5 @@
 import { coordinatePlan, type StepProgressRecord, type PlanCoordinationSnapshot } from './plan-coordinator.js';
+import type { AgentName } from '../services/ai/models.js';
 import type { OrganizationalPlan, OrganizationalPlanStep } from './runtime-contracts.js';
 
 /**
@@ -11,7 +12,7 @@ import type { OrganizationalPlan, OrganizationalPlanStep } from './runtime-contr
  */
 
 export interface PlanEmployeeRoute {
-  agent: string;
+  agent: AgentName;
   roleId: string;
   active: boolean;
   runtimeReady: boolean;
@@ -78,6 +79,8 @@ export function buildPlanProposalEvent(taskId: string, plan: OrganizationalPlan)
  * Project ready plan steps onto existing employee handoff routes.
  * A role must resolve to exactly one employee profile, and that employee must
  * be active and runtime-ready. Ambiguous or unavailable owners fail closed.
+ * This is routing readiness, not authorization: execution must still validate
+ * actor identity, capability permissions, data scopes and current approval.
  */
 export function preparePlanStepDispatches(
   plan: OrganizationalPlan,
