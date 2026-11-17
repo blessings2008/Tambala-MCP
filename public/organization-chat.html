@@ -51,7 +51,7 @@ const samples={
 };
 let current="executive",busy=false,agentDirectory=[],selectedByRoom={};
 const el=id=>document.getElementById(id);
-const KEY="tambala_chat_test_token";
+const KEY="tambala_chat_test_token",CHAT_KEY="tambala_internal_chat_token";
 const defaultParticipants={executive:["orchestrator"],board:["governance"],research:["research"],sales:["outreach"],customer:["followup"],technology:["engineering"],finance:["finance"],founder:["executive"]};
 const roomAgents={
  executive:[["ceo","CEO Orchestrator","Executive Management","ready"]],
@@ -63,7 +63,7 @@ const roomAgents={
  finance:[["finance","Finance Analyst","Finance & Accounting","ready"]],
  founder:[["founder","Executive Management","Founder Office","ready"]]
 };
-function token(){return sessionStorage.getItem(KEY)||""}
+function token(){return sessionStorage.getItem(CHAT_KEY)||sessionStorage.getItem(KEY)||""}
 async function api(path,options={}){
  const t=token();if(!t)throw Error("Open the organization dashboard first and sign in. Your dashboard session is shared with internal chat.");
  const response=await fetch(path,{...options,headers:{Authorization:"Bearer "+t,"Content-Type":"application/json",...(options.headers||{})}});
@@ -133,6 +133,6 @@ async function bootChat(){
   el("loginError").textContent=error.message||"Could not verify this account.";
  }
 }
-el("loginForm").addEventListener("submit",event=>{event.preventDefault();const value=el("loginToken").value.trim();if(!value)return;sessionStorage.setItem(KEY,value);el("loginError").textContent="";bootChat()});
+el("loginForm").addEventListener("submit",event=>{event.preventDefault();const value=el("loginToken").value.trim();if(!value)return;sessionStorage.setItem(CHAT_KEY,value);el("loginError").textContent="";bootChat()});
 bootChat();
 </script></body></html>
