@@ -25,7 +25,8 @@ import { documentStore } from './documents/store.js';
 import { toMinor } from './documents/model.js';
 import { createClientInvoice, InvoiceError } from './payments/invoices.js';
 import { buildDashboard } from './http/dashboard-api.js';
-import { isInternalChatChannel, listInternalChatAgents, readInternalChat, sendInternalChat } from './organization/internal-chat.js';
+import { internalChatAgentForRole, internalChatChannelForAgent, isInternalChatChannel, listInternalChatAgents, readInternalChat, sendInternalChat, type InternalChatActor } from './organization/internal-chat.js';
+import { resolveOrganizationIdentity } from './organization/identity-service.js';
 import { setCorsHeaders } from './http/cors.js';
 import { handleHealth, handleNotFound, handleReadiness } from './http/health.js';
 import { isAuthorized, unauthorized } from './http/auth.js';
@@ -205,6 +206,31 @@ function validStage(value: unknown): value is ExecutionStage {
   return value === 'ceo_delegate' || value === 'specialist_execute' || value === 'ceo_complete';
 }
 
+
+async function resolveInternalChatActor(req: import('node:http').IncomingMessage): Promise<{ actor: InternalChatActor; agent: AgentName | null } | null> {
+  const token = bearerToken(req);
+  if (chatTokenMatches(token)) return { actor: { type: 'founder' }, agent: null };
+  const clientId = token ? getOAuthAccessClientId(token) : null;
+  if (!clientId) return null;
+  const identity = await runWithRequestPrincipal({ kind: 'oauth', clientId }, () => resolveOrganizationIdentity());
+  if (!identity.authenticated || identity.principalType !== 'oauth' || !identity.role) return null;
+  if (identity.role.id === 'founder') return { actor: { type: 'founder' }, agent: null };
+  const agent = internalChatAgentForRole(identity.role.id);
+  if (!agent) return null;
+  return { actor: { type: 'employee', agent, roleId: identity.role.id, name: identity.role.title }, agent };
+}
+
+function internalChatAllowedChannels(agent: AgentName | null): string[] {
+  if (agent === null) return ['executive', 'board', 'research', 'sales', 'customer', 'technology', 'finance', 'founder'];
+  if (agent === 'orchestrator') return ['executive', 'board', 'research', 'sales', 'customer', 'technology', 'finance'];
+  const channel = internalChatChannelForAgent(agent);
+  return channel && channel !== 'founder' ? [channel] : [];
+}
+
+function internalChatChannelAllowed(agent: AgentName | null, channel: string): boolean {
+  return internalChatAllowedChannels(agent).includes(channel);
+}
+
 const server = createHttpServer(async (req, res) => {
   setCorsHeaders(res);
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
@@ -243,7 +269,7 @@ const server = createHttpServer(async (req, res) => {
   }
 
 
-  if ((requestPath === '/api/chat-test/status' || requestPath === '/api/chat-test' || requestPath === '/api/chat-test/collaborate' || requestPath === '/api/chat-test/step' || requestPath === '/api/dashboard' || requestPath === '/api/internal-chat' || requestPath.startsWith('/api/internal-chat/') || requestPath === '/api/dashboard/approvals/decide' || requestPath.startsWith('/api/dashboard/')) && (req.method === 'GET' || req.method === 'POST')) {
+  if ((requestPath === '/api/chat-test/status' || requestPath === '/api/chat-test' || requestPath === '/api/chat-test/collaborate' || requestPath === '/api/chat-test/step' || requestPath === '/api/dashboard' || requestPath === '/api/dashboard/approvals/decide' || requestPath.startsWith('/api/dashboard/')) && (req.method === 'GET' || req.method === 'POST')) {
     if (!chatTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized. Check the chat test token.' }); return; }
   }
   if ((requestPath.startsWith('/api/dashboard/') || requestPath === '/api/internal-chat') && req.method === 'POST') {
@@ -251,19 +277,34 @@ const server = createHttpServer(async (req, res) => {
     catch (error) { json(res, 503, { error: error instanceof Error ? error.message : 'Tambala organization is paused.' }); return; }
   }
 
-  if (requestPath === '/api/internal-chat' && (req.method === 'GET' || req.method === 'POST')) {
+  if ((requestPath === '/api/internal-chat' && (req.method === 'GET' || req.method === 'POST')) || (requestPath === '/api/internal-chat/identity' && req.method === 'GET')) {
     try {
+      const auth = await resolveInternalChatActor(req);
+      if (!auth) { json(res, 403, { error: 'This account has no active Tambala employee identity.' }); return; }
+      if (requestPath === '/api/internal-chat/identity') {
+        json(res, 200, { identity: auth.agent ? { type: 'employee', agent: auth.agent } : { type: 'founder' }, allowedChannels: internalChatAllowedChannels(auth.agent) });
+        return;
+      }
       if (req.method === 'GET') {
         const channel = new URL(req.url ?? '/', 'http://localhost').searchParams.get('channel');
         if (!isInternalChatChannel(channel)) { json(res, 400, { error: 'Choose a valid internal room.' }); return; }
-        json(res, 200, { ...(await readInternalChat(channel)), agents: listInternalChatAgents() });
+        if (!internalChatChannelAllowed(auth.agent, channel)) { json(res, 403, { error: 'Your employee role cannot access this room.' }); return; }
+        const visibleAgents = auth.agent && auth.agent !== 'orchestrator' ? listInternalChatAgents().filter((item) => item.id === 'orchestrator') : listInternalChatAgents();
+        json(res, 200, { ...(await readInternalChat(channel)), agents: visibleAgents, identity: auth.agent ? { type: 'employee', agent: auth.agent } : { type: 'founder' }, allowedChannels: internalChatAllowedChannels(auth.agent) });
         return;
       }
       if (!req.headers['content-type']?.toLowerCase().includes('application/json')) { json(res, 415, { error: 'Content-Type must be application/json.' }); return; }
       const body = await readJsonBody(req) as { channel?: unknown; message?: unknown; agents?: unknown };
       if (!body || !isInternalChatChannel(body.channel)) { json(res, 400, { error: 'Choose a valid internal room.' }); return; }
+      if (!internalChatChannelAllowed(auth.agent, body.channel)) { json(res, 403, { error: 'Your employee role cannot post in this room.' }); return; }
       if (typeof body.message !== 'string' || !body.message.trim() || body.message.length > 10000) { json(res, 400, { error: 'Write a message between 1 and 10,000 characters.' }); return; }
-      const result = await sendInternalChat(body.channel, body.message.trim(), body.agents);
+      if (auth.agent && auth.agent !== 'orchestrator') {
+        const recipients = body.agents === undefined ? ['orchestrator'] : body.agents;
+        if (!Array.isArray(recipients) || recipients.length !== 1 || recipients[0] !== 'orchestrator') {
+          json(res, 403, { error: 'Department employees may escalate room messages to the CEO only.' }); return;
+        }
+      }
+      const result = await sendInternalChat(body.channel, body.message.trim(), body.agents, auth.actor);
       json(res, 200, result);
     } catch (error) {
       console.error('Internal chat request failed:', error instanceof Error ? error.message : error);
