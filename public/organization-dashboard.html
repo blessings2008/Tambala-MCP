@@ -40,7 +40,7 @@ details.emp{border:1px solid var(--line);background:#121e31;border-radius:10px;p
  <div class="nav-label">Command</div>
  <button class="nav active" data-view="overview"><span class="ico">◈</span>Overview</button>
  <button class="nav" data-view="tasks"><span class="ico">▤</span>Task centre <span class="count">—</span></button>
- <button class="nav" data-view="approvals"><span class="ico">✓</span>Approvals <span class="count">—</span></button>
+ <button class="nav" data-view="approvals"><span class="ico">✓</span>Founder inbox <span class="count">—</span></button>
  <button class="nav" data-view="departments"><span class="ico">▦</span>Departments</button>
  <div class="nav-label">People & operations</div>
  <button class="nav" data-view="people"><span class="ico">♙</span>Workforce</button>
@@ -121,7 +121,8 @@ function render(){
  val('sTasks',H.openTasks,H.openTasks===null?(d.tasks.ok?'':'Task store unavailable'):'In progress or waiting');
  val('sApprovals',H.pendingApprovals,H.pendingApprovals===null?'Approval register unavailable':'Awaiting an authorized role');
  document.querySelector('.nav[data-view="tasks"] .count').textContent=H.openTasks??'—';
- document.querySelector('.nav[data-view="approvals"] .count').textContent=H.pendingApprovals??'—';
+ const pendingRooms=d.rooms&&d.rooms.ok?d.rooms.data.filter(x=>x.status==='awaiting_founder').length:null;
+ document.querySelector('.nav[data-view="approvals"] .count').textContent=H.pendingApprovals===null||pendingRooms===null?'—':H.pendingApprovals+pendingRooms;
 
  // overview
  const tm=d.taskSummary&&d.taskSummary.ok?d.taskSummary.data:null;
