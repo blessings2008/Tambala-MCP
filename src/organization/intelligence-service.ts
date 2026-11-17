@@ -5,6 +5,7 @@ import { routeCapabilityById } from './capability-registry.js';
 import { resolveExecutionRoute } from './execution-router.js';
 import { assessObjective, type ObjectiveAssessment, type ObjectiveInterpretation } from './intelligence-engine.js';
 import { interpretFounderObjective } from './intelligence-runtime.js';
+import { proposeOrganizationalPlan } from './planning-runtime.js';
 import type { OrganizationalObjective } from './runtime-contracts.js';
 
 export interface FounderObjectiveAssessmentResult {
@@ -88,4 +89,21 @@ export async function assessFounderObjective(
     organizationSource: snapshot.source,
     organizationValidation: snapshot.validation,
   };
+}
+
+/**
+ * End-to-end read-only planning entry point for a Founder request.
+ * Interprets the objective, verifies capability readiness, and asks the CEO to
+ * propose a dependency-aware team plan. It does not persist or execute it.
+ */
+export async function planFounderObjective(
+  request: string,
+  options: { objectiveId?: string; correlationId?: string; companyContext?: unknown; planId?: string } = {},
+) {
+  const result = await assessFounderObjective(request, options);
+  if (result.assessment.status !== 'ready_for_planning') return result;
+  const plan = await proposeOrganizationalPlan(result.assessment, {
+    planId: options.planId ?? `plan-${Date.now()}`,
+  });
+  return { ...result, plan };
 }
