@@ -214,6 +214,7 @@ async function resolveInternalChatActor(req: import('node:http').IncomingMessage
   if (!clientId) return null;
   const identity = await runWithRequestPrincipal({ kind: 'oauth', clientId }, () => resolveOrganizationIdentity());
   if (!identity.authenticated || identity.principalType !== 'oauth' || !identity.role) return null;
+  if (identity.role.id === 'founder') return { actor: { type: 'founder' }, agent: null };
   const agent = internalChatAgentForRole(identity.role.id);
   if (!agent) return null;
   return { actor: { type: 'employee', agent, roleId: identity.role.id, name: identity.role.title }, agent };
