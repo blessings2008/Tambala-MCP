@@ -16,6 +16,7 @@ const CHANNELS = {
 export type InternalChatChannel = keyof typeof CHANNELS;
 export type InternalChatActor = { type: 'founder' } | { type: 'employee'; agent: AgentName; roleId: string; name: string };
 const ROLE_AGENT: Record<string, AgentName> = {
+  board: 'governance',
   ceo: 'orchestrator',
   'director-sales-business-development': 'outreach',
   'director-customer-relations': 'followup',
