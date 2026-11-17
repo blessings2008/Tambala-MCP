@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildPlanProposalEvent, preparePlanStepDispatches, queuePreparedPlanHandoffs, type PlanEmployeeRoute } from '../src/organization/plan-task-bridge.js';
+import { buildPlanProposalEvent, loadPlanProgressFromHandoffs, preparePlanStepDispatches, queuePreparedPlanHandoffs, type PlanEmployeeRoute } from '../src/organization/plan-task-bridge.js';
 import { InMemoryHandoffStore } from '../src/organization/workforce/handoffs.js';
 import type { OrganizationalPlan } from '../src/organization/runtime-contracts.js';
 
@@ -122,4 +122,38 @@ test('rejects reuse of a dispatch key for different work', async () => {
     queuePreparedPlanHandoffs({ prepared: changed, store, parentTaskId: 'parent-123', actorRoleId: 'ceo' }),
     /already associated with different work/,
   );
+});
+
+
+test('reconstructs queued, running, founder-waiting and completed progress from handoffs', async () => {
+  const store = new InMemoryHandoffStore();
+  const prepared = preparePlanStepDispatches(plan, {}, new Set(['research-director', 'strategy-director']), routes);
+  await queuePreparedPlanHandoffs({ prepared, store, parentTaskId: 'parent-123', actorRoleId: 'ceo' });
+
+  let progress = await loadPlanProgressFromHandoffs(plan, store);
+  assert.equal(progress.research?.executionStatus, 'queued');
+
+  store.rows[0]!.status = 'running';
+  progress = await loadPlanProgressFromHandoffs(plan, store);
+  assert.equal(progress.research?.executionStatus, 'running');
+
+  store.rows[0]!.status = 'awaiting_founder';
+  progress = await loadPlanProgressFromHandoffs(plan, store);
+  assert.equal(progress.research?.executionStatus, 'awaiting_founder');
+
+  store.rows[0]!.status = 'completed';
+  progress = await loadPlanProgressFromHandoffs(plan, store);
+  assert.equal(progress.research?.executionStatus, 'completed');
+});
+
+test('approval state is never inferred as approved from a handoff', async () => {
+  const store = new InMemoryHandoffStore();
+  const approvalPlan: OrganizationalPlan = {
+    ...plan,
+    steps: [{ ...plan.steps[0]!, approvalRequired: true }, plan.steps[1]!],
+  };
+  const pending = await loadPlanProgressFromHandoffs(approvalPlan, store);
+  assert.equal(pending.research?.approvalStatus, 'pending');
+  const approved = await loadPlanProgressFromHandoffs(approvalPlan, store, { research: 'approved' });
+  assert.equal(approved.research?.approvalStatus, 'approved');
 });
