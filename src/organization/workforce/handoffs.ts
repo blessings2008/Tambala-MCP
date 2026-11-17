@@ -103,7 +103,10 @@ export class InMemoryHandoffStore implements HandoffStore {
   readonly rows: Handoff[] = [];
   readonly rooms: TaskRoom[] = [];
   readonly roomEvents: { room_id: string; event_type: string; actor_role_id: string | null; payload?: unknown }[] = [];
-  async create(h: Omit<Handoff, 'id'>) { const row = { ...h, id: randomUUID() }; this.rows.push(row); return row; }
+  async create(h: Omit<Handoff, 'id'>) {
+    if (h.dispatch_key && this.rows.some((row) => row.dispatch_key === h.dispatch_key)) throw new Error('duplicate key value violates unique constraint organization_handoffs_dispatch_key_unique');
+    const row = { ...h, id: randomUUID() }; this.rows.push(row); return row;
+  }
   async queued(limit: number) { return this.rows.filter((r) => r.status === 'queued').slice(0, limit); }
   async claim(id: string) { const r = this.rows.find((x) => x.id === id); if (!r || r.status !== 'queued') return false; r.status = 'running'; return true; }
   async update(id: string, patch: Partial<Handoff>) { const r = this.rows.find((x) => x.id === id); if (r) Object.assign(r, patch); }
