@@ -67,8 +67,8 @@ export async function readInternalChat(channel: InternalChatChannel) {
 }
 
 /** Founder can convene up to four agents. Each agent receives a compact record of earlier contributions. */
-export async function sendInternalChat(channel: InternalChatChannel, message: string, requestedAgents?: unknown) {
-  const defaultAgent = CHANNELS[channel].agent as AgentName;
+export async function sendInternalChat(channel: InternalChatChannel, message: string, requestedAgents?: unknown, actor: InternalChatActor = { type: 'founder' }) {
+  const defaultAgent = actor.type === 'employee' && actor.agent !== 'orchestrator' ? 'orchestrator' : CHANNELS[channel].agent as AgentName;
   const participants = Array.isArray(requestedAgents)
     ? [...new Set(requestedAgents.filter(isInternalChatAgent))]
     : [defaultAgent];
