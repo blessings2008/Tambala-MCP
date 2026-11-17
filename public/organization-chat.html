@@ -49,7 +49,7 @@ const samples={
  finance:[["finance","Finance Analyst","Finance & Administration","Finance room preview. Provider usage, cost estimates, and department budgets should be visible only to authorized finance and executive roles.","09:55"]],
  founder:[["founder","Founder","Founder Office","Welcome to the Founder Desk preview. In the live system, your identity would be verified server-side before this private room or reserved approvals could be accessed.","10:00"]]
 };
-let current="executive",busy=false,agentDirectory=[];
+let current="executive",busy=false,agentDirectory=[],selectedByRoom={};
 const el=id=>document.getElementById(id);
 const KEY="tambala_chat_test_token";
 const defaultParticipants={executive:["orchestrator"],board:["governance"],research:["research"],sales:["outreach"],customer:["followup"],technology:["engineering"],finance:["finance"],founder:["executive"]};
