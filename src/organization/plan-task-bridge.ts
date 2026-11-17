@@ -35,6 +35,7 @@ export interface PlanStepRouteBlocker {
 }
 
 export interface PlanDispatchPreparation {
+  planId: string;
   coordination: PlanCoordinationSnapshot;
   dispatches: PlanStepDispatch[];
   blockers: PlanStepRouteBlocker[];
@@ -136,6 +137,7 @@ export function preparePlanStepDispatches(
   }
 
   return {
+    planId: plan.id,
     coordination,
     dispatches,
     blockers,
@@ -181,7 +183,7 @@ export async function queuePreparedPlanHandoffs(input: {
       contextSummary: JSON.stringify({
         plan_step: {
           step_id: dispatch.stepId,
-          plan_id: input.prepared.coordination.planId,
+          plan_id: input.prepared.planId,
           idempotency_key: dispatch.idempotencyKey,
           risk: step.risk,
           approval_required: step.approvalRequired,
