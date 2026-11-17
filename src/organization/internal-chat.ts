@@ -21,7 +21,7 @@ export function isInternalChatChannel(value: unknown): value is InternalChatChan
   return typeof value === 'string' && Object.hasOwn(CHANNELS, value);
 }
 
-export function isInternalChatAgent(value: unknown): value is AgentName {
+export function listInternalChatAgents() {\n  return AGENT_NAMES.map((agent) => ({ id: agent, name: AGENT_DIRECTORY[agent].title, department: AGENT_DIRECTORY[agent].unitName }));\n}\n\nexport function isInternalChatAgent(value: unknown): value is AgentName {
   return typeof value === 'string' && AGENT_NAMES.includes(value as AgentName);
 }
 
