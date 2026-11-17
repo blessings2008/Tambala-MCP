@@ -1,4 +1,4 @@
-import { coordinatePlan, type StepProgressRecord, type PlanCoordinationSnapshot } from './plan-coordinator.js';
+import { coordinatePlan, type StepApprovalStatus, type StepProgressRecord, type PlanCoordinationSnapshot } from './plan-coordinator.js';
 import type { AgentName } from '../services/ai/models.js';
 import { queueHandoff, type Handoff, type HandoffStore } from './workforce/handoffs.js';
 import type { OrganizationalPlan, OrganizationalPlanStep } from './runtime-contracts.js';
@@ -235,4 +235,38 @@ export async function persistPlanProposalAndQueueSteps(input: {
     actorRoleId: input.actorRoleId,
     now: input.now,
   });
+}
+
+
+/**
+ * Rebuild plan-step progress from durable handoff rows after a process restart.
+ * Approval state is supplied separately from the authoritative approval system;
+ * absent approval evidence remains pending and never defaults to approved.
+ */
+export async function loadPlanProgressFromHandoffs(
+  plan: OrganizationalPlan,
+  store: HandoffStore,
+  approvalStatuses: Readonly<Record<string, StepApprovalStatus>> = {},
+): Promise<Record<string, StepProgressRecord>> {
+  const entries = await Promise.all(plan.steps.map(async (step) => {
+    const dispatchKey = `plan:${plan.id}:revision:${plan.revision}:step:${step.id}`;
+    const handoff = await store.getByDispatchKey(dispatchKey);
+    let executionStatus: StepProgressRecord['executionStatus'] = 'pending';
+    if (handoff) {
+      switch (handoff.status) {
+        case 'queued': executionStatus = 'queued'; break;
+        case 'running': executionStatus = 'running'; break;
+        case 'awaiting_founder': executionStatus = 'awaiting_founder'; break;
+        case 'completed': executionStatus = 'completed'; break;
+        case 'failed': executionStatus = 'failed'; break;
+      }
+    }
+    const approvalStatus = approvalStatuses[step.id] ?? (step.approvalRequired ? 'pending' : 'not_required');
+    return [step.id, {
+      executionStatus,
+      approvalStatus,
+      failureReason: handoff?.error ?? null,
+    }] as const;
+  }));
+  return Object.fromEntries(entries);
 }
