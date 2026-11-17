@@ -28,7 +28,7 @@ test('parses a structured multi-capability CEO interpretation', () => {
 
 test('accepts a fenced JSON object and safely handles braces inside quoted strings', () => {
   const fence = String.fromCharCode(96).repeat(3);
-  const raw = fence + 'json\\n' + response({ successDescription: 'The result includes a {clear} sequence.' }) + '\\n' + fence;
+  const raw = fence + 'json\n' + response({ successDescription: 'The result includes a {clear} sequence.' }) + '\n' + fence;
   const parsed = parseObjectiveInterpretation(raw, request);
   assert.equal(parsed.successDescription, 'The result includes a {clear} sequence.');
 });
