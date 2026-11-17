@@ -90,12 +90,12 @@ export async function sendInternalChat(channel: InternalChatChannel, message: st
       contribution: item.response.slice(0, 1400),
     }));
     const prompt = [
-      'You are participating in a private Tambala Technologies internal team discussion convened by the Founder.',
+      'You are participating in a private Tambala Technologies internal team discussion initiated by the authenticated sender.',
       'Respond in your own professional role. Consider the Founder request and previous employee contributions.',
       'You may respectfully challenge earlier conclusions when evidence or your department perspective warrants it.',
       'Do not claim to have performed external actions, contacted people, changed records, or completed tasks unless tools explicitly did so.',
       'Keep your contribution focused, practical, and concise.',
-      `FOUNDER REQUEST:
+      `ORIGINAL MESSAGE:
 ${message}`,
       previous.length ? `PREVIOUS TEAM CONTRIBUTIONS:
 ${JSON.stringify(previous)}` : 'You are the first employee to contribute.',
