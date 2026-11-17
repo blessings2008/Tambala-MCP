@@ -1,4 +1,5 @@
 import type { ObjectiveAssessment } from './intelligence-engine.js';
+import { askTambalaAI } from '../services/ai.js';
 import type {
   OrganizationalPlan,
   OrganizationalPlanStep,
@@ -7,6 +8,53 @@ import type {
   WorkRisk,
 } from './runtime-contracts.js';
 import { validateAssessmentPlan } from './intelligence-engine.js';
+
+/**
+ * Ask the CEO runtime to compose a dependency-aware cross-functional plan.
+ * The response is treated as an untrusted proposal and must pass the strict
+ * parser below before it can be presented or persisted.
+ */
+export async function proposeOrganizationalPlan(
+  assessment: ObjectiveAssessment,
+  options: { planId: string; proposedByRoleId?: string; createdAt?: string },
+): Promise<OrganizationalPlan> {
+  if (assessment.status !== 'ready_for_planning') {
+    throw new PlanProposalError('The objective is not ready for planning.');
+  }
+  const capabilityContext = assessment.capabilityReadiness.map((item) => ({
+    capabilityId: item.capabilityId,
+    description: item.description,
+    accountableRoleId: item.role?.id ?? null,
+    accountableRole: item.role?.title ?? null,
+    department: item.unit?.name ?? null,
+    readiness: item.readiness,
+  }));
+  const prompt = [
+    'You are the CEO of Tambala Technologies. Compose a practical, dependency-aware organisational plan for the approved objective below.',
+    'You are proposing a plan only. Do not execute tools, contact people, spend money, change systems, or claim that work is complete.',
+    'Use only the supplied capability IDs. Every required capability must own at least one step. Do not invent employees, roles, departments, tools, data scopes, facts or permissions.',
+    'Break the outcome into the smallest useful sequence of deliverables. Use parallel steps when independent work can proceed safely; use dependsOn only where an actual dependency exists.',
+    'Choose actionKind accurately. external_communication, financial, sensitive_data, security_change and legal_commitment always require approval. High or critical risk and non-reversible steps also require approval.',
+    'Prefer research, analysis, drafting and reversible internal preparation. Clearly define evidence and acceptance criteria for each step.',
+    'For each step return: id, title, objective, capabilityId, supportingCapabilityIds, dependsOn, actionKind, requiredDataScopes, expectedEvidence, expectedDeliverable, acceptanceCriteria, risk, approvalRequired, reversible.',
+    'Return ONLY JSON with rationale, assumptions, unresolvedQuestions, steps. 1–30 steps maximum. No markdown or prose.',
+    'OBJECTIVE:',
+    JSON.stringify({ statement: assessment.objective.statement, desiredOutcome: assessment.objective.desiredOutcome, constraints: assessment.objective.constraints, priority: assessment.objective.priority }),
+    'SUCCESS:',
+    assessment.interpretation.successDescription,
+    'REQUIRED CAPABILITIES AND VERIFIED OWNERS:',
+    JSON.stringify(capabilityContext),
+    'SAFE ASSUMPTIONS:',
+    JSON.stringify(assessment.interpretation.assumptions),
+  ].join('\\n\\n').slice(0, 9000);
+
+  const response = await askTambalaAI('orchestrator', prompt, {
+    communicationType: 'CEO organisational planning',
+    sender: 'Founder / Bless',
+    recipient: 'Chief Executive Officer (CEO)',
+  });
+  return parseOrganizationalPlanProposal(response, assessment, options);
+}
 
 export class PlanProposalError extends Error {
   constructor(message: string) {
