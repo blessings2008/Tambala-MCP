@@ -147,9 +147,15 @@ export function parseActions(body: string): ParsedActions {
     const extracted = extractActionValues(blocks.ACTIONS);
     rejected.push(...extracted.rejected);
     for (const json of extracted.values) {
-      const parsed = actionSchema.safeParse(normalizeLegacyAction(json));
+      const normalized = normalizeLegacyAction(json);
+      const parsed = actionSchema.safeParse(normalized);
       if (!parsed.success) {
-        const type = json && typeof json === 'object' && 'type' in json ? String((json as { type?: unknown }).type) : 'action';
+        const candidate = normalized && typeof normalized === 'object' ? normalized as Record<string, unknown> : {};
+        const type = typeof candidate.type === 'string'
+          ? candidate.type
+          : typeof candidate.action === 'string'
+            ? candidate.action
+            : 'action';
         rejected.push(`${type}: ${parsed.error.issues[0]?.message ?? 'invalid'}`.slice(0, 120));
         continue;
       }
