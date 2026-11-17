@@ -58,6 +58,7 @@ export function parseObjectiveInterpretation(
   response: string,
   originalRequest: string,
 ): ObjectiveInterpretation {
+  if (!originalRequest.trim()) throw new ObjectiveInterpretationError('The Founder request is empty.');
   const json = extractJsonObject(response);
   if (!json) throw new ObjectiveInterpretationError('The CEO did not return a valid JSON interpretation.');
 
