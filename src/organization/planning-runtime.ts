@@ -46,7 +46,7 @@ export async function proposeOrganizationalPlan(
     JSON.stringify(capabilityContext),
     'SAFE ASSUMPTIONS:',
     JSON.stringify(assessment.interpretation.assumptions),
-  ].join('\\n\\n').slice(0, 9000);
+  ].join('\n\n').slice(0, 9000);
 
   const response = await askTambalaAI('orchestrator', prompt, {
     communicationType: 'CEO organisational planning',
