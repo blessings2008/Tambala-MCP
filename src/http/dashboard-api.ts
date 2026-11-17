@@ -29,7 +29,7 @@ export async function section<T>(load: () => Promise<T>): Promise<Section<T>> {
   }
 }
 
-const OPEN_STATUSES = new Set(['created', 'ceo_analyzing', 'delegated', 'executing', 'waiting_for_tool', 'department_review', 'returned_to_ceo', 'needs_more_work']);
+const OPEN_STATUSES = new Set(['created', 'ceo_analyzing', 'delegated', 'executing', 'waiting_for_tool', 'department_review', 'returned_to_ceo', 'needs_more_work', 'awaiting_founder', 'queued', 'pending']);
 
 /** Merge task-stage events with actual duty-run records for the dashboard activity feed. */
 export function mergeRecentActivity(taskEvents: Row[], dutyRuns: Row[]): Row[] {
@@ -235,7 +235,7 @@ export async function buildDashboard() {
       readyAgents: agents.filter((a) => a.ready).length,
       totalAgents: agents.length,
       openTasks: taskSummary?.open ?? null,
-      pendingApprovals: approvals.ok ? approvals.data.length : null,
+      pendingApprovals: approvals.ok ? approvals.data.filter((item) => item.status === 'pending').length : null,
       deniedRecent,
     },
     organization, tasks, taskSummary: taskSummary ? { ok: true as const, data: taskSummary } : { ok: false as const, error: tasks.ok ? '' : tasks.error },
