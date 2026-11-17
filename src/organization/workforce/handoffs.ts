@@ -359,12 +359,6 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       continue;
     }
     if (!(await deps.store.claim(h.id, deps.now().toISOString()))) { outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'already_taken', roomId: h.room_id ?? undefined }); continue; }
-    const heartbeatTimer = setInterval(() => {
-      void deps.store.heartbeat(h.id, deps.now().toISOString()).catch((error: unknown) => {
-        console.error('Handoff worker heartbeat failed:', error instanceof Error ? error.message : error);
-      });
-    }, HANDOFF_HEARTBEAT_INTERVAL_MS);
-    heartbeatTimer.unref?.();
     const attempt = h.attempts + 1;
     const previousError = h.error;
     const [sender, recipient] = await Promise.all([deps.senderLabel(h.from_role_id), deps.recipientLabel(agent)]);
@@ -379,6 +373,12 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       ? 'For this Founder-approved first-contact only, accept when the action result confirms the message was placed in the Founder approval inbox, queued, or sent after CRM and WhatsApp verification. Report the exact state. A pending-approval message is not delivered; never claim sent unless the action result confirms sent.'
       : 'Accept when the requested work is complete against the supplied evidence, including a clear account of limitations and unavailable sources. Do not demand provider logs, account metrics, credentials or actions that the employee cannot access. If missing Founder-controlled access, data or a decision prevents completion, return FOUNDER_INPUT_REQUIRED and ask one precise question. Return REVISION_REQUIRED only when the employee omitted work or made an unsupported claim that can be corrected from the supplied context.';
     const taskId = h.task_id ?? (await deps.tasks.begin(`[Room ${h.room_id ?? h.id}] [Handoff from ${sender}] ${h.request.slice(0, 160)}`)).taskId;
+    const heartbeatTimer = setInterval(() => {
+      void deps.store.heartbeat(h.id, deps.now().toISOString()).catch((error: unknown) => {
+        console.error('Handoff worker heartbeat failed:', error instanceof Error ? error.message : error);
+      });
+    }, HANDOFF_HEARTBEAT_INTERVAL_MS);
+    heartbeatTimer.unref?.();
     try {
       await deps.store.update(h.id, { attempts: attempt, task_id: taskId, error: null });
       if (h.room_id) {
