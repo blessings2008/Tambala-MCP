@@ -21,7 +21,11 @@ export function isInternalChatChannel(value: unknown): value is InternalChatChan
   return typeof value === 'string' && Object.hasOwn(CHANNELS, value);
 }
 
-export function listInternalChatAgents() {\n  return AGENT_NAMES.map((agent) => ({ id: agent, name: AGENT_DIRECTORY[agent].title, department: AGENT_DIRECTORY[agent].unitName }));\n}\n\nexport function isInternalChatAgent(value: unknown): value is AgentName {
+export function listInternalChatAgents() {
+  return AGENT_NAMES.map((agent) => ({ id: agent, name: AGENT_DIRECTORY[agent].title, department: AGENT_DIRECTORY[agent].unitName }));
+}
+
+export function isInternalChatAgent(value: unknown): value is AgentName {
   return typeof value === 'string' && AGENT_NAMES.includes(value as AgentName);
 }
 
@@ -62,9 +66,13 @@ export async function sendInternalChat(channel: InternalChatChannel, message: st
       'You may respectfully challenge earlier conclusions when evidence or your department perspective warrants it.',
       'Do not claim to have performed external actions, contacted people, changed records, or completed tasks unless tools explicitly did so.',
       'Keep your contribution focused, practical, and concise.',
-      `FOUNDER REQUEST:\n${message}`,
-      previous.length ? `PREVIOUS TEAM CONTRIBUTIONS:\n${JSON.stringify(previous)}` : 'You are the first employee to contribute.',
-    ].join('\n\n');
+      `FOUNDER REQUEST:
+${message}`,
+      previous.length ? `PREVIOUS TEAM CONTRIBUTIONS:
+${JSON.stringify(previous)}` : 'You are the first employee to contribute.',
+    ].join('
+
+');
     try {
       const response = await askTambalaAI(agent, prompt);
       const row = await supabaseInsert<MessageRow>('organization_internal_chat_messages', {
