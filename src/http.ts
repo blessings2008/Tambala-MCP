@@ -25,6 +25,7 @@ import { documentStore } from './documents/store.js';
 import { toMinor } from './documents/model.js';
 import { createClientInvoice, InvoiceError } from './payments/invoices.js';
 import { buildDashboard } from './http/dashboard-api.js';
+import { isInternalChatChannel, readInternalChat, sendInternalChat } from './organization/internal-chat.js';
 import { setCorsHeaders } from './http/cors.js';
 import { handleHealth, handleNotFound, handleReadiness } from './http/health.js';
 import { isAuthorized, unauthorized } from './http/auth.js';
@@ -242,12 +243,33 @@ const server = createHttpServer(async (req, res) => {
   }
 
 
-  if ((requestPath === '/api/chat-test/status' || requestPath === '/api/chat-test' || requestPath === '/api/chat-test/collaborate' || requestPath === '/api/chat-test/step' || requestPath === '/api/dashboard' || requestPath === '/api/dashboard/approvals/decide' || requestPath.startsWith('/api/dashboard/')) && (req.method === 'GET' || req.method === 'POST')) {
+  if ((requestPath === '/api/chat-test/status' || requestPath === '/api/chat-test' || requestPath === '/api/chat-test/collaborate' || requestPath === '/api/chat-test/step' || requestPath === '/api/dashboard' || requestPath === '/api/internal-chat' || requestPath.startsWith('/api/internal-chat/') || requestPath === '/api/dashboard/approvals/decide' || requestPath.startsWith('/api/dashboard/')) && (req.method === 'GET' || req.method === 'POST')) {
     if (!chatTokenMatches(bearerToken(req))) { json(res, 401, { error: 'Unauthorized. Check the chat test token.' }); return; }
   }
-  if (requestPath.startsWith('/api/dashboard/') && req.method === 'POST') {
+  if ((requestPath.startsWith('/api/dashboard/') || requestPath === '/api/internal-chat') && req.method === 'POST') {
     try { await assertRuntimeActive(); }
     catch (error) { json(res, 503, { error: error instanceof Error ? error.message : 'Tambala organization is paused.' }); return; }
+  }
+
+  if (requestPath === '/api/internal-chat' && (req.method === 'GET' || req.method === 'POST')) {
+    try {
+      if (req.method === 'GET') {
+        const channel = new URL(req.url ?? '/', 'http://localhost').searchParams.get('channel');
+        if (!isInternalChatChannel(channel)) { json(res, 400, { error: 'Choose a valid internal room.' }); return; }
+        json(res, 200, await readInternalChat(channel));
+        return;
+      }
+      if (!req.headers['content-type']?.toLowerCase().includes('application/json')) { json(res, 415, { error: 'Content-Type must be application/json.' }); return; }
+      const body = await readJsonBody(req) as { channel?: unknown; message?: unknown };
+      if (!body || !isInternalChatChannel(body.channel)) { json(res, 400, { error: 'Choose a valid internal room.' }); return; }
+      if (typeof body.message !== 'string' || !body.message.trim() || body.message.length > 10000) { json(res, 400, { error: 'Write a message between 1 and 10,000 characters.' }); return; }
+      const result = await sendInternalChat(body.channel, body.message.trim());
+      json(res, 200, result);
+    } catch (error) {
+      console.error('Internal chat request failed:', error instanceof Error ? error.message : error);
+      json(res, 500, { error: 'Internal chat could not be loaded or saved.' });
+    }
+    return;
   }
 
   if (requestPath === '/api/chat-test/status' && req.method === 'GET') {

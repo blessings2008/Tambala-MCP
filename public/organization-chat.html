@@ -22,11 +22,11 @@
 <button class="nav" data-channel="technology"><span class="ico">⌘</span>Technology & AI</button>
 <button class="nav" data-channel="finance"><span class="ico">◉</span>Finance</button>
 <div class="label">Private</div><button class="nav" data-channel="founder"><span class="ico">♛</span>Founder Desk<span class="lock">⌑</span></button>
-<div class="sidebar-foot"><div class="founder-card"><strong><span class="dot"></span>Organization preview</strong><p>Private rooms are separated by department. This screen currently runs in demonstration mode.</p></div></div></div></aside>
-<main class="main"><header class="topbar"><div><div class="crumb">Tambala Technologies / <span id="crumb">Executive Management</span></div><div class="title" id="topTitle">Executive Room</div></div><div class="top-right"><button class="mobile-menu" id="roomMenuToggle" aria-expanded="false" aria-controls="mobileRoomMenu">☰ Rooms</button><button class="mobile-menu" id="mobileDemoBtn" aria-label="Run collaboration demo">▶ Demo</button><span class="demo-tag">DEMO MODE</span><div class="avatar" title="Founder">B</div></div></header><div class="mobile-room-menu" id="mobileRoomMenu" hidden aria-label="Choose a chat room"></div>
+<div class="sidebar-foot"><div class="founder-card"><strong><span class="dot"></span>Private internal workspace</strong><p>Private rooms are separated by department. Messages are persisted and conversations are routed to the selected AI employee.</p></div></div></div></aside>
+<main class="main"><header class="topbar"><div><div class="crumb">Tambala Technologies / <span id="crumb">Executive Management</span></div><div class="title" id="topTitle">Executive Room</div></div><div class="top-right"><button class="mobile-menu" id="roomMenuToggle" aria-expanded="false" aria-controls="mobileRoomMenu">☰ Rooms</button><button class="mobile-menu" id="mobileDemoBtn" aria-label="Run collaboration demo">▶ Demo</button><span class="demo-tag">INTERNAL CHAT</span><div class="avatar" title="Founder">B</div></div></header><div class="mobile-room-menu" id="mobileRoomMenu" hidden aria-label="Choose a chat room"></div>
 <section class="conversation" id="conversation" aria-live="polite"><div class="channel-intro"><div class="channel-icon" id="channelIcon">◈</div><div><h1 id="introTitle">Executive Room</h1><p id="introText">The CEO coordinates department work here. Specialist agents report back with findings; important decisions are escalated when required.</p><span class="privacy" id="privacyLabel">◉ Executive access · restricted</span></div></div><div class="divider">Today · workspace preview</div><div id="messages"></div></section>
 <div class="composer-wrap"><div class="composer-note"><span>✦</span><span id="composerLabel">Message the CEO orchestrator</span></div><form class="composer" id="chatForm"><textarea id="messageInput" rows="1" placeholder="Give the organization an objective…" aria-label="Message"></textarea><button class="send" id="sendBtn" type="submit">Send ↗</button></form><div class="helper">Enter to send · Shift + Enter for a new line · Demo messages are simulated and do not call an AI provider.</div></div></main>
-<aside class="rightbar"><div class="right-title">Agents in this room <span class="live">PREVIEW</span></div><div id="agentList"></div><div class="section-gap"><div class="right-title">Workflow activity <span style="color:#7185a4;font-size:10px">SAMPLE</span></div><div id="taskList"></div></div><div class="privacy-note"><strong>⌑ Room privacy matters</strong><p>Each room is a separate conversation space. In production, server-side role checks must control membership and message retrieval; hiding a room in the interface is not security.</p></div><button class="demo-btn" id="demoBtn">▶ Run a collaboration demo</button></aside>
+<aside class="rightbar"><div class="right-title">Agents in this room <span class="live">AVAILABLE</span></div><div id="agentList"></div><div class="section-gap"><div class="right-title">Workflow activity <span style="color:#7185a4;font-size:10px">SAMPLE</span></div><div id="taskList"></div></div><div class="privacy-note"><strong>⌑ Room privacy matters</strong><p>Each room is a separate conversation space. In production, server-side role checks must control membership and message retrieval; hiding a room in the interface is not security.</p></div><button class="demo-btn" id="demoBtn">▶ Run a collaboration demo</button></aside>
 </div><div class="toast" id="toast"></div>
 <script>
 const rooms={
@@ -49,18 +49,72 @@ const samples={
  finance:[["finance","Finance Analyst","Finance & Administration","Finance room preview. Provider usage, cost estimates, and department budgets should be visible only to authorized finance and executive roles.","09:55"]],
  founder:[["founder","Founder","Founder Office","Welcome to the Founder Desk preview. In the live system, your identity would be verified server-side before this private room or reserved approvals could be accessed.","10:00"]]
 };
-let current="executive";let demoRunning=false;
+let current="executive",busy=false;
 const el=id=>document.getElementById(id);
+const KEY="tambala_chat_test_token";
+const roomAgents={
+ executive:[["ceo","CEO Orchestrator","Executive Management","ready"]],
+ board:[["board","Board Governance","Board & Governance","ready"]],
+ research:[["research","Research Analyst","Research & Intelligence","ready"]],
+ sales:[["sales","Sales Agent","Sales & Business Development","ready"]],
+ customer:[["care","Customer Relations Agent","Customer Relations","ready"]],
+ technology:[["tech","Technology Agent","Technology & Engineering","ready"]],
+ finance:[["finance","Finance Analyst","Finance & Accounting","ready"]],
+ founder:[["founder","Executive Management","Founder Office","ready"]]
+};
+function token(){return sessionStorage.getItem(KEY)||""}
+async function api(path,options={}){
+ const t=token();if(!t)throw Error("Open the organization dashboard first and sign in. Your dashboard session is shared with internal chat.");
+ const response=await fetch(path,{...options,headers:{Authorization:"Bearer "+t,"Content-Type":"application/json",...(options.headers||{})}});
+ const data=await response.json().catch(()=>({error:"Invalid server response"}));
+ if(!response.ok)throw Error(data.error||"Request failed ("+response.status+")");
+ return data;
+}
 function faceClass(id){return ({ceo:"ceo",research:"research",sales:"sales",tech:"tech",founder:"ceo",board:"research",care:"sales",finance:"tech",user:"userface"})[id]||""}
-function addMessage([id,name,role,body,time],user=false){const wrap=document.createElement("div");wrap.className="message"+(user?" user":"");const face=document.createElement("div");face.className="face "+faceClass(user?"user":id);face.textContent=user?"B":({ceo:"C",research:"R",sales:"S",tech:"T",founder:"B",board:"B",care:"C",finance:"F",user:"B"})[id]||"?";const mb=document.createElement("div");mb.className="message-body";const meta=document.createElement("div");meta.className="message-meta";const strong=document.createElement("strong");strong.textContent=name;const r=document.createElement("span");r.className="role";r.textContent=role;const t=document.createElement("span");t.className="time";t.textContent=time||"now";meta.append(strong,r,t);const bubble=document.createElement("div");bubble.className="bubble";bubble.textContent=body;mb.append(meta,bubble);wrap.append(face,mb);el("messages").append(wrap);el("conversation").scrollTop=el("conversation").scrollHeight}
-function renderRoom(key){current=key;const room=rooms[key];el("mobileRoomMenu").hidden=true;el("roomMenuToggle").setAttribute("aria-expanded","false");el("crumb").textContent=room.unit;el("topTitle").textContent=room.name;el("introTitle").textContent=room.name;el("introText").textContent=room.intro;el("channelIcon").textContent=room.icon;el("privacyLabel").textContent="◉ "+room.privacy;el("composerLabel").textContent=room.composer||("Message "+room.name);el("messageInput").placeholder=key==="board"?"Write a Boardroom note…":key==="founder"?"Give a private instruction…":"Write a message for this room…";document.querySelectorAll(".nav").forEach(b=>b.classList.toggle("active",b.dataset.channel===key));document.querySelectorAll(".mobile-room-menu button").forEach(b=>b.classList.toggle("active",b.dataset.channel===key));el("messages").replaceChildren();samples[key].forEach(m=>addMessage(m));el("agentList").replaceChildren();room.agents.forEach(a=>{const row=document.createElement("div");row.className="agent-row";const sym=document.createElement("div");sym.className="agent-symbol";sym.textContent=({ceo:"◈",research:"⌕",sales:"↗",tech:"⌘",founder:"♛",board:"♜",care:"♡",finance:"◉"})[a[0]]||"✦";const copy=document.createElement("div");copy.className="agent-copy";const s=document.createElement("strong");s.textContent=a[1];const sm=document.createElement("small");sm.textContent=a[2];copy.append(s,sm);const status=document.createElement("span");status.className="status "+(a[3]==="active"?"ready":a[3]==="planned"?"wait":"");status.textContent=a[3]==="active"?"ACTIVE":a[3]==="planned"?"PLANNED":"PREVIEW";row.append(sym,copy,status);el("agentList").append(row)});el("taskList").replaceChildren();room.tasks.forEach(t=>{const row=document.createElement("div");row.className="task-item";const ico=document.createElement("span");ico.className="task-icon";ico.textContent=t[0];const d=document.createElement("div");const s=document.createElement("strong");s.textContent=t[1];const sm=document.createElement("small");sm.textContent=t[2];const st=document.createElement("span");st.className="task-state";st.textContent=t[3];d.append(s,sm,st);row.append(ico,d);el("taskList").append(row)});el("conversation").scrollTop=0}
+function addPersistentMessage(m){
+ const user=m.sender_type==="founder",id=user?"user":m.sender_role_id;
+ const wrap=document.createElement("div");wrap.className="message"+(user?" user":"");
+ const face=document.createElement("div");face.className="face "+faceClass(id);face.textContent=user?"B":(m.sender_name||"A").slice(0,1).toUpperCase();
+ const mb=document.createElement("div");mb.className="message-body";const meta=document.createElement("div");meta.className="message-meta";
+ const strong=document.createElement("strong");strong.textContent=m.sender_name;
+ const role=document.createElement("span");role.className="role";role.textContent=user?"Founder":"AI employee";
+ const time=document.createElement("span");time.className="time";time.textContent=new Date(m.created_at).toLocaleString([], {hour:"2-digit",minute:"2-digit",day:"numeric",month:"short"});
+ meta.append(strong,role,time);const bubble=document.createElement("div");bubble.className="bubble";bubble.textContent=m.body;
+ mb.append(meta,bubble);wrap.append(face,mb);el("messages").append(wrap);
+}
 function toast(msg){el("toast").textContent=msg;el("toast").style.display="block";setTimeout(()=>el("toast").style.display="none",3000)}
+function renderRoom(key){
+ current=key;const room=rooms[key];el("mobileRoomMenu").hidden=true;el("roomMenuToggle").setAttribute("aria-expanded","false");
+ el("crumb").textContent=room.unit;el("topTitle").textContent=room.name;el("introTitle").textContent=room.name;el("introText").textContent=room.intro;
+ el("channelIcon").textContent=room.icon;el("privacyLabel").textContent="◉ Founder access · internal only";
+ el("composerLabel").textContent=room.composer||("Message "+room.name);
+ el("messageInput").placeholder=key==="board"?"Write a Boardroom message…":key==="founder"?"Send a private executive instruction…":"Write a message for this department…";
+ document.querySelectorAll(".nav").forEach(b=>b.classList.toggle("active",b.dataset.channel===key));
+ document.querySelectorAll(".mobile-room-menu button").forEach(b=>b.classList.toggle("active",b.dataset.channel===key));
+ el("messages").replaceChildren();el("messages").append(Object.assign(document.createElement("div"),{className:"divider",textContent:"Persistent conversation"}));
+ el("agentList").replaceChildren();(roomAgents[key]||[]).forEach(a=>{const row=document.createElement("div");row.className="agent-row";const sym=document.createElement("div");sym.className="agent-symbol";sym.textContent=room.icon;const copy=document.createElement("div");copy.className="agent-copy";const s=document.createElement("strong");s.textContent=a[1];const sm=document.createElement("small");sm.textContent=a[2];copy.append(s,sm);const status=document.createElement("span");status.className="status ready";status.textContent="AVAILABLE";row.append(sym,copy,status);el("agentList").append(row)});
+ el("taskList").replaceChildren();const note=document.createElement("div");note.className="privacy-note";const strong=document.createElement("strong");strong.textContent="Conversation storage";const p=document.createElement("p");p.textContent="Messages are saved in Tambala's internal chat ledger. They do not enter the customer WhatsApp outbox.";note.append(strong,p);el("taskList").append(note);
+ el("conversation").scrollTop=0;loadRoom(key);
+}
+async function loadRoom(key){
+ try{const data=await api("/api/internal-chat?channel="+encodeURIComponent(key));if(current!==key)return;
+  el("messages").replaceChildren();const divider=document.createElement("div");divider.className="divider";divider.textContent="Saved conversation";el("messages").append(divider);
+  if(!data.messages.length){const empty=document.createElement("p");empty.style.cssText="color:#8799b5;text-align:center;font-size:12px;padding:24px";empty.textContent="No messages yet. Start the conversation with this department.";el("messages").append(empty)}
+  data.messages.forEach(addPersistentMessage);el("conversation").scrollTop=el("conversation").scrollHeight;
+ }catch(e){el("messages").replaceChildren();const err=document.createElement("p");err.style.cssText="color:#ffb4b4;padding:15px";err.textContent=e.message;el("messages").append(err)}
+}
 document.querySelectorAll(".nav").forEach(b=>b.addEventListener("click",()=>renderRoom(b.dataset.channel)));
 Object.entries(rooms).forEach(([key,room])=>{const b=document.createElement("button");b.type="button";b.dataset.channel=key;b.textContent=room.icon+"  "+room.name;b.addEventListener("click",()=>renderRoom(key));el("mobileRoomMenu").append(b)});
 el("roomMenuToggle").addEventListener("click",()=>{const menu=el("mobileRoomMenu");menu.hidden=!menu.hidden;el("roomMenuToggle").setAttribute("aria-expanded",String(!menu.hidden))});
-el("mobileDemoBtn").addEventListener("click",()=>{renderRoom("executive");el("demoBtn").click()});
-el("chatForm").addEventListener("submit",e=>{e.preventDefault();const input=el("messageInput");const value=input.value.trim();if(!value)return;addMessage(["user","You","Founder",value,new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})],true);input.value="";toast("Preview only — this message was not sent to an AI agent.");});
+el("mobileDemoBtn").style.display="none";el("demoBtn").style.display="none";
+el("chatForm").addEventListener("submit",async e=>{
+ e.preventDefault();if(busy)return;const input=el("messageInput"),value=input.value.trim();if(!value)return;
+ busy=true;el("sendBtn").disabled=true;el("sendBtn").textContent="Sending…";
+ try{const result=await api("/api/internal-chat",{method:"POST",body:JSON.stringify({channel:current,message:value})});input.value="";await loadRoom(current);if(result.error)toast("Your message was saved, but the agent could not respond: "+result.error)}
+ catch(err){toast(err.message)}
+ finally{busy=false;el("sendBtn").disabled=false;el("sendBtn").textContent="Send ↗"}
+});
 el("messageInput").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();el("chatForm").requestSubmit()}});
-el("demoBtn").addEventListener("click",async()=>{if(demoRunning)return;renderRoom("executive");demoRunning=true;el("demoBtn").disabled=true;el("demoBtn").textContent="Running preview…";el("messages").replaceChildren();addMessage(["user","You","Founder","Find suitable lodge prospects and prepare outreach drafts."]);const steps=[["ceo","CEO Orchestrator","Executive Management","I'll coordinate this objective. First, Research will verify prospects; then Sales will draft outreach from the approved findings.","now"],["research","Research Analyst","Research & Intelligence","Research task accepted. I'll return source-backed prospect details and flag anything that cannot be verified.","working"],["research","Research Analyst","Research & Intelligence","Research report ready: sample prospect list with contact verification notes. In production, the report would be saved and referenced by a task ID.","completed"],["sales","Sales Agent","Sales & Business Development","Handoff received. I'll prepare personalized drafts from the research report and avoid making up missing details.","working"],["sales","Sales Agent","Sales & Business Development","Draft set prepared for CEO review. Nothing has been sent to a prospect.","completed"],["ceo","CEO Orchestrator","Executive Management","Workflow complete. Research and Sales worked in sequence; the result is ready for Founder review. Reminder: this is simulated demo data, not live agent execution.","now"]];for(const s of steps){await new Promise(r=>setTimeout(r,850));addMessage(s)}demoRunning=false;el("demoBtn").disabled=false;el("demoBtn").textContent="↻ Run collaboration demo";});
+el("demoBtn").style.display="none";
 renderRoom("executive");
 </script></body></html>
