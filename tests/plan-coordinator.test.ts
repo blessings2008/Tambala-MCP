@@ -60,3 +60,14 @@ test('preserves running, completed and cancelled execution states', () => {
   assert.equal(snapshot.steps.find((item) => item.stepId === 'research')?.status, 'in_progress');
   assert.equal(snapshot.steps.find((item) => item.stepId === 'recommend')?.status, 'cancelled');
 });
+
+
+test('keeps queued and Founder-waiting handoffs out of the ready queue', () => {
+  const snapshot = coordinatePlan(plan, {
+    research: { executionStatus: 'queued', approvalStatus: 'not_required' },
+    recommend: { executionStatus: 'awaiting_founder', approvalStatus: 'approved' },
+  }, active);
+  assert.deepEqual(snapshot.readyStepIds, []);
+  assert.equal(snapshot.steps.find((item) => item.stepId === 'research')?.status, 'queued');
+  assert.equal(snapshot.steps.find((item) => item.stepId === 'recommend')?.status, 'awaiting_founder');
+});
