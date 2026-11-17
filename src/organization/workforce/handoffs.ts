@@ -310,6 +310,30 @@ function confirmsPendingApprovalAction(value: string): boolean {
 /** Each delegation runs in an isolated, durable room. A room closes only after its deliverable is accepted. */
 export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<HandoffOutcome[]> {
   const outcomes: HandoffOutcome[] = [];
+  const expiredBefore = new Date(deps.now().getTime() - HANDOFF_LEASE_TIMEOUT_MS).toISOString();
+  const expired = await deps.store.expiredRunning(expiredBefore, limit);
+  for (const stale of expired) {
+    const reason = 'The handoff worker stopped reporting heartbeats. This work has been paused for Founder review; verify any external side effects before resuming.';
+    if (!(await deps.store.quarantineExpired(stale.id, expiredBefore, reason))) continue;
+    if (stale.task_id) {
+      try {
+        await deps.tasks.advance(stale.task_id, [{
+          status: 'awaiting_founder',
+          stage: 'founder',
+          eventType: 'handoff_worker_lease_expired',
+          roleId: 'ceo',
+          result: { handoffId: stale.id, roomId: stale.room_id, reason, automaticRetry: false },
+        }]);
+      } catch (error) {
+        console.error('Could not move expired handoff task to Founder review:', error instanceof Error ? error.message : error);
+      }
+    }
+    if (stale.room_id) {
+      await deps.store.updateRoom(stale.room_id, { status: 'awaiting_founder', blocker: reason, closed_at: null });
+      await deps.store.roomEvent(stale.room_id, 'worker_lease_expired', 'ceo', { reason, automaticRetry: false });
+    }
+    outcomes.push({ handoffId: stale.id, toAgent: stale.to_agent, status: 'waiting', reason, taskId: stale.task_id ?? undefined, roomId: stale.room_id ?? undefined });
+  }
   const recent = await deps.store.recent(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
   for (const waiting of recent) {
     if (waiting.source_duty_id !== 'approved-prospect-first-contact' || waiting.status !== 'awaiting_founder') continue;
