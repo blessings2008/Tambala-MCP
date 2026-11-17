@@ -212,7 +212,6 @@ export async function buildDashboard() {
     }),
     section(() => db<Row>('clients', 'select=id,name,business_name,email,phone,whatsapp,location,status,created_at,updated_at&order=updated_at.desc&limit=100')),
     section(() => db<Row>('projects', 'select=id,client_id,name,description,project_type,status,priority,budget,start_date,due_date,repository_url,live_url,department_id,created_at,updated_at&order=updated_at.desc&limit=100')),
-    }),
   ]);
 
   const agents = (Object.keys(AGENT_DIRECTORY) as AgentName[]).map((name) => {
