@@ -219,10 +219,15 @@ async function resolveInternalChatActor(req: import('node:http').IncomingMessage
   return { actor: { type: 'employee', agent, roleId: identity.role.id, name: identity.role.title }, agent };
 }
 
+function internalChatAllowedChannels(agent: AgentName | null): string[] {
+  if (agent === null) return ['executive', 'board', 'research', 'sales', 'customer', 'technology', 'finance', 'founder'];
+  if (agent === 'orchestrator') return ['executive', 'board', 'research', 'sales', 'customer', 'technology', 'finance'];
+  const channel = internalChatChannelForAgent(agent);
+  return channel && channel !== 'founder' ? [channel] : [];
+}
+
 function internalChatChannelAllowed(agent: AgentName | null, channel: string): boolean {
-  if (agent === null) return true;
-  if (agent === 'orchestrator') return channel !== 'founder';
-  return internalChatChannelForAgent(agent) === channel;
+  return internalChatAllowedChannels(agent).includes(channel);
 }
 
 const server = createHttpServer(async (req, res) => {
@@ -271,15 +276,20 @@ const server = createHttpServer(async (req, res) => {
     catch (error) { json(res, 503, { error: error instanceof Error ? error.message : 'Tambala organization is paused.' }); return; }
   }
 
-  if (requestPath === '/api/internal-chat' && (req.method === 'GET' || req.method === 'POST')) {
+  if ((requestPath === '/api/internal-chat' && (req.method === 'GET' || req.method === 'POST')) || (requestPath === '/api/internal-chat/identity' && req.method === 'GET')) {
     try {
       const auth = await resolveInternalChatActor(req);
       if (!auth) { json(res, 403, { error: 'This account has no active Tambala employee identity.' }); return; }
+      if (requestPath === '/api/internal-chat/identity') {
+        json(res, 200, { identity: auth.agent ? { type: 'employee', agent: auth.agent } : { type: 'founder' }, allowedChannels: internalChatAllowedChannels(auth.agent) });
+        return;
+      }
       if (req.method === 'GET') {
         const channel = new URL(req.url ?? '/', 'http://localhost').searchParams.get('channel');
         if (!isInternalChatChannel(channel)) { json(res, 400, { error: 'Choose a valid internal room.' }); return; }
         if (!internalChatChannelAllowed(auth.agent, channel)) { json(res, 403, { error: 'Your employee role cannot access this room.' }); return; }
-        json(res, 200, { ...(await readInternalChat(channel)), agents: listInternalChatAgents(), identity: auth.agent ? { type: 'employee', agent: auth.agent } : { type: 'founder' } });
+        const visibleAgents = auth.agent && auth.agent !== 'orchestrator' ? listInternalChatAgents().filter((item) => item.id === 'orchestrator') : listInternalChatAgents();
+        json(res, 200, { ...(await readInternalChat(channel)), agents: visibleAgents, identity: auth.agent ? { type: 'employee', agent: auth.agent } : { type: 'founder' }, allowedChannels: internalChatAllowedChannels(auth.agent) });
         return;
       }
       if (!req.headers['content-type']?.toLowerCase().includes('application/json')) { json(res, 415, { error: 'Content-Type must be application/json.' }); return; }
