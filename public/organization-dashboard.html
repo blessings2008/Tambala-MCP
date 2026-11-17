@@ -375,8 +375,10 @@ function renderFounderRooms(section){
 function renderApprovals(section){
  const el=$('approvalList');el.replaceChildren();
  if(!section.ok){el.append(h('div','err-box','Could not load: '+section.error));return}
- if(!section.data.length){el.append(empty('No pending approvals','Prepared work from your staff appears here for your decision.'));return}
- section.data.forEach(a=>{
+ const pending=section.data.filter(a=>a.status==='pending');
+ const history=section.data.filter(a=>a.status!=='pending');
+ if(!pending.length)el.append(empty('No pending approvals','There are no outstanding approval requests. Recent decisions are listed below.'));
+ pending.forEach(a=>{
   const box=h('div','apv');const top=h('div','list-row');top.style.border='0';top.style.padding='0';
   const c=h('div','list-copy');c.append(h('b','',a.summary),h('small','',a.action_type.replaceAll('_',' ')+' · from '+a.requested_by_role_id+' · '+ago(a.created_at)));top.append(c,badge(a.risk_level,a.risk_level==='high'||a.risk_level==='critical'?'bad':'pending'));box.append(top);
   if(a.content){const det=document.createElement('details');det.append(h('summary','','View prepared work'));det.lastChild.style.cssText='cursor:pointer;font-size:10px;color:var(--blue);margin-top:4px';det.append(h('div','pre',a.content));box.append(det)}
