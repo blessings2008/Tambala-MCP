@@ -81,8 +81,6 @@ function classifyStep(
   });
 
   if (state.executionStatus === 'completed') return result('completed', 'The step has a recorded completion state.');
-  if (state.executionStatus === 'queued') return result('queued', 'A durable employee handoff is queued.');
-  if (state.executionStatus === 'awaiting_founder') return result('awaiting_founder', 'The employee handoff is waiting for Founder input.');
   if (state.executionStatus === 'cancelled') return result('cancelled', 'The step was cancelled.');
   if (state.executionStatus === 'failed') return result('failed', state.failureReason?.trim() || 'The step failed and needs review.');
   if (state.executionStatus === 'running') return result('in_progress', 'The step is already in progress.');
@@ -90,6 +88,8 @@ function classifyStep(
   if (step.approvalRequired && state.approvalStatus !== 'approved') {
     return result('awaiting_approval', 'The step cannot start until its required approval is recorded.');
   }
+  if (state.executionStatus === 'queued') return result('queued', 'A durable employee handoff is queued.');
+  if (state.executionStatus === 'awaiting_founder') return result('awaiting_founder', 'The employee handoff is waiting for Founder input.');
   if (!step.accountableRoleId || !activeRoleIds.has(step.accountableRoleId)) {
     return result('blocked_owner_inactive', 'The accountable role is missing or not active; ownership must be reassigned through an approved plan revision.');
   }
