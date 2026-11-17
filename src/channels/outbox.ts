@@ -72,14 +72,18 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
   const founder = deps.founderNumber();
   const blocked = await deps.store.blockedNumbers();
   const base = decide({ to, purpose: input.purpose, agent: input.agent, text: input.text, hasDocument: Boolean(input.documentId) }, { founderNumber: founder, blocked });
-  if (input.founderApprovedFirstContact && base.verdict !== 'block') {
+  if (input.founderApprovedFirstContact) {
+    // Validate provenance before any other policy outcome so a blocked/unknown
+    // sender cannot smuggle the privileged first-contact flag through this path.
     if (input.agent !== 'outreach' || input.roleId !== 'director-sales-business-development' || input.purpose !== 'outreach' || !input.taskId) {
       throw new OutboxError('Founder-approved first-contact verification is restricted to the approved Outreach workflow.');
     }
-    if (!deps.verifyOutreachLead) throw new OutboxError('The CRM/WhatsApp verification service is unavailable; no customer message was queued.');
-    const verified = await deps.verifyOutreachLead(to);
-    if (!verified) throw new OutboxError('Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number.');
-    verifiedContactLabel = verified;
+    if (base.verdict !== 'block') {
+      if (!deps.verifyOutreachLead) throw new OutboxError('The CRM/WhatsApp verification service is unavailable; no customer message was queued.');
+      const verified = await deps.verifyOutreachLead(to);
+      if (!verified) throw new OutboxError('Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number.');
+      verifiedContactLabel = verified;
+    }
   }
   const customerCopy = base.audience === 'client' ? sanitizeCustomerMessage(input.text.trim()) : input.text.trim();
   if (base.audience === 'client' && customerCopy.length < 2) throw new OutboxError('The customer message contains no usable business content after internal notes were removed.');
