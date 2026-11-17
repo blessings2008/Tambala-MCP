@@ -10,6 +10,8 @@ import { isPermanentAgentFailure } from './retry-policy.js';
 
 export const MAX_HANDOFFS_PER_DUTY = 2;
 export const MAX_HANDOFF_ATTEMPTS = 5;
+export const HANDOFF_LEASE_TIMEOUT_MS = 30 * 60 * 1000;
+export const HANDOFF_HEARTBEAT_INTERVAL_MS = 30 * 1000;
 
 export type HandoffStatus = 'queued' | 'running' | 'awaiting_founder' | 'completed' | 'failed';
 export type TaskRoomStatus = 'active' | 'awaiting_founder' | 'blocked' | 'ready_for_review' | 'revision_requested' | 'completed' | 'failed' | 'cancelled' | 'archived';
@@ -20,7 +22,7 @@ export interface TaskRoom {
 }
 export interface Handoff {
   id: string; from_role_id: string; to_role_id: string; to_agent: string; request: string; context_summary: string | null;
-  source_task_id: string | null; source_duty_id: string | null; dispatch_key?: string | null; status: HandoffStatus; attempts: number;
+  source_task_id: string | null; source_duty_id: string | null; dispatch_key?: string | null; claimed_at?: string | null; heartbeat_at?: string | null; status: HandoffStatus; attempts: number;
   result: string | null; error: string | null; task_id: string | null; room_id: string | null; created_at: string; completed_at: string | null;
 }
 
@@ -69,7 +71,10 @@ export function colleagueList(excluding: AgentName): string {
 export interface HandoffStore {
   create(h: Omit<Handoff, 'id'>): Promise<Handoff>;
   queued(limit: number): Promise<Handoff[]>;
-  claim(id: string): Promise<boolean>;
+  claim(id: string, claimedAt?: string): Promise<boolean>;
+  heartbeat(id: string, heartbeatAt: string): Promise<boolean>;
+  expiredRunning(beforeIso: string, limit: number): Promise<Handoff[]>;
+  quarantineExpired(id: string, beforeIso: string, reason: string): Promise<boolean>;
   update(id: string, patch: Partial<Handoff>): Promise<void>;
   recent(sinceIso: string): Promise<Handoff[]>;
   get(id: string): Promise<Handoff | null>;
@@ -83,8 +88,17 @@ export interface HandoffStore {
 export class SupabaseHandoffStore implements HandoffStore {
   create(h: Omit<Handoff, 'id'>) { return supabaseInsert<Handoff>('organization_handoffs', h as unknown as Record<string, unknown>); }
   queued(limit: number) { return supabaseSelect<Handoff>('organization_handoffs', `select=*&status=eq.queued&order=created_at.asc&limit=${limit}`); }
-  async claim(id: string) {
-    try { await supabaseUpdate('organization_handoffs', { status: 'running' }, `id=eq.${encodeURIComponent(id)}&status=eq.queued`); return true; }
+  async claim(id: string, claimedAt = new Date().toISOString()) {
+    try { await supabaseUpdate('organization_handoffs', { status: 'running', claimed_at: claimedAt, heartbeat_at: claimedAt }, `id=eq.${encodeURIComponent(id)}&status=eq.queued`); return true; }
+    catch (error) { if (error instanceof Error && /returned no record/.test(error.message)) return false; throw error; }
+  }
+  async heartbeat(id: string, heartbeatAt: string) {
+    try { await supabaseUpdate('organization_handoffs', { heartbeat_at: heartbeatAt }, `id=eq.${encodeURIComponent(id)}&status=eq.running`); return true; }
+    catch (error) { if (error instanceof Error && /returned no record/.test(error.message)) return false; throw error; }
+  }
+  expiredRunning(beforeIso: string, limit: number) { return supabaseSelect<Handoff>('organization_handoffs', `select=*&status=eq.running&heartbeat_at=lt.${encodeURIComponent(beforeIso)}&order=heartbeat_at.asc&limit=${limit}`); }
+  async quarantineExpired(id: string, beforeIso: string, reason: string) {
+    try { await supabaseUpdate('organization_handoffs', { status: 'awaiting_founder', error: reason, completed_at: null }, `id=eq.${encodeURIComponent(id)}&status=eq.running&heartbeat_at=lt.${encodeURIComponent(beforeIso)}`); return true; }
     catch (error) { if (error instanceof Error && /returned no record/.test(error.message)) return false; throw error; }
   }
   async update(id: string, patch: Partial<Handoff>) { await supabaseUpdate('organization_handoffs', patch as Record<string, unknown>, `id=eq.${encodeURIComponent(id)}`); }
@@ -108,7 +122,10 @@ export class InMemoryHandoffStore implements HandoffStore {
     const row = { ...h, id: randomUUID() }; this.rows.push(row); return row;
   }
   async queued(limit: number) { return this.rows.filter((r) => r.status === 'queued').slice(0, limit); }
-  async claim(id: string) { const r = this.rows.find((x) => x.id === id); if (!r || r.status !== 'queued') return false; r.status = 'running'; return true; }
+  async claim(id: string, claimedAt = new Date().toISOString()) { const r = this.rows.find((x) => x.id === id); if (!r || r.status !== 'queued') return false; r.status = 'running'; r.claimed_at = claimedAt; r.heartbeat_at = claimedAt; return true; }
+  async heartbeat(id: string, heartbeatAt: string) { const r = this.rows.find((x) => x.id === id); if (!r || r.status !== 'running') return false; r.heartbeat_at = heartbeatAt; return true; }
+  async expiredRunning(beforeIso: string, limit: number) { return this.rows.filter((r) => r.status === 'running' && Boolean(r.heartbeat_at) && r.heartbeat_at! < beforeIso).sort((a, b) => (a.heartbeat_at ?? '').localeCompare(b.heartbeat_at ?? '')).slice(0, limit); }
+  async quarantineExpired(id: string, beforeIso: string, reason: string) { const r = this.rows.find((x) => x.id === id); if (!r || r.status !== 'running' || !r.heartbeat_at || r.heartbeat_at >= beforeIso) return false; r.status = 'awaiting_founder'; r.error = reason; r.completed_at = null; return true; }
   async update(id: string, patch: Partial<Handoff>) { const r = this.rows.find((x) => x.id === id); if (r) Object.assign(r, patch); }
   async recent(sinceIso: string) { return this.rows.filter((r) => r.created_at >= sinceIso).reverse(); }
   async get(id: string) { return this.rows.find((r) => r.id === id) ?? null; }
@@ -317,7 +334,13 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason: blocked, roomId: h.room_id ?? undefined });
       continue;
     }
-    if (!(await deps.store.claim(h.id))) { outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'already_taken', roomId: h.room_id ?? undefined }); continue; }
+    if (!(await deps.store.claim(h.id, deps.now().toISOString()))) { outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'already_taken', roomId: h.room_id ?? undefined }); continue; }
+    const heartbeatTimer = setInterval(() => {
+      void deps.store.heartbeat(h.id, deps.now().toISOString()).catch((error: unknown) => {
+        console.error('Handoff worker heartbeat failed:', error instanceof Error ? error.message : error);
+      });
+    }, HANDOFF_HEARTBEAT_INTERVAL_MS);
+    heartbeatTimer.unref?.();
     const attempt = h.attempts + 1;
     const previousError = h.error;
     const [sender, recipient] = await Promise.all([deps.senderLabel(h.from_role_id), deps.recipientLabel(agent)]);
@@ -538,6 +561,8 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         await deps.store.roomEvent(h.room_id, final ? 'room_failed' : 'room_retry_scheduled', h.to_role_id, { error: message.slice(0, 500), attempt });
       }
       outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: final ? 'failed' : 'retry', reason: message, taskId, roomId: h.room_id ?? undefined });
+    } finally {
+      clearInterval(heartbeatTimer);
     }
   }
   return outcomes;
