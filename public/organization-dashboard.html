@@ -228,6 +228,17 @@ function renderCriticalSections(d){
  try{renderMessages(d)}catch(error){$('msgList').replaceChildren(h('div','err-box','Messages could not render: '+error.message))}
  try{renderDocuments(d)}catch(error){$('docList').replaceChildren(h('div','err-box','Documents could not render: '+error.message))}
  try{renderPortfolio(d)}catch(error){$('portfolioList').replaceChildren(h('div','err-box','Portfolio could not render: '+error.message))}
+ try{renderWorkspaceMetrics(d);renderExtendedInsights(d)}catch(error){$('metricHealth').replaceChildren(h('div','err-box','Metrics could not render: '+error.message))}
+ try{renderSignatures(d)}catch(error){$('ledgerList').replaceChildren(h('div','err-box','Signature ledger could not render: '+error.message))}
+ try{
+  sec('decisionList',d.decisions,x=>x.map(a=>row(a.title||'Untitled decision',(a.required_authority||'')+' · '+ago(a.created_at),badge(a.status||'unknown',statusKind(a.status)))),'No decisions recorded','The decisions table has no records.');
+  fill('agentList',(d.agents||[]).map(a=>row(a.title,(a.model||'No model set')+' · '+a.requestsPerMinute+'/min',badge(a.ready?'Ready':'Not ready',a.ready?'good':'pending'))),'No agents','No agent runtime directory returned.');
+  sec('roleList',d.organization,o=>o.roles.map(r=>row(r.title,r.kind+(r.unitId?' · '+nameOf(r.unitId):''),badge(r.activation,r.activation==='active'?'good':'pending'))),'No roles','No role records returned.');
+  sec('auditList',d.audit,as=>as.map(a=>row(a.action+' → '+(a.target_id||''),(a.reason||'No reason recorded')+' · '+ago(a.created_at),badge(a.outcome,statusKind(a.outcome)))),'No audit events','No audit events were returned.');
+  sec('bindList',d.bindings,bs=>bs.map(b=>row(b.role_id,b.principal_id+(b.note?' · '+b.note:''),badge('active','good'))),'No active bindings','No active identity bindings were returned.');
+  sec('runList',d.automation.runs,rs=>rs.map(r=>row(r.mode+' · '+(r.run_key||'').slice(0,28),(r.followups_prepared??0)+' follow-ups · '+(r.tasks_flagged??0)+' flagged · '+ago(r.started_at),badge(r.status,statusKind(r.status)))),'No automation runs','No automation run records were returned.');
+  sec('actionList',d.automation.pendingActions,as=>as.map(a=>row(a.action_type,ago(a.created_at),badge(a.status,statusKind(a.status)))),'Nothing awaiting review','No prepared automation actions were returned.');
+ }catch(error){console.error('Secondary dashboard panels failed:',error)}
 }
 function renderFallbackStaff(d,error){
  const grid=$('staffGrid');grid.replaceChildren();
