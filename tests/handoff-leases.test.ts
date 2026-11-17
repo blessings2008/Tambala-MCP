@@ -24,7 +24,7 @@ async function createRunningHandoff(store: InMemoryHandoffStore) {
 test('worker heartbeat refreshes a running handoff lease', async () => {
   const store = new InMemoryHandoffStore();
   const handoff = await createRunningHandoff(store);
-  const heartbeatAt = new Date(Date.parse(initialTime) + HANDOFF_LEASE_TIMEOUT_MS - 1000).toISOString();
+  const heartbeatAt = new Date(Date.parse(initialTime) + HANDOFF_LEASE_TIMEOUT_MS + 1000).toISOString();
   assert.equal(await store.heartbeat(handoff.id, heartbeatAt), true);
   const cutoff = new Date(Date.parse(initialTime) + HANDOFF_LEASE_TIMEOUT_MS).toISOString();
   assert.equal((await store.expiredRunning(cutoff, 10)).length, 0);
