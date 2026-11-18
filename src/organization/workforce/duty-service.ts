@@ -3,7 +3,7 @@ import { fetchAllPages, hasDiscoveryQueueHandoff } from './discovery-queue-utils
 import { getBusinessSummary, getDetailedCRMContext, getVerifiedCompanyContext } from '../../services/ai/context.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../../services/ai.js';
 import { getOrganizationSnapshot } from '../service.js';
-import { advanceTrackedTask, beginTrackedTask, failTrackedTask } from '../task-tracking.js';
+import { advanceTrackedTask, beginTrackedTask, failTrackedTask, getTrackedTaskStatus } from '../task-tracking.js';
 import { deterministicBriefing } from './briefing.js';
 import { createApprovalRequest, registerApprovalHook, type ApprovalRow } from './approvals-service.js';
 import type { AgentName } from '../../services/ai/models.js';
@@ -773,6 +773,7 @@ export function productionHandoffDeps(store: HandoffStore = handoffStore(), now:
     tasks: {
       begin: async (objective) => ({ taskId: (await beginTrackedTask(objective)).taskId }),
       advance: (taskId, transitions) => advanceTrackedTask(taskId, transitions),
+      getStatus: (taskId) => getTrackedTaskStatus(taskId),
       async fail(taskId, message, sourceAgent) {
         await failTrackedTask(taskId, message);
         await dispatchIncidentToIT({
