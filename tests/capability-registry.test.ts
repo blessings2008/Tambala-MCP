@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildResearchQuery, routeObjective } from '../src/organization/capability-registry.js';
+import { buildResearchQuery, routeCapabilityById, routeObjective } from '../src/organization/capability-registry.js';
 import type { OrganizationDefinition } from '../src/organization/model.js';
 
 const definition: OrganizationDefinition = {
@@ -117,4 +117,14 @@ test('capability registry identifiers are unique and every capability has comple
     assert.ok(match?.role, `${capability.id} must resolve to an accountable role`);
     assert.ok(match.unit.accountableRoleIds.includes(match.role.id));
   }
+});
+
+test('explicit capability lookup does not depend on objective keywords', () => {
+  const match = routeCapabilityById(definition, 'web_research');
+  assert.ok(match);
+  assert.equal(match.capability.id, 'web_research');
+  assert.equal(match.unit?.id, 'research');
+  assert.equal(match.role?.id, 'research-head');
+  assert.equal(match.keywordScore, 0);
+  assert.equal(routeCapabilityById(definition, 'unknown-capability'), null);
 });

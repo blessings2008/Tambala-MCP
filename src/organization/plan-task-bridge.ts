@@ -1,0 +1,272 @@
+import { coordinatePlan, type StepApprovalStatus, type StepProgressRecord, type PlanCoordinationSnapshot } from './plan-coordinator.js';
+import type { AgentName } from '../services/ai/models.js';
+import { queueHandoff, type Handoff, type HandoffStore } from './workforce/handoffs.js';
+import type { OrganizationalPlan, OrganizationalPlanStep } from './runtime-contracts.js';
+import { recordOrganizationTaskEvent } from './task-store.js';
+
+/**
+ * Adapter boundary between the new planner and Tambala's existing durable
+ * organization_tasks / organization_task_events / organization_handoffs model.
+ *
+ * Preparation is pure. The explicit persistence functions below write only to
+ * existing task-event and handoff/task-room tables; they do not authorize actions.
+ */
+
+export interface PlanEmployeeRoute {
+  agent: AgentName;
+  roleId: string;
+  active: boolean;
+  runtimeReady: boolean;
+}
+
+export interface PlanStepDispatch {
+  stepId: string;
+  step: OrganizationalPlanStep;
+  roleId: string;
+  agent: AgentName;
+  /** Stable correlation key; the handoff table's unique index enforces this across retries. */
+  idempotencyKey: string;
+}
+
+export interface PlanStepRouteBlocker {
+  stepId: string;
+  roleId: string | null;
+  reason: string;
+}
+
+export interface PlanDispatchPreparation {
+  planId: string;
+  coordination: PlanCoordinationSnapshot;
+  dispatches: PlanStepDispatch[];
+  blockers: PlanStepRouteBlocker[];
+  requiresReplanning: boolean;
+}
+
+export interface PlanProposalEvent {
+  taskId: string;
+  eventKey: string;
+  eventType: 'organizational_plan_proposed';
+  stage: 'ceo';
+  actorRoleId: string;
+  payload: {
+    schema: 'tambala.organizational-plan';
+    schemaVersion: 1;
+    planId: string;
+    objectiveId: string;
+    revision: number;
+    plan: OrganizationalPlan;
+  };
+}
+
+/** Store the validated plan as an append-only event on the existing parent task. */
+export function buildPlanProposalEvent(taskId: string, plan: OrganizationalPlan): PlanProposalEvent {
+  if (!taskId.trim()) throw new Error('A parent organization task id is required.');
+  if (!plan.id.trim() || !plan.objectiveId.trim()) throw new Error('Plan and objective identifiers are required.');
+  return {
+    taskId,
+    eventKey: `plan-proposal:${taskId}:${plan.id}:revision:${plan.revision}`,
+    eventType: 'organizational_plan_proposed',
+    stage: 'ceo',
+    actorRoleId: plan.proposedByRoleId,
+    payload: {
+      schema: 'tambala.organizational-plan',
+      schemaVersion: 1,
+      planId: plan.id,
+      objectiveId: plan.objectiveId,
+      revision: plan.revision,
+      plan,
+    },
+  };
+}
+
+/**
+ * Project ready plan steps onto existing employee handoff routes.
+ * A role must resolve to exactly one employee profile, and that employee must
+ * be active and runtime-ready. Ambiguous or unavailable owners fail closed.
+ * This is routing readiness, not authorization: execution must still validate
+ * actor identity, capability permissions, data scopes and current approval.
+ */
+export function preparePlanStepDispatches(
+  plan: OrganizationalPlan,
+  progress: Record<string, StepProgressRecord>,
+  activeRoleIds: ReadonlySet<string>,
+  employeeRoutes: readonly PlanEmployeeRoute[],
+): PlanDispatchPreparation {
+  const coordination = coordinatePlan(plan, progress, activeRoleIds);
+  const dispatches: PlanStepDispatch[] = [];
+  const blockers: PlanStepRouteBlocker[] = [];
+
+  for (const stepId of coordination.readyStepIds) {
+    const step = plan.steps.find((candidate) => candidate.id === stepId);
+    if (!step) continue;
+    const roleId = step.accountableRoleId;
+    if (!roleId) {
+      blockers.push({ stepId, roleId: null, reason: 'The step has no accountable role.' });
+      continue;
+    }
+
+    const matches = employeeRoutes.filter((route) => route.roleId === roleId);
+    if (matches.length === 0) {
+      blockers.push({ stepId, roleId, reason: 'No employee profile is mapped to the accountable role.' });
+      continue;
+    }
+    if (matches.length > 1) {
+      blockers.push({ stepId, roleId, reason: 'More than one employee profile maps to this role; an explicit owner is required.' });
+      continue;
+    }
+
+    const owner = matches[0];
+    if (!owner) {
+      blockers.push({ stepId, roleId, reason: 'The accountable employee route could not be resolved.' });
+      continue;
+    }
+    if (!owner.active) {
+      blockers.push({ stepId, roleId, reason: 'The mapped employee is not active.' });
+      continue;
+    }
+    if (!owner.runtimeReady) {
+      blockers.push({ stepId, roleId, reason: 'The mapped employee runtime is not ready.' });
+      continue;
+    }
+
+    dispatches.push({
+      stepId,
+      step,
+      roleId,
+      agent: owner.agent,
+      idempotencyKey: `plan:${plan.id}:revision:${plan.revision}:step:${step.id}`,
+    });
+  }
+
+  return {
+    planId: plan.id,
+    coordination,
+    dispatches,
+    blockers,
+    requiresReplanning: coordination.requiresReplanning || blockers.length > 0,
+  };
+}
+
+
+export interface QueuedPlanHandoffs {
+  queued: Handoff[];
+  blocked: PlanStepRouteBlocker[];
+}
+
+/**
+ * Persist ready steps as ordinary staff handoffs/task rooms.
+ * The existing handoff store and unique dispatch_key index provide idempotency.
+ * Callers must still enforce the Founder/actor authorization boundary before
+ * invoking this write operation.
+ */
+export async function queuePreparedPlanHandoffs(input: {
+  prepared: PlanDispatchPreparation;
+  store: HandoffStore;
+  parentTaskId: string;
+  actorRoleId: string;
+  now?: Date;
+}): Promise<QueuedPlanHandoffs> {
+  if (!input.parentTaskId.trim()) throw new Error('A parent organization task id is required.');
+  if (!input.actorRoleId.trim()) throw new Error('An accountable initiating role is required.');
+
+  const queued: Handoff[] = [];
+  for (const dispatch of input.prepared.dispatches) {
+    const step = dispatch.step;
+    const request = [
+      step.objective,
+      `Expected deliverable: ${step.expectedDeliverable}`,
+      `Acceptance criteria: ${step.acceptanceCriteria.join('; ')}`,
+    ].join('\\n').slice(0, 1000);
+    const handoff = await queueHandoff(input.store, {
+      fromRoleId: input.actorRoleId,
+      toAgent: dispatch.agent,
+      request,
+      sourceTaskId: input.parentTaskId,
+      contextSummary: JSON.stringify({
+        plan_step: {
+          step_id: dispatch.stepId,
+          plan_id: input.prepared.planId,
+          idempotency_key: dispatch.idempotencyKey,
+          risk: step.risk,
+          approval_required: step.approvalRequired,
+          capability_requirements: step.capabilityRequirements,
+        },
+      }).slice(0, 8000),
+      dispatchKey: dispatch.idempotencyKey,
+      now: input.now,
+    });
+    queued.push(handoff);
+  }
+
+  return { queued, blocked: [...input.prepared.blockers] };
+}
+
+
+/** Persist the validated plan once on the existing parent task before dispatching any steps. */
+export async function persistPlanProposalEvent(event: PlanProposalEvent): Promise<void> {
+  await recordOrganizationTaskEvent({
+    taskId: event.taskId,
+    eventType: event.eventType,
+    stage: event.stage,
+    actorRoleId: event.actorRoleId,
+    payload: event.payload,
+    eventKey: event.eventKey,
+  });
+}
+
+export async function persistPlanProposalAndQueueSteps(input: {
+  proposalEvent: PlanProposalEvent;
+  prepared: PlanDispatchPreparation;
+  store: HandoffStore;
+  parentTaskId: string;
+  actorRoleId: string;
+  now?: Date;
+}): Promise<QueuedPlanHandoffs> {
+  if (input.proposalEvent.taskId !== input.parentTaskId) {
+    throw new Error('The plan proposal event and step handoffs must use the same parent task.');
+  }
+  // Durable proposal first. If a later handoff fails, retrying is safe: the
+  // event key and each handoff dispatch key are independently unique.
+  await persistPlanProposalEvent(input.proposalEvent);
+  return queuePreparedPlanHandoffs({
+    prepared: input.prepared,
+    store: input.store,
+    parentTaskId: input.parentTaskId,
+    actorRoleId: input.actorRoleId,
+    now: input.now,
+  });
+}
+
+
+/**
+ * Rebuild plan-step progress from durable handoff rows after a process restart.
+ * Approval state is supplied separately from the authoritative approval system;
+ * absent approval evidence remains pending and never defaults to approved.
+ */
+export async function loadPlanProgressFromHandoffs(
+  plan: OrganizationalPlan,
+  store: HandoffStore,
+  approvalStatuses: Readonly<Record<string, StepApprovalStatus>> = {},
+): Promise<Record<string, StepProgressRecord>> {
+  const entries = await Promise.all(plan.steps.map(async (step) => {
+    const dispatchKey = `plan:${plan.id}:revision:${plan.revision}:step:${step.id}`;
+    const handoff = await store.getByDispatchKey(dispatchKey);
+    let executionStatus: StepProgressRecord['executionStatus'] = 'pending';
+    if (handoff) {
+      switch (handoff.status) {
+        case 'queued': executionStatus = 'queued'; break;
+        case 'running': executionStatus = 'running'; break;
+        case 'awaiting_founder': executionStatus = 'awaiting_founder'; break;
+        case 'completed': executionStatus = 'completed'; break;
+        case 'failed': executionStatus = 'failed'; break;
+      }
+    }
+    const approvalStatus = approvalStatuses[step.id] ?? (step.approvalRequired ? 'pending' : 'not_required');
+    return [step.id, {
+      executionStatus,
+      approvalStatus,
+      failureReason: handoff?.error ?? null,
+    }] as const;
+  }));
+  return Object.fromEntries(entries);
+}

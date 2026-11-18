@@ -10,6 +10,8 @@ import { isPermanentAgentFailure } from './retry-policy.js';
 
 export const MAX_HANDOFFS_PER_DUTY = 2;
 export const MAX_HANDOFF_ATTEMPTS = 5;
+export const HANDOFF_LEASE_TIMEOUT_MS = 30 * 60 * 1000;
+export const HANDOFF_HEARTBEAT_INTERVAL_MS = 30 * 1000;
 
 export type HandoffStatus = 'queued' | 'running' | 'awaiting_founder' | 'completed' | 'failed';
 export type TaskRoomStatus = 'active' | 'awaiting_founder' | 'blocked' | 'ready_for_review' | 'revision_requested' | 'completed' | 'failed' | 'cancelled' | 'archived';
@@ -20,7 +22,7 @@ export interface TaskRoom {
 }
 export interface Handoff {
   id: string; from_role_id: string; to_role_id: string; to_agent: string; request: string; context_summary: string | null;
-  source_task_id: string | null; source_duty_id: string | null; status: HandoffStatus; attempts: number;
+  source_task_id: string | null; source_duty_id: string | null; dispatch_key?: string | null; claimed_at?: string | null; heartbeat_at?: string | null; status: HandoffStatus; attempts: number;
   result: string | null; error: string | null; task_id: string | null; room_id: string | null; created_at: string; completed_at: string | null;
 }
 
@@ -69,11 +71,15 @@ export function colleagueList(excluding: AgentName): string {
 export interface HandoffStore {
   create(h: Omit<Handoff, 'id'>): Promise<Handoff>;
   queued(limit: number): Promise<Handoff[]>;
-  claim(id: string): Promise<boolean>;
+  claim(id: string, claimedAt?: string): Promise<boolean>;
+  heartbeat(id: string, heartbeatAt: string): Promise<boolean>;
+  expiredRunning(beforeIso: string, limit: number): Promise<Handoff[]>;
+  quarantineExpired(id: string, beforeIso: string, reason: string): Promise<boolean>;
   update(id: string, patch: Partial<Handoff>): Promise<void>;
   recent(sinceIso: string): Promise<Handoff[]>;
   get(id: string): Promise<Handoff | null>;
   getByRoomId(roomId: string): Promise<Handoff | null>;
+  getByDispatchKey(dispatchKey: string): Promise<Handoff | null>;
   createRoom(room: Omit<TaskRoom, 'id'>): Promise<TaskRoom>;
   updateRoom(id: string, patch: Partial<TaskRoom>): Promise<void>;
   roomEvent(roomId: string, eventType: string, actorRoleId: string | null, payload?: unknown): Promise<void>;
@@ -82,14 +88,24 @@ export interface HandoffStore {
 export class SupabaseHandoffStore implements HandoffStore {
   create(h: Omit<Handoff, 'id'>) { return supabaseInsert<Handoff>('organization_handoffs', h as unknown as Record<string, unknown>); }
   queued(limit: number) { return supabaseSelect<Handoff>('organization_handoffs', `select=*&status=eq.queued&order=created_at.asc&limit=${limit}`); }
-  async claim(id: string) {
-    try { await supabaseUpdate('organization_handoffs', { status: 'running' }, `id=eq.${encodeURIComponent(id)}&status=eq.queued`); return true; }
+  async claim(id: string, claimedAt = new Date().toISOString()) {
+    try { await supabaseUpdate('organization_handoffs', { status: 'running', claimed_at: claimedAt, heartbeat_at: claimedAt }, `id=eq.${encodeURIComponent(id)}&status=eq.queued`); return true; }
+    catch (error) { if (error instanceof Error && /returned no record/.test(error.message)) return false; throw error; }
+  }
+  async heartbeat(id: string, heartbeatAt: string) {
+    try { await supabaseUpdate('organization_handoffs', { heartbeat_at: heartbeatAt }, `id=eq.${encodeURIComponent(id)}&status=eq.running`); return true; }
+    catch (error) { if (error instanceof Error && /returned no record/.test(error.message)) return false; throw error; }
+  }
+  expiredRunning(beforeIso: string, limit: number) { return supabaseSelect<Handoff>('organization_handoffs', `select=*&status=eq.running&heartbeat_at=lt.${encodeURIComponent(beforeIso)}&order=heartbeat_at.asc&limit=${limit}`); }
+  async quarantineExpired(id: string, beforeIso: string, reason: string) {
+    try { await supabaseUpdate('organization_handoffs', { status: 'awaiting_founder', error: reason, completed_at: null }, `id=eq.${encodeURIComponent(id)}&status=eq.running&heartbeat_at=lt.${encodeURIComponent(beforeIso)}`); return true; }
     catch (error) { if (error instanceof Error && /returned no record/.test(error.message)) return false; throw error; }
   }
   async update(id: string, patch: Partial<Handoff>) { await supabaseUpdate('organization_handoffs', patch as Record<string, unknown>, `id=eq.${encodeURIComponent(id)}`); }
   recent(sinceIso: string) { return supabaseSelect<Handoff>('organization_handoffs', `select=*&created_at=gte.${encodeURIComponent(sinceIso)}&order=created_at.desc&limit=100`); }
   async get(id: string) { return (await supabaseSelect<Handoff>('organization_handoffs', `select=*&id=eq.${encodeURIComponent(id)}&limit=1`))[0] ?? null; }
   async getByRoomId(roomId: string) { return (await supabaseSelect<Handoff>('organization_handoffs', `select=*&room_id=eq.${encodeURIComponent(roomId)}&limit=1`))[0] ?? null; }
+  async getByDispatchKey(dispatchKey: string) { return (await supabaseSelect<Handoff>('organization_handoffs', `select=*&dispatch_key=eq.${encodeURIComponent(dispatchKey)}&limit=1`))[0] ?? null; }
   createRoom(room: Omit<TaskRoom, 'id'>) { return supabaseInsert<TaskRoom>('organization_task_rooms', room as unknown as Record<string, unknown>); }
   async updateRoom(id: string, patch: Partial<TaskRoom>) { await supabaseUpdate('organization_task_rooms', { ...patch, updated_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(id)}`); }
   async roomEvent(roomId: string, eventType: string, actorRoleId: string | null, payload?: unknown) {
@@ -101,32 +117,59 @@ export class InMemoryHandoffStore implements HandoffStore {
   readonly rows: Handoff[] = [];
   readonly rooms: TaskRoom[] = [];
   readonly roomEvents: { room_id: string; event_type: string; actor_role_id: string | null; payload?: unknown }[] = [];
-  async create(h: Omit<Handoff, 'id'>) { const row = { ...h, id: randomUUID() }; this.rows.push(row); return row; }
+  async create(h: Omit<Handoff, 'id'>) {
+    if (h.dispatch_key && this.rows.some((row) => row.dispatch_key === h.dispatch_key)) throw new Error('duplicate key value violates unique constraint organization_handoffs_dispatch_key_unique');
+    const row = { ...h, id: randomUUID() }; this.rows.push(row); return row;
+  }
   async queued(limit: number) { return this.rows.filter((r) => r.status === 'queued').slice(0, limit); }
-  async claim(id: string) { const r = this.rows.find((x) => x.id === id); if (!r || r.status !== 'queued') return false; r.status = 'running'; return true; }
+  async claim(id: string, claimedAt = new Date().toISOString()) { const r = this.rows.find((x) => x.id === id); if (!r || r.status !== 'queued') return false; r.status = 'running'; r.claimed_at = claimedAt; r.heartbeat_at = claimedAt; return true; }
+  async heartbeat(id: string, heartbeatAt: string) { const r = this.rows.find((x) => x.id === id); if (!r || r.status !== 'running') return false; r.heartbeat_at = heartbeatAt; return true; }
+  async expiredRunning(beforeIso: string, limit: number) { return this.rows.filter((r) => r.status === 'running' && Boolean(r.heartbeat_at) && r.heartbeat_at! < beforeIso).sort((a, b) => (a.heartbeat_at ?? '').localeCompare(b.heartbeat_at ?? '')).slice(0, limit); }
+  async quarantineExpired(id: string, beforeIso: string, reason: string) { const r = this.rows.find((x) => x.id === id); if (!r || r.status !== 'running' || !r.heartbeat_at || r.heartbeat_at >= beforeIso) return false; r.status = 'awaiting_founder'; r.error = reason; r.completed_at = null; return true; }
   async update(id: string, patch: Partial<Handoff>) { const r = this.rows.find((x) => x.id === id); if (r) Object.assign(r, patch); }
   async recent(sinceIso: string) { return this.rows.filter((r) => r.created_at >= sinceIso).reverse(); }
   async get(id: string) { return this.rows.find((r) => r.id === id) ?? null; }
   async getByRoomId(roomId: string) { return this.rows.find((r) => r.room_id === roomId) ?? null; }
+  async getByDispatchKey(dispatchKey: string) { return this.rows.find((r) => r.dispatch_key === dispatchKey) ?? null; }
   async createRoom(room: Omit<TaskRoom, 'id'>) { const row = { ...room, id: randomUUID() }; this.rooms.push(row); return row; }
   async updateRoom(id: string, patch: Partial<TaskRoom>) { const row = this.rooms.find((r) => r.id === id); if (row) Object.assign(row, patch); }
   async roomEvent(roomId: string, eventType: string, actorRoleId: string | null, payload?: unknown) { this.roomEvents.push({ room_id: roomId, event_type: eventType, actor_role_id: actorRoleId, payload }); }
 }
 
 export async function queueHandoff(store: HandoffStore, input: {
-  fromRoleId: string; toAgent: AgentName; request: string; contextSummary?: string | null; sourceTaskId?: string | null; sourceDutyId?: string | null; now?: Date;
+  fromRoleId: string; toAgent: AgentName; request: string; contextSummary?: string | null; sourceTaskId?: string | null; sourceDutyId?: string | null; dispatchKey?: string | null; now?: Date;
   sign?: (input: { roleId: string; kind: 'handoff_request'; subjectId: string; content: string }) => Promise<unknown>;
 }): Promise<Handoff> {
   if (!(input.toAgent in AGENT_DIRECTORY) || input.toAgent === 'orchestrator') throw new HandoffError('Choose an employee to assign this to.');
   const request = input.request.trim();
   if (request.length < 5 || request.length > 1000) throw new HandoffError('The request must be 5 to 1000 characters.');
-  const created = await store.create({
+  const dispatchKey = input.dispatchKey?.trim() || null;
+  if (dispatchKey) {
+    if (dispatchKey.length > 240) throw new HandoffError('The dispatch key must not exceed 240 characters.');
+    const existing = await store.getByDispatchKey(dispatchKey);
+    if (existing) {
+      if (existing.from_role_id !== input.fromRoleId || existing.to_agent !== input.toAgent || existing.request !== request || existing.source_task_id !== (input.sourceTaskId ?? null)) {
+        throw new HandoffError('This dispatch key is already associated with different work.');
+      }
+      return existing;
+    }
+  }
+  let created: Handoff;
+  try {
+    created = await store.create({
     from_role_id: input.fromRoleId, to_role_id: roleIdFor(input.toAgent), to_agent: input.toAgent, request,
     context_summary: input.contextSummary ? input.contextSummary.slice(0, 8000) : null,
-    source_task_id: input.sourceTaskId ?? null, source_duty_id: input.sourceDutyId ?? null,
+    source_task_id: input.sourceTaskId ?? null, source_duty_id: input.sourceDutyId ?? null, dispatch_key: dispatchKey,
     status: 'queued', attempts: 0, result: null, error: null, task_id: null, room_id: null,
     created_at: (input.now ?? new Date()).toISOString(), completed_at: null,
-  });
+    });
+  } catch (error) {
+    if (dispatchKey && error instanceof Error && /unique|duplicate|23505/i.test(error.message)) {
+      const existing = await store.getByDispatchKey(dispatchKey);
+      if (existing && existing.from_role_id === input.fromRoleId && existing.to_agent === input.toAgent && existing.request === request && existing.source_task_id === (input.sourceTaskId ?? null)) return existing;
+    }
+    throw error;
+  }
   try {
     const room = await store.createRoom({
       handoff_id: created.id, parent_task_id: input.sourceTaskId ?? null, owner_role_id: created.to_role_id,
@@ -267,6 +310,30 @@ function confirmsPendingApprovalAction(value: string): boolean {
 /** Each delegation runs in an isolated, durable room. A room closes only after its deliverable is accepted. */
 export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<HandoffOutcome[]> {
   const outcomes: HandoffOutcome[] = [];
+  const expiredBefore = new Date(deps.now().getTime() - HANDOFF_LEASE_TIMEOUT_MS).toISOString();
+  const expired = await deps.store.expiredRunning(expiredBefore, limit);
+  for (const stale of expired) {
+    const reason = 'The handoff worker stopped reporting heartbeats. This work has been paused for Founder review; verify any external side effects before resuming.';
+    if (!(await deps.store.quarantineExpired(stale.id, expiredBefore, reason))) continue;
+    if (stale.task_id) {
+      try {
+        await deps.tasks.advance(stale.task_id, [{
+          status: 'awaiting_founder',
+          stage: 'founder',
+          eventType: 'handoff_worker_lease_expired',
+          roleId: 'ceo',
+          result: { handoffId: stale.id, roomId: stale.room_id, reason, automaticRetry: false },
+        }]);
+      } catch (error) {
+        console.error('Could not move expired handoff task to Founder review:', error instanceof Error ? error.message : error);
+      }
+    }
+    if (stale.room_id) {
+      await deps.store.updateRoom(stale.room_id, { status: 'awaiting_founder', blocker: reason, closed_at: null });
+      await deps.store.roomEvent(stale.room_id, 'worker_lease_expired', 'ceo', { reason, automaticRetry: false });
+    }
+    outcomes.push({ handoffId: stale.id, toAgent: stale.to_agent, status: 'waiting', reason, taskId: stale.task_id ?? undefined, roomId: stale.room_id ?? undefined });
+  }
   const recent = await deps.store.recent(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
   for (const waiting of recent) {
     if (waiting.source_duty_id !== 'approved-prospect-first-contact' || waiting.status !== 'awaiting_founder') continue;
@@ -291,7 +358,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason: blocked, roomId: h.room_id ?? undefined });
       continue;
     }
-    if (!(await deps.store.claim(h.id))) { outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'already_taken', roomId: h.room_id ?? undefined }); continue; }
+    if (!(await deps.store.claim(h.id, deps.now().toISOString()))) { outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'already_taken', roomId: h.room_id ?? undefined }); continue; }
     const attempt = h.attempts + 1;
     const previousError = h.error;
     const [sender, recipient] = await Promise.all([deps.senderLabel(h.from_role_id), deps.recipientLabel(agent)]);
@@ -306,6 +373,16 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       ? 'For this Founder-approved first-contact only, accept when the action result confirms the message was placed in the Founder approval inbox, queued, or sent after CRM and WhatsApp verification. Report the exact state. A pending-approval message is not delivered; never claim sent unless the action result confirms sent.'
       : 'Accept when the requested work is complete against the supplied evidence, including a clear account of limitations and unavailable sources. Do not demand provider logs, account metrics, credentials or actions that the employee cannot access. If missing Founder-controlled access, data or a decision prevents completion, return FOUNDER_INPUT_REQUIRED and ask one precise question. Return REVISION_REQUIRED only when the employee omitted work or made an unsupported claim that can be corrected from the supplied context.';
     const taskId = h.task_id ?? (await deps.tasks.begin(`[Room ${h.room_id ?? h.id}] [Handoff from ${sender}] ${h.request.slice(0, 160)}`)).taskId;
+    let leaseLost = false;
+    const heartbeatTimer = setInterval(() => {
+      void deps.store.heartbeat(h.id, deps.now().toISOString()).then((active) => {
+        if (!active) leaseLost = true;
+      }).catch((error: unknown) => {
+        leaseLost = true;
+        console.error('Handoff worker heartbeat failed; stopping side-effect execution:', error instanceof Error ? error.message : error);
+      });
+    }, HANDOFF_HEARTBEAT_INTERVAL_MS);
+    heartbeatTimer.unref?.();
     try {
       await deps.store.update(h.id, { attempts: attempt, task_id: taskId, error: null });
       if (h.room_id) {
@@ -355,7 +432,15 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       if (!result && autonomousFirstContact && firstContactTarget) result = `Prepared the first-contact WhatsApp action for ${firstContactTarget.contact}.`;
       if (!result) throw new Error('The employee returned no work product.');
       if (autonomousFirstContact && isFounderClarificationRequest(result)) throw new Error('Do not ask the Founder to confirm WhatsApp registration or first-contact permission; the approved destination is supplied and the shared outbox performs verification.');
+      if (leaseLost) {
+        outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason: 'The worker lease was lost before action execution; work remains paused for safe recovery.', taskId, roomId: h.room_id ?? undefined });
+        continue;
+      }
       const actionsText = await deps.actions.run({ agent, roleId: h.to_role_id, taskId, founderApprovedFirstContact: autonomousFirstContact }, acted.actions, acted.rejected);
+      if (leaseLost) {
+        outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason: 'The worker lease was lost during action execution; verify side effects before resuming.', taskId, roomId: h.room_id ?? undefined });
+        continue;
+      }
       if (autonomousFirstContact && /✘\s*whatsapp:.*Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number/i.test(actionsText)) {
         const reason = 'The supplied CRM number could not be verified as a WhatsApp-registered lead. No message was queued. Correct the CRM number or verify its WhatsApp registration before retrying.';
         const blockedResult = result + '\n\n' + actionsText;
@@ -512,6 +597,8 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         await deps.store.roomEvent(h.room_id, final ? 'room_failed' : 'room_retry_scheduled', h.to_role_id, { error: message.slice(0, 500), attempt });
       }
       outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: final ? 'failed' : 'retry', reason: message, taskId, roomId: h.room_id ?? undefined });
+    } finally {
+      clearInterval(heartbeatTimer);
     }
   }
   return outcomes;

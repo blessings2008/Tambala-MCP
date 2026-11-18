@@ -261,6 +261,28 @@ function findRole(definition: OrganizationDefinition, tags: string[], unitId: st
   ) ?? null;
 }
 
+/**
+ * Resolve one explicitly requested capability without keyword matching.
+ * Used after the CEO has interpreted an objective into stable capability IDs.
+ */
+export function routeCapabilityById(
+  definition: OrganizationDefinition,
+  capabilityId: string,
+): CapabilityMatch | null {
+  const capability = DEPARTMENT_CAPABILITIES.find((item) => item.id === capabilityId);
+  if (!capability) return null;
+  const unit = findUnit(definition, capability.unitTags);
+  const role = findRole(definition, capability.roleTags, unit?.id ?? null);
+  return {
+    capability,
+    unit,
+    role,
+    score: (unit ? 1 : 0) + (role ? 1 : 0),
+    keywordScore: 0,
+    researchQuery: capability.researchKeywords.slice(0, 4).join(', '),
+  };
+}
+
 export function routeObjective(definition: OrganizationDefinition, objective: string): CapabilityMatch[] {
   const matches = DEPARTMENT_CAPABILITIES
     .map((capability) => {
