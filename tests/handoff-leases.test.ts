@@ -62,7 +62,7 @@ test('processHandoffs recovers stale workers to Founder review without replaying
     tasks: {
       begin: async () => ({ taskId: 'unused' }),
       advance: async (_taskId, steps) => { transitions.push(...steps); },
-      getStatus: async () => 'delegated',
+      getStatus: async () => transitions.length ? 'awaiting_founder' : 'delegated',
       fail: async () => {},
     },
   };
