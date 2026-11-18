@@ -40,7 +40,9 @@ test('failed tasks may be explicitly retried through CEO analysis', () => {
   assert.equal(isAllowedOrganizationTaskTransition('failed', 'delegated'), false);
 });
 
-test('Founder-blocked work is distinct from department revision work and resumes cleanly', () => {
+test('Founder-blocked work can be safely quarantined from every pre-execution handoff stage', () => {
+  assert.equal(isAllowedOrganizationTaskTransition('created', 'awaiting_founder'), true);
+  assert.equal(isAllowedOrganizationTaskTransition('delegated', 'awaiting_founder'), true);
   assert.equal(isAllowedOrganizationTaskTransition('executing', 'awaiting_founder'), true);
   assert.equal(isAllowedOrganizationTaskTransition('awaiting_founder', 'ceo_analyzing'), true);
   assert.equal(isAllowedOrganizationTaskTransition('awaiting_founder', 'failed'), true);
