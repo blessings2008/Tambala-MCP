@@ -3,6 +3,8 @@ import { normalizePhoneFromLabel } from '../../channels/phone.js';
 import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../../lib/supabase.js';
 import { AGENT_DIRECTORY, type AgentName } from '../../services/ai/models.js';
 import type { OrganizationTaskTransition } from '../task-lifecycle.js';
+import { isAllowedOrganizationTaskTransition } from '../task-transition-rules.js';
+import type { OrganizationTaskStatus } from '../task-store.js';
 import { actionHelp, parseActions, type Action } from './actions.js';
 import { splitBlocks } from './blocks.js';
 import { roleIdFor } from './profiles.js';
@@ -219,6 +221,7 @@ export interface HandoffDeps {
   tasks: {
     begin(objective: string): Promise<{ taskId: string }>;
     advance(taskId: string, transitions: OrganizationTaskTransition[]): Promise<unknown>;
+    getStatus(taskId: string): Promise<OrganizationTaskStatus | null>;
     fail(taskId: string, message: string, sourceAgent?: AgentName): Promise<void>;
   };
 }
@@ -336,6 +339,42 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
   }
   const recent = await deps.store.recent(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
   for (const waiting of recent) {
+    // Earlier deployments quarantined stale handoffs even when the task state transition
+    // was rejected. Reconcile that parent task now, without re-queuing the handoff or
+    // replaying any external action.
+    if (
+      waiting.status === 'awaiting_founder' &&
+      waiting.task_id &&
+      waiting.error?.includes('worker stopped reporting heartbeats')
+    ) {
+      const currentStatus = await deps.tasks.getStatus(waiting.task_id);
+      if (
+        currentStatus &&
+        currentStatus !== 'awaiting_founder' &&
+        isAllowedOrganizationTaskTransition(currentStatus, 'awaiting_founder')
+      ) {
+        await deps.tasks.advance(waiting.task_id, [{
+          status: 'awaiting_founder',
+          stage: 'founder',
+          eventType: 'handoff_worker_lease_expired_reconciled',
+          roleId: 'ceo',
+          result: {
+            handoffId: waiting.id,
+            roomId: waiting.room_id,
+            reason: waiting.error,
+            reconciledFrom: currentStatus,
+            automaticRetry: false,
+          },
+        }]);
+        if (waiting.room_id) {
+          await deps.store.roomEvent(waiting.room_id, 'parent_task_reconciled_to_founder_review', 'ceo', {
+            taskId: waiting.task_id,
+            fromStatus: currentStatus,
+            automaticRetry: false,
+          });
+        }
+      }
+    }
     if (waiting.source_duty_id !== 'approved-prospect-first-contact' || waiting.status !== 'awaiting_founder') continue;
     if (!/whatsapp[\s\-\u2010-\u2015]*registered/i.test(waiting.result ?? '')) continue;
     await deps.store.update(waiting.id, {
