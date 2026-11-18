@@ -62,6 +62,7 @@ test('processHandoffs recovers stale workers to Founder review without replaying
     tasks: {
       begin: async () => ({ taskId: 'unused' }),
       advance: async (_taskId, steps) => { transitions.push(...steps); },
+      getStatus: async () => 'delegated',
       fail: async () => {},
     },
   };
@@ -76,4 +77,51 @@ test('processHandoffs recovers stale workers to Founder review without replaying
   assert.equal(transitions.length, 1);
   assert.equal((transitions[0] as { eventType: string }).eventType, 'handoff_worker_lease_expired');
   assert.equal((await store.queued(10)).length, 0);
+});
+
+
+test('processHandoffs reconciles an already-quarantined handoff parent without re-queuing it', async () => {
+  const store = new InMemoryHandoffStore();
+  const handoff = await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'research',
+    request: 'Review the supplied lead record and return a recommendation.',
+    now: new Date(initialTime),
+  });
+  await store.update(handoff.id, {
+    status: 'awaiting_founder',
+    task_id: 'parent-task-legacy',
+    error: 'The handoff worker stopped reporting heartbeats. This work has been paused for Founder review; verify any external side effects before resuming.',
+  });
+  const roomId = handoff.room_id!;
+  await store.updateRoom(roomId, { status: 'awaiting_founder', blocker: 'Worker lease expired.' });
+  const transitions: unknown[] = [];
+  const deps: HandoffDeps = {
+    store,
+    now: () => new Date(Date.parse(initialTime) + HANDOFF_LEASE_TIMEOUT_MS + 1000),
+    agentUnavailableReason: async () => null,
+    senderLabel: async () => 'CEO',
+    recipientLabel: async () => 'Research Director',
+    actions: { run: async () => '' },
+    sign: async () => ({ block: '' }),
+    buildContext: async () => ({}),
+    askAgent: async () => '',
+    tasks: {
+      begin: async () => ({ taskId: 'unused' }),
+      advance: async (_taskId, steps) => { transitions.push(...steps); },
+      getStatus: async () => 'delegated',
+      fail: async () => {},
+    },
+  };
+
+  const outcomes = await processHandoffs(deps);
+  const saved = await store.get(handoff.id);
+  const room = store.rooms.find((item) => item.id === roomId);
+  assert.equal(transitions.length, 1);
+  assert.equal((transitions[0] as { status: string }).status, 'awaiting_founder');
+  assert.equal((transitions[0] as { eventType: string }).eventType, 'handoff_worker_lease_expired_reconciled');
+  assert.equal(saved?.status, 'awaiting_founder');
+  assert.equal(room?.status, 'awaiting_founder');
+  assert.equal((await store.queued(10)).length, 0);
+  assert.equal(outcomes.length, 0);
 });
