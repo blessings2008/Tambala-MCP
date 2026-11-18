@@ -5,7 +5,7 @@ import {
   transitionPersistentOrganizationTask,
   type OrganizationTaskTransition,
 } from './task-lifecycle.js';
-import { getOrganizationTask } from './task-store.js';
+import { getOrganizationTask, type OrganizationTaskStatus } from './task-store.js';
 import { isAllowedOrganizationTaskTransition } from './task-transition-rules.js';
 
 /**
@@ -65,5 +65,17 @@ export async function failTrackedTask(taskId: unknown, message: string): Promise
     await failPersistentOrganizationTask(taskId, message.slice(0, 2000));
   } catch (error) {
     console.error('Task tracking could not record failure:', error instanceof Error ? error.message : error);
+  }
+}
+
+
+/** Read the persisted task state so recovery can reconcile a quarantined handoff without replaying it. */
+export async function getTrackedTaskStatus(taskId: unknown): Promise<OrganizationTaskStatus | null> {
+  if (!trackingConfigured() || typeof taskId !== 'string' || !taskId) return null;
+  try {
+    return (await getOrganizationTask(taskId))?.status ?? null;
+  } catch (error) {
+    console.error('Task tracking status could not be read:', error instanceof Error ? error.message : error);
+    return null;
   }
 }
