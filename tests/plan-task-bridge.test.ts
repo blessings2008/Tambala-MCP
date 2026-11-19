@@ -9,7 +9,7 @@ const plan: OrganizationalPlan = {
   assumptions: [], unresolvedQuestions: [], proposedByRoleId: 'ceo',
   createdAt: '2026-11-17T00:00:00.000Z', revision: 2,
   steps: [
-    ['Gather verified market evidence', 'Expected deliverable: Evidence brief', 'Acceptance criteria: Sources verified'].join(String.fromCharCode(10)),
+    { id: 'research', title: 'Research', objective: 'Gather verified market evidence', accountableRoleId: 'research-director',
       supportingRoleIds: [], dependsOn: [], capabilityRequirements: [], expectedDeliverable: 'Evidence brief',
       acceptanceCriteria: ['Sources verified'], risk: 'low', approvalRequired: false, reversible: true },
     { id: 'strategy', title: 'Strategy', objective: 'Prepare a strategy recommendation', accountableRoleId: 'strategy-director',
@@ -167,7 +167,7 @@ test('formats the handoff request as readable multi-line work instructions', asy
   });
   assert.equal(
     result.queued[0]?.request,
-    'Gather verified market evidence\\nExpected deliverable: Evidence brief\\nAcceptance criteria: Sources verified',
+    ['Gather verified market evidence', 'Expected deliverable: Evidence brief', 'Acceptance criteria: Sources verified'].join(String.fromCharCode(10)),
   );
   assert.equal(result.queued[0]?.request.includes(String.fromCharCode(92) + 'n'), false);
 });
