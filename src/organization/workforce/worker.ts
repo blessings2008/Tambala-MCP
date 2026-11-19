@@ -4,8 +4,6 @@ import { markDutyCycleCompleted, markDutyCycleFailed, markDutyCycleStarted } fro
 import { runScheduledQueueMaintenance } from './scheduler.js';
 
 const DEFAULT_INTERVAL_MS = 60_000;
-const MAX_BACKOFF_MS = 5 * 60_000;
-
 
 function configuredIntervalMs(): number {
   const seconds = Number(process.env.TAMBALA_ORG_WORKER_INTERVAL_SECONDS);
@@ -27,14 +25,12 @@ async function runCycle(): Promise<void> {
   try {
     const result = await runScheduledQueueMaintenance();
     await markDutyCycleCompleted();
-    const completedDuties = result.outcomes.filter((item) => item.status !== 'skipped').length;
-    const processedHandoffs = result.handoffs.length;
     console.log('Organization worker cycle completed:', JSON.stringify({
       newClaims: result.newClaims,
       recoveredReviews: result.recoveredReviews,
       promotionApprovals: result.promotionApprovals,
-      completedDuties,
-      processedHandoffs,
+      completedDuties: result.outcomes.filter((item) => item.status !== 'skipped').length,
+      processedHandoffs: result.handoffs.length,
     }));
   } catch (error) {
     await markDutyCycleFailed(error).catch((heartbeatError) => {
@@ -45,7 +41,10 @@ async function runCycle(): Promise<void> {
 }
 
 async function sleep(ms: number): Promise<void> {
-  await new Promise<void>((resolve) => setTimeout(resolve, ms));
+  const deadline = Date.now() + ms;
+  while (!stopping && Date.now() < deadline) {
+    await new Promise<void>((resolve) => setTimeout(resolve, Math.min(1_000, deadline - Date.now())));
+  }
 }
 
 async function main(): Promise<void> {
@@ -54,6 +53,7 @@ async function main(): Promise<void> {
   }
 
   const intervalMs = configuredIntervalMs();
+  let consecutiveFailures = 0;
   console.log(`Organization worker starting; cycle interval: ${Math.round(intervalMs / 1_000)} seconds.`);
 
   while (!stopping) {
@@ -63,15 +63,15 @@ async function main(): Promise<void> {
       await currentCycle;
     } catch (error) {
       failed = true;
+      consecutiveFailures += 1;
       console.error('Organization worker cycle failed:', error instanceof Error ? error.message : error);
     } finally {
       currentCycle = null;
     }
 
+    if (!failed) consecutiveFailures = 0;
     if (stopping) break;
-    const failures = failed ? 1 : 0;
-    // A failed cycle backs off; the next successful cycle resets the delay.
-    const delay = failed ? workerDelayAfterFailure(intervalMs, failures) : intervalMs;
+    const delay = workerDelayAfterFailure(intervalMs, consecutiveFailures);
     await sleep(delay);
   }
 
