@@ -26,11 +26,11 @@ type PlanEventRow = {
   created_at: string;
 };
 
-function fingerprint(plan: OrganizationalPlan): string {
+export function planFingerprint(plan: OrganizationalPlan): string {
   return createHash('sha256').update(JSON.stringify(plan)).digest('hex');
 }
 
-function approvalSubjectId(plan: OrganizationalPlan, step: OrganizationalPlanStep, planHash: string): string {
+export function planApprovalSubjectId(plan: OrganizationalPlan, step: OrganizationalPlanStep, planHash = planFingerprint(plan)): string {
   return [plan.id, String(plan.revision), step.id, planHash].join(':');
 }
 
@@ -58,6 +58,18 @@ function parseApprovalContent(value: string | null): {
   }
 }
 
+export function matchesExactPlanApproval(
+  contentValue: string | null,
+  subjectId: string | null,
+  plan: OrganizationalPlan,
+  step: OrganizationalPlanStep,
+): boolean {
+  const content = parseApprovalContent(contentValue);
+  const hash = planFingerprint(plan);
+  return Boolean(content && content.planHash === hash && content.stepId === step.id
+    && content.plan.id === plan.id && content.plan.revision === plan.revision
+    && planFingerprint(content.plan) === hash && subjectId === planApprovalSubjectId(plan, step, hash));
+}
 function planFromEvent(payload: unknown): OrganizationalPlan | null {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
   const root = payload as Record<string, unknown>;
@@ -70,14 +82,14 @@ function planFromEvent(payload: unknown): OrganizationalPlan | null {
 }
 
 async function createStepApprovals(taskId: string, plan: OrganizationalPlan): Promise<number> {
-  const planHash = fingerprint(plan);
+  const planHash = planFingerprint(plan);
   const existing = await supabaseSelect<ApprovalRow>(
     'organization_approval_requests',
     `select=*&task_id=eq.${encodeURIComponent(taskId)}&subject_type=eq.${APPROVAL_SUBJECT}&limit=200`,
   );
   let created = 0;
   for (const step of plan.steps.filter((item) => item.approvalRequired)) {
-    const subjectId = approvalSubjectId(plan, step, planHash);
+    const subjectId = planApprovalSubjectId(plan, step, planHash);
     const matches = existing.filter((row) => row.subject_id === subjectId);
     if (matches.length > 1) throw new Error(`Duplicate approval records exist for plan step ${step.id}; execution is paused for review.`);
     if (matches.length === 1) {
@@ -116,7 +128,7 @@ async function approvalStatusesForPlan(
     'organization_approval_requests',
     `select=*&task_id=eq.${encodeURIComponent(taskId)}&subject_type=eq.${APPROVAL_SUBJECT}&limit=200`,
   );
-  const hash = fingerprint(plan);
+  const hash = planFingerprint(plan);
   const statuses: Record<string, StepApprovalStatus> = {};
   for (const step of plan.steps) {
     if (!step.approvalRequired) {
@@ -130,13 +142,7 @@ async function approvalStatusesForPlan(
       continue;
     }
     const row = matches[0]!;
-    const content = parseApprovalContent(row.content);
-    const exact = Boolean(content
-      && content.planHash === hash
-      && content.stepId === step.id
-      && content.plan.id === plan.id
-      && content.plan.revision === plan.revision
-      && fingerprint(content.plan) === hash);
+    const exact = matchesExactPlanApproval(row.content, row.subject_id, plan, step);
     if (!exact) {
       statuses[step.id] = 'pending';
       continue;
@@ -249,13 +255,8 @@ export async function reconcileOrganizationalPlans(maxPlans = 40): Promise<numbe
 registerApprovalHook(APPROVAL_SUBJECT, async (approval, decision) => {
   if (decision !== 'approved' || !approval.task_id) return;
   const content = parseApprovalContent(approval.content);
-  if (!content || content.planHash !== fingerprint(content.plan)
-    || content.stepId !== content.plan.steps.find((step) => step.id === content.stepId)?.id
-    || approval.subject_id !== approvalSubjectId(
-      content.plan,
-      content.plan.steps.find((step) => step.id === content.stepId)!,
-      content.planHash,
-    )) {
+  const step = content?.plan.steps.find((candidate) => candidate.id === content.stepId);
+  if (!content || !step || !matchesExactPlanApproval(approval.content, approval.subject_id, content.plan, step)) {
     throw new Error('The approval does not match its exact plan revision and step; no work was dispatched.');
   }
   await reconcileOnePlan(approval.task_id, content.plan);
