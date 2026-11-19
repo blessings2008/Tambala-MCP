@@ -15,6 +15,7 @@ export async function runScheduledQueueMaintenance(deps: ScheduledQueueMaintenan
   dispatchNew: dispatchNewDiscoveryQueue,
   dispatchReviewing: dispatchReviewingDiscoveryQueue,
   dispatchApprovals: dispatchQualifiedDiscoveryApprovals,
+  reconcilePlans: reconcileOrganizationalPlans,
   runDuties: runDutiesOnce,
 }) {
   const recoveredReviews = await deps.dispatchReviewing(5);
