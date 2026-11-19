@@ -93,8 +93,7 @@ async function createStepApprovals(taskId: string, plan: OrganizationalPlan): Pr
     const matches = existing.filter((row) => row.subject_id === subjectId);
     if (matches.length > 1) throw new Error(`Duplicate approval records exist for plan step ${step.id}; execution is paused for review.`);
     if (matches.length === 1) {
-      const content = parseApprovalContent(matches[0]?.content ?? null);
-      if (!content || content.planHash !== planHash || content.stepId !== step.id) {
+      if (!matchesExactPlanApproval(matches[0]?.content ?? null, matches[0]?.subject_id ?? null, plan, step)) {
         throw new Error(`The existing approval record for step ${step.id} does not match this plan revision.`);
       }
       continue;
