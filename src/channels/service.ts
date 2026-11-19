@@ -21,6 +21,7 @@ import { maskNumber, normalizePhone, normalizePhoneFromLabel } from './phone.js'
 import { localTime } from '../organization/workforce/schedule.js';
 import { isCompanyStatusRequest, isFounderKnowledgeQuestion, runCompanyStatusReport } from './founder-execution.js';
 import { getRuntimeControl, setRuntimePaused } from '../organization/runtime-control.js';
+import { planFounderObjective } from '../organization/intelligence-service.js';
 
 /** The Founder's own WhatsApp number, where employees reach him. Set TAMBALA_FOUNDER_WHATSAPP. */
 export function founderNumber(): string | null {
@@ -486,6 +487,33 @@ async function answerFounderKnowledgeQuestion(envelope: FounderMessageEnvelope):
   );
 }
 
+function formatFounderPlanPreview(result: Awaited<ReturnType<typeof planFounderObjective>>): string {
+  const assessment = result.assessment;
+  const lines = [
+    'CEO ADAPTIVE PLAN REVIEW',
+    '',
+    `Objective: ${assessment.objective.desiredOutcome}`,
+    `Assessment: ${assessment.status.replace(/_/g, ' ')}`,
+  ];
+  if (assessment.blockers.length) lines.push('', 'Blockers:', ...assessment.blockers.map((item) => `- ${item}`));
+  if (assessment.interpretation.unresolvedQuestions.length) lines.push('', 'Clarifications needed:', ...assessment.interpretation.unresolvedQuestions.map((item) => `- ${item}`));
+  if (assessment.warnings.length) lines.push('', 'Warnings:', ...assessment.warnings.map((item) => `- ${item}`));
+  if ('plan' in result && result.plan) {
+    lines.push('', `Proposed work sequence (${result.plan.steps.length} steps):`);
+    for (const [index, step] of result.plan.steps.entries()) {
+      const capability = step.capabilityRequirements.map((item) => item.capabilityId).join(', ');
+      const dependencies = step.dependsOn.length ? `; depends on ${step.dependsOn.join(', ')}` : '';
+      const approval = step.approvalRequired ? '; Founder approval required' : '';
+      lines.push(`${index + 1}. ${step.title} — owner role: ${step.accountableRoleId}; capability: ${capability}${dependencies}${approval}`, `   Deliverable: ${step.expectedDeliverable}`);
+    }
+    if (result.plan.assumptions.length) lines.push('', 'Assumptions:', ...result.plan.assumptions.map((item) => `- ${item}`));
+    lines.push('', 'Status: proposal only. No tasks or handoffs have been created, no employee has been dispatched, and no external action has been taken. The persistent approval-to-handoff bridge is not yet enabled.');
+  } else {
+    lines.push('', 'No executable plan was produced. The CEO must resolve the blockers above before assigning work.');
+  }
+  return lines.join('\n');
+}
+
 async function handleFounderInstruction(envelope: FounderMessageEnvelope): Promise<string> {
   if (isCompanyStatusRequest(envelope.content.text)) {
     try { return await runCompanyStatusReport(envelope); }
@@ -505,6 +533,18 @@ async function handleFounderInstruction(envelope: FounderMessageEnvelope): Promi
     }
   }
   try {
+    // Multi-capability requests go through the adaptive CEO planner first.
+    // Until approval records are bound to exact plan revisions and steps, this
+    // path is deliberately proposal-only and cannot create staff handoffs.
+    const adaptive = await planFounderObjective(envelope.content.text, {
+      correlationId: envelope.message_id,
+      objectiveId: `founder-${envelope.message_id}`,
+      planId: `plan-${envelope.message_id}`,
+    });
+    if (adaptive.assessment.interpretation.requiredCapabilityIds.length > 1) {
+      return formatFounderPlanPreview(adaptive);
+    }
+
     const matches = await routeOrganizationObjective(envelope.content.text);
     const mapped = resolveExecutionRoute(matches[0]);
     const execution = mapped.status === 'ready'
