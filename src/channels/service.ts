@@ -22,6 +22,7 @@ import { localTime } from '../organization/workforce/schedule.js';
 import { isCompanyStatusRequest, isFounderKnowledgeQuestion, runCompanyStatusReport } from './founder-execution.js';
 import { getRuntimeControl, setRuntimePaused } from '../organization/runtime-control.js';
 import { planFounderObjective } from '../organization/intelligence-service.js';
+import { persistFounderPlanProposal } from '../organization/workforce/plan-approval-bridge.js';
 
 /** The Founder's own WhatsApp number, where employees reach him. Set TAMBALA_FOUNDER_WHATSAPP. */
 export function founderNumber(): string | null {
@@ -487,7 +488,10 @@ async function answerFounderKnowledgeQuestion(envelope: FounderMessageEnvelope):
   );
 }
 
-function formatFounderPlanPreview(result: Awaited<ReturnType<typeof planFounderObjective>>): string {
+function formatFounderPlanPreview(
+  result: Awaited<ReturnType<typeof planFounderObjective>>,
+  persisted?: { taskId: string; approvalRequests: number; queuedSteps: number },
+): string {
   const assessment = result.assessment;
   const lines = [
     'CEO ADAPTIVE PLAN REVIEW',
@@ -507,7 +511,16 @@ function formatFounderPlanPreview(result: Awaited<ReturnType<typeof planFounderO
       lines.push(`${index + 1}. ${step.title} — owner role: ${step.accountableRoleId}; capability: ${capability}${dependencies}${approval}`, `   Deliverable: ${step.expectedDeliverable}`);
     }
     if (result.plan.assumptions.length) lines.push('', 'Assumptions:', ...result.plan.assumptions.map((item) => `- ${item}`));
-    lines.push('', 'Status: proposal only. No tasks or handoffs have been created, no employee has been dispatched, and no external action has been taken. The persistent approval-to-handoff bridge is not yet enabled.');
+    if (persisted) {
+      lines.push('', `Persistent task: ${persisted.taskId}`, `Employee handoffs queued: ${persisted.queuedSteps}`, `Founder approval requests created: ${persisted.approvalRequests}`);
+      lines.push(persisted.approvalRequests > 0
+        ? 'Status: saved. Approval-gated steps remain blocked until you approve their exact plan revision. Approved steps become eligible for dispatch when their dependencies and employee runtime are ready.'
+        : persisted.queuedSteps > 0
+          ? 'Status: saved and delegated. Employee work is queued; no external action is authorized by this plan.'
+          : 'Status: saved, but no step is currently dispatchable. The workforce reconciler will retry when dependencies or employee runtime become ready.');
+    } else {
+      lines.push('', 'Status: proposal only. No tasks or handoffs have been created, no employee has been dispatched, and no external action has been taken. Resolve the blockers above before execution.');
+    }
   } else {
     lines.push('', 'No executable plan was produced. The CEO must resolve the blockers above before assigning work.');
   }
@@ -533,15 +546,21 @@ async function handleFounderInstruction(envelope: FounderMessageEnvelope): Promi
     }
   }
   try {
-    // Multi-capability requests go through the adaptive CEO planner first.
-    // Until approval records are bound to exact plan revisions and steps, this
-    // path is deliberately proposal-only and cannot create staff handoffs.
+    // Multi-capability requests go through the adaptive CEO planner and the
+    // durable plan/approval bridge. External and high-risk steps remain gated.
     const adaptive = await planFounderObjective(envelope.content.text, {
       correlationId: envelope.message_id,
       objectiveId: `founder-${envelope.message_id}`,
       planId: `plan-${envelope.message_id}`,
     });
     if (adaptive.assessment.interpretation.requiredCapabilityIds.length > 1) {
+      if ('plan' in adaptive && adaptive.plan && adaptive.assessment.status === 'ready_for_planning') {
+        const persisted = await persistFounderPlanProposal({
+          objective: adaptive.assessment.objective.statement,
+          plan: adaptive.plan,
+        });
+        return formatFounderPlanPreview(adaptive, persisted);
+      }
       return formatFounderPlanPreview(adaptive);
     }
 
