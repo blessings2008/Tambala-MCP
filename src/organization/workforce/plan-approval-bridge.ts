@@ -11,7 +11,7 @@ import {
   queuePreparedPlanHandoffs,
 } from '../plan-task-bridge.js';
 import type { StepApprovalStatus } from '../plan-coordinator.js';
-import { createApprovalRequest, type ApprovalRow } from './approvals-service.js';
+import { createApprovalRequest, registerApprovalHook, type ApprovalRow } from './approvals-service.js';
 import { getEmployeeProfiles } from './profiles.js';
 import { SupabaseHandoffStore } from './handoffs.js';
 import { dbConfigured } from './db-util.js';
@@ -89,7 +89,7 @@ async function createStepApprovals(taskId: string, plan: OrganizationalPlan): Pr
     }
     const approvalId = await createApprovalRequest({
       actionType: 'organizational_plan_step',
-      summary: `Founder approval: ${step.title}`,
+      summary: `Founder approval [${step.risk}]: ${step.title}. Objective: ${step.objective}. Deliverable: ${step.expectedDeliverable}`,
       requestedByRoleId: 'ceo',
       riskLevel: step.risk,
       taskId,
@@ -164,13 +164,22 @@ async function reconcileOnePlan(taskId: string, plan: OrganizationalPlan): Promi
   const approvals = await approvalStatusesForPlan(taskId, plan);
   const progress = await loadPlanProgressFromHandoffs(plan, store, approvals);
   const prepared = preparePlanStepDispatches(plan, progress, activeRoleIds, employeeRoutes);
-  if (!prepared.dispatches.length) return 0;
-  const result = await queuePreparedPlanHandoffs({
+  const result = prepared.dispatches.length ? await queuePreparedPlanHandoffs({
     prepared,
     store,
     parentTaskId: taskId,
     actorRoleId: 'ceo',
-  });
+  }) : { queued: [], blocked: prepared.blockers };
+  const states = prepared.coordination.steps.map((step) => step.status);
+  if (states.length && states.every((status) => status === 'completed')) {
+    await updateOrganizationTask(taskId, { status: 'completed', current_stage: 'complete', completed_at: new Date().toISOString(), error_message: null });
+  } else if (states.some((status) => status === 'failed' || status === 'blocked_approval_rejected' || status === 'blocked_owner_inactive')) {
+    await updateOrganizationTask(taskId, { status: 'needs_more_work', current_stage: 'ceo', error_message: prepared.coordination.replanReasons.join('; ').slice(0, 1000) || 'Plan requires CEO review.' });
+  } else if (result.queued.length || states.some((status) => status === 'queued' || status === 'in_progress')) {
+    await updateOrganizationTask(taskId, { status: 'delegated', current_stage: 'department', error_message: null });
+  } else if (states.some((status) => status === 'awaiting_approval' || status === 'awaiting_founder')) {
+    await updateOrganizationTask(taskId, { status: 'awaiting_founder', current_stage: 'founder' });
+  }
   return result.queued.length;
 }
 
@@ -234,3 +243,20 @@ export async function reconcileOrganizationalPlans(maxPlans = 40): Promise<numbe
   }
   return queued;
 }
+
+
+/** An approved plan step is reconciled immediately; dependency checks still apply. */
+registerApprovalHook(APPROVAL_SUBJECT, async (approval, decision) => {
+  if (decision !== 'approved' || !approval.task_id) return;
+  const content = parseApprovalContent(approval.content);
+  if (!content || content.planHash !== fingerprint(content.plan)
+    || content.stepId !== content.plan.steps.find((step) => step.id === content.stepId)?.id
+    || approval.subject_id !== approvalSubjectId(
+      content.plan,
+      content.plan.steps.find((step) => step.id === content.stepId)!,
+      content.planHash,
+    )) {
+    throw new Error('The approval does not match its exact plan revision and step; no work was dispatched.');
+  }
+  await reconcileOnePlan(approval.task_id, content.plan);
+});
