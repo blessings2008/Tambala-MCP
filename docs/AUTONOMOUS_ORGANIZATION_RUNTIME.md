@@ -1,9 +1,9 @@
 # Tambala Autonomous Organisation Runtime
 
-**Status:** Architecture proposal — implementation not yet activated  
+**Status:** Foundation merged and deployed; adaptive planning and execution bridge remain gated from live Founder intake  
 **Owner:** Founder  
 **Working autonomy model:** Bounded autonomy  
-**Implementation branch:** `feat/autonomous-organization-runtime`
+**Live branch:** `fix/org-whatsapp-inbox`
 
 ## 1. Purpose
 
@@ -295,6 +295,16 @@ The current implementation branch adds the first safe execution bridge without a
 - A running handoff whose heartbeat expires after 30 minutes is moved to Founder review, not automatically replayed. This is deliberate: a crashed worker may have completed an external side effect before it stopped recording progress.
 - If a worker loses its lease, it stops before starting further action execution. Founder review is required to verify uncertain side effects before resuming.
 
-Three additive migrations accompany this bridge: plan-step handoff idempotency, plan-proposal event idempotency, and handoff worker lease metadata. They must be reviewed and applied in the correct deployment sequence before deploying code that depends on the new columns. They have not been applied to production.
+Three additive migrations accompany this bridge: plan-step handoff idempotency, plan-proposal event idempotency, and handoff worker lease metadata. The worker-lease and plan-proposal event migrations were already present in production. The missing plan-step handoff idempotency migration was applied on 19 November 2026 and verified: `organization_handoffs.dispatch_key` now exists with a unique partial index. The repository migration filename is aligned to the production migration-history version `20261119140007`.
 
 The existing `runDutiesOnce` cycle still performs one bounded pass over duties and queued handoffs. The lease and recovery safeguards improve that existing worker path, but they do not turn it into a continuously running worker service. A separately supervised worker, monitoring, graceful shutdown and deployment-time migration verification remain outstanding.
+
+
+## 17. Production verification — 19 November 2026
+
+- Render service `Tambala org` is configured to deploy from `fix/org-whatsapp-inbox` and has automatic deploys enabled.
+- The adaptive runtime merge commit `2e1060a26e92bae25bd1382962e76300f4ed7ba1` is an ancestor of the live branch. The latest live deployment was built from `e69e9d64c7631ec4eb57c7005c7dc6383b486e04`, which includes the adaptive runtime merge.
+- Production migration history includes worker leases and plan proposal event idempotency. The plan-step dispatch-key migration was applied and verified separately on 19 November 2026.
+- The plan-to-task bridge is still not connected to the live Founder WhatsApp or dashboard instruction path. The existing live collaboration endpoint remains a single-specialist flow.
+- The current Render service is a free web service. Its in-process scheduler is optional and does not provide a guaranteed always-on, separately supervised worker. A dedicated persistent worker requires a supported worker deployment and an explicit hosting decision.
+- No claim of fully autonomous 24/7 operation is valid until live intake, authorization/approval orchestration, worker supervision, migration verification at startup, and end-to-end recovery tests are complete.
