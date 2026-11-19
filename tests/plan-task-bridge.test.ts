@@ -157,3 +157,17 @@ test('approval state is never inferred as approved from a handoff', async () => 
   const approved = await loadPlanProgressFromHandoffs(approvalPlan, store, { research: 'approved' });
   assert.equal(approved.research?.approvalStatus, 'approved');
 });
+
+
+test('formats the handoff request as readable multi-line work instructions', async () => {
+  const store = new InMemoryHandoffStore();
+  const prepared = preparePlanStepDispatches(plan, {}, new Set(['research-director', 'strategy-director']), routes);
+  const result = await queuePreparedPlanHandoffs({
+    prepared, store, parentTaskId: 'parent-123', actorRoleId: 'ceo',
+  });
+  assert.equal(
+    result.queued[0]?.request,
+    'Gather verified market evidence\\nExpected deliverable: Evidence brief\\nAcceptance criteria: Sources verified',
+  );
+  assert.equal(result.queued[0]?.request.includes('\\\\n'), false);
+});
