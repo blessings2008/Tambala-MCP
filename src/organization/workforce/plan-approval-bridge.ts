@@ -235,6 +235,7 @@ export async function reconcileOrganizationalPlans(maxPlans = 40): Promise<numbe
     const plan = planFromEvent(event.payload);
     if (!plan) continue;
     try {
+      await createStepApprovals(event.task_id, plan);
       queued += await reconcileOnePlan(event.task_id, plan);
     } catch (error) {
       console.error('Adaptive plan reconciliation held safely:', {
