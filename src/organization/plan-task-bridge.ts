@@ -176,7 +176,7 @@ export async function queuePreparedPlanHandoffs(input: {
       step.objective,
       `Expected deliverable: ${step.expectedDeliverable}`,
       `Acceptance criteria: ${step.acceptanceCriteria.join('; ')}`,
-    ].join('\\n').slice(0, 1000);
+    ].join('\n').slice(0, 1000);
     const handoff = await queueHandoff(input.store, {
       fromRoleId: input.actorRoleId,
       toAgent: dispatch.agent,
