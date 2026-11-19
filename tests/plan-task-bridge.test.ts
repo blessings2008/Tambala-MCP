@@ -169,5 +169,5 @@ test('formats the handoff request as readable multi-line work instructions', asy
     result.queued[0]?.request,
     'Gather verified market evidence\\nExpected deliverable: Evidence brief\\nAcceptance criteria: Sources verified',
   );
-  assert.equal(result.queued[0]?.request.includes('\\\\n'), false);
+  assert.equal(result.queued[0]?.request.includes(String.fromCharCode(92) + 'n'), false);
 });
