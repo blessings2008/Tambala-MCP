@@ -13,7 +13,8 @@
     "daily-report": "node dist/daily-report-job.js",
     "test": "tsx --test tests/*.test.ts",
     "seed:sql": "tsx scripts/generate-seed-sql.ts",
-    "check:evolution": "tsx scripts/check-evolution.ts"
+    "check:evolution": "tsx scripts/check-evolution.ts",
+    "worker:org": "node dist/organization/workforce/worker.js"
   },
   "dependencies": {
     "@modelcontextprotocol/node": "2.1.2",
