@@ -4,15 +4,29 @@
 alter table public.organization_approval_requests
   add column if not exists resolution_note text,
   add column if not exists subject_type text,
-  add column if not exists subject_id text;
+  add column if not exists subject_id text,
+  add column if not exists task_id text,
+  add column if not exists content text;
 
--- The original persistence migration used decision_note; the current service
--- reads resolution_note. Preserve legacy notes while moving reads to the
--- canonical service field.
-update public.organization_approval_requests
-   set resolution_note = decision_note
- where resolution_note is null
-   and decision_note is not null;
+-- The original persistence migration used decision_note. Some live databases
+-- may already have been aligned and no longer contain that legacy column.
+-- Backfill only when it exists so the migration works in either state.
+do $$
+begin
+  if exists (
+    select 1
+      from information_schema.columns
+     where table_schema = 'public'
+       and table_name = 'organization_approval_requests'
+       and column_name = 'decision_note'
+  ) then
+    execute 'update public.organization_approval_requests
+                set resolution_note = decision_note
+              where resolution_note is null
+                and decision_note is not null';
+  end if;
+end
+$$;
 
 create index if not exists organization_approval_requests_subject_idx
   on public.organization_approval_requests(subject_type, subject_id)
