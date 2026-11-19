@@ -1,0 +1,41 @@
+name: Keep Tambala Org awake
+
+on:
+  schedule:
+    # Keep inbound traffic below Render Free's 15-minute idle window.
+    # Offset away from the top of the hour to reduce GitHub schedule contention.
+    - cron: "3,13,23,33,43,53 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tambala-org-free-service-keepalive
+  cancel-in-progress: false
+
+jobs:
+  keepalive:
+    name: Wake and check Tambala Org
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check live service readiness
+        shell: bash
+        env:
+          HEALTH_URL: https://tambala-org.onrender.com/ready
+        run: |
+          set -euo pipefail
+          echo "Checking Tambala Org readiness at $(date -u +%FT%TZ)"
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --retry 3 \
+            --retry-all-errors \
+            --retry-delay 10 \
+            --connect-timeout 15 \
+            --max-time 45 \
+            "$HEALTH_URL"
+          echo
