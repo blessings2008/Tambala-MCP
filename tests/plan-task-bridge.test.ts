@@ -9,7 +9,7 @@ const plan: OrganizationalPlan = {
   assumptions: [], unresolvedQuestions: [], proposedByRoleId: 'ceo',
   createdAt: '2026-11-17T00:00:00.000Z', revision: 2,
   steps: [
-    { id: 'research', title: 'Research', objective: 'Gather verified market evidence', accountableRoleId: 'research-director',
+    ['Gather verified market evidence', 'Expected deliverable: Evidence brief', 'Acceptance criteria: Sources verified'].join(String.fromCharCode(10)),
       supportingRoleIds: [], dependsOn: [], capabilityRequirements: [], expectedDeliverable: 'Evidence brief',
       acceptanceCriteria: ['Sources verified'], risk: 'low', approvalRequired: false, reversible: true },
     { id: 'strategy', title: 'Strategy', objective: 'Prepare a strategy recommendation', accountableRoleId: 'strategy-director',
