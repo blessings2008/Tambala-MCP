@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { getAgentOperationalInfo } from '../../services/ai.js';
 import { supabaseSelect } from '../../lib/supabase.js';
 import { getOrganizationSnapshot } from '../service.js';
-import { createOrganizationTask, updateOrganizationTask } from '../task-store.js';
+import { createOrganizationTask, recordOrganizationTaskEvent, updateOrganizationTask } from '../task-store.js';
 import type { OrganizationalPlan, OrganizationalPlanStep } from '../runtime-contracts.js';
 import {
   buildPlanProposalEvent,
@@ -135,7 +135,7 @@ async function approvalStatusesForPlan(
       statuses[step.id] = 'not_required';
       continue;
     }
-    const subjectId = approvalSubjectId(plan, step, hash);
+    const subjectId = planApprovalSubjectId(plan, step, hash);
     const matches = rows.filter((row) => row.subject_id === subjectId);
     if (matches.length !== 1) {
       statuses[step.id] = 'pending';
@@ -203,9 +203,7 @@ export async function persistFounderPlanProposal(input: {
   const taskId = randomUUID();
   await createOrganizationTask({ id: taskId, objective: input.objective.trim().slice(0, 1000) });
   await updateOrganizationTask(taskId, { status: 'ceo_analyzing', current_stage: 'ceo' });
-  await import('../task-store.js').then(({ recordOrganizationTaskEvent }) =>
-    recordOrganizationTaskEvent(buildPlanProposalEvent(taskId, input.plan)),
-  );
+  await recordOrganizationTaskEvent(buildPlanProposalEvent(taskId, input.plan));
   const approvalRequests = await createStepApprovals(taskId, input.plan);
   const queuedSteps = await reconcileOnePlan(taskId, input.plan);
   await updateOrganizationTask(taskId, {
