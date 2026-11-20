@@ -7,14 +7,12 @@ import { assertRuntimeActive } from '../organization/runtime-control.js';
 import { dbConfigured } from '../organization/workforce/db-util.js';
 import { assertFreeAIModel, recordAIUsage } from './ai/spend.js';
 import { formatResearchContext, webResearch, webResearchMany } from './web-research.js';
+import { getAIRequestBudget } from './ai/request-budget.js';
 
 const clients = new Map<AgentName, OpenAI>();
 
 // Preserve the full organization and grounding rules while keeping total requests below provider TPM limits.
 const MAX_SYSTEM_PROMPT_CHARS = 3_600;
-const MAX_USER_INPUT_CHARS = 1_800;
-const MAX_CONTEXT_CHARS = 1_200;
-const MAX_COMPLETION_TOKENS = 3_200;
 
 function boundText(value: string, maxChars: number): string {
   const normalized = value.replace(/[ \t]+/g, ' ').replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
@@ -173,14 +171,10 @@ async function askTambalaAIInternal(agent: AgentName, input: string, context?: u
   try {
     const systemPrompt = boundText(AGENT_PROMPT_RULES[agent], agent === 'outreach' && input.includes('WEB RESEARCH RESULT') ? 4_200 : MAX_SYSTEM_PROMPT_CHARS);
     const researchHeavyOutreach = agent === 'outreach' && input.includes('WEB RESEARCH RESULT');
-    const queueOnlyResearch = agent === 'research' && /STANDING DUTY: Daily prospect queue intelligence|STANDING DUTY: Research department queue assessment/i.test(input);
-    const securityReview = agent === 'security' && input.includes('STANDING DUTY: Daily incident monitoring and security review');
-    const userInputLimit = researchHeavyOutreach ? 5_500 : queueOnlyResearch ? 1_800 : MAX_USER_INPUT_CHARS;
-    const contextLimit = researchHeavyOutreach ? 250 : queueOnlyResearch ? 2_800 : securityReview ? 2_200 : MAX_CONTEXT_CHARS;
+    const { userInputLimit, contextLimit, completionBudget } = getAIRequestBudget(agent, input);
     const userInput = boundText(input, userInputLimit);
     const contextText = context === undefined ? '' : '\n\nTambala business context:\n' + serializeBoundedContext(context, contextLimit);
     const userMessage = boundText(userInput + contextText, userInputLimit + contextLimit + 40);
-    const completionBudget = queueOnlyResearch ? 2_600 : agent === 'operations' ? 3_200 : researchHeavyOutreach ? (input.includes('discovery pass') ? 1_200 : 1_600) : agent === 'research' ? 2_800 : MAX_COMPLETION_TOKENS;
     const requestPayload = {
       model: config.model,
       messages: [
