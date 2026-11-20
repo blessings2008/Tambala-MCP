@@ -1,4 +1,4 @@
-export interface DiscoveryQueueHandoffMarker { request: string; status?: string; created_at?: string }
+export interface DiscoveryQueueHandoffMarker { request: string; status?: string; created_at?: string; completed_at?: string | null }
 
 /**
  * True when a queue row already has durable work that should suppress another dispatch.
@@ -15,8 +15,9 @@ export function hasDiscoveryQueueHandoff(
     if (!item.request.includes(marker)) return false;
     if (item.status !== 'failed') return true;
     // Preserve the historical conservative behaviour when callers omit status/timestamps.
-    if (!retryFailedBeforeIso || !item.created_at) return true;
-    return item.created_at >= retryFailedBeforeIso;
+    const lastFailureAt = item.completed_at ?? item.created_at;
+    if (!retryFailedBeforeIso || !lastFailureAt) return true;
+    return lastFailureAt >= retryFailedBeforeIso;
   });
 }
 
