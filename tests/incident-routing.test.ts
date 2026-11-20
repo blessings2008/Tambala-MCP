@@ -40,3 +40,13 @@ test('empty and unrelated messages are not classified as workflow blocks', () =>
   assert.equal(isNonSecurityWorkflowBlock(''), false);
   assert.equal(isNonSecurityWorkflowBlock('The security scan detected an unexpected login.'), false);
 });
+
+
+test('provider rate limits and exhausted free daily quotas are operational blocks, not security incidents', () => {
+  const messages = [
+    'research agent openrouter request failed (HTTP 429): 429 Rate limit exceeded: free-models-per-day.',
+    'HTTP 429 rate limit exceeded; retry after 30 seconds.',
+    'Provider returned too many requests.',
+  ];
+  for (const message of messages) assert.equal(isNonSecurityWorkflowBlock(message), true, message);
+});
