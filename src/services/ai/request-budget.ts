@@ -21,6 +21,9 @@ export function getAIRequestBudget(agent: AgentName, input: string): AIRequestBu
   const queueRecordReview = agent === 'research'
     && /(?:reviewing one existing lead_discovery_queue record|re-assess this existing queue record)/i.test(input)
     && /Queue record ID:\s*[0-9a-f-]{36}\./i.test(input);
+  const handoffReview = agent === 'orchestrator'
+    && input.includes('CEO REVIEW — you own acceptance of this delegated work.')
+    && input.includes('EMPLOYEE DELIVERABLE:');
   const securityReview = agent === 'security'
     && input.includes('STANDING DUTY: Daily incident monitoring and security review');
 
@@ -28,13 +31,16 @@ export function getAIRequestBudget(agent: AgentName, input: string): AIRequestBu
     userInputLimit: researchHeavyOutreach ? 5_500
       : queueOnlyResearch ? 1_800
       : queueRecordReview ? 4_200
+      : handoffReview ? 6_500
       : MAX_USER_INPUT_CHARS,
     contextLimit: researchHeavyOutreach ? 250
       : queueOnlyResearch ? 2_800
       : queueRecordReview ? 700
+      : handoffReview ? 300
       : securityReview ? 2_200
       : MAX_CONTEXT_CHARS,
     completionBudget: queueOnlyResearch ? 2_600
+      : handoffReview ? 700
       : agent === 'operations' ? 3_200
       : researchHeavyOutreach ? (input.includes('discovery pass') ? 1_200 : 1_600)
       : agent === 'research' ? 2_800

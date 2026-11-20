@@ -8,6 +8,7 @@ import { deterministicBriefing } from './briefing.js';
 import { createApprovalRequest, registerApprovalHook, type ApprovalRow } from './approvals-service.js';
 import type { AgentName } from '../../services/ai/models.js';
 import { setRuntimeIncidentHandler, type RuntimeIncident } from './incident-events.js';
+import { isNonSecurityWorkflowBlock } from './incident-routing.js';
 import { type ContextKind, type StandingDuty } from './duties.js';
 import { dbConfigured as dbOn } from './db-util.js';
 import { loadDuties, requireConfigStore, saveBuiltinOverride, saveCustomDuty, SupabaseDutyConfigStore, type DutyConfigStore } from './duty-config.js';
@@ -694,6 +695,12 @@ async function dispatchIncidentToIT(input: RuntimeIncident & {
       [{ type: 'notify_founder', text: `Cybersecurity & IT could not complete its own investigation. Source: ${input.source}. Category: ${input.category ?? 'unknown'}. Error: ${input.message.slice(0, 240)}. Founder review is required.` }],
       [],
     ).catch((error) => console.error('[incident] Founder escalation could not be queued:', error instanceof Error ? error.message : error));
+    return;
+  }
+  if (isNonSecurityWorkflowBlock(input.message)) {
+    console.info('[incident] Expected business/workflow block retained on its originating task; not routed to Cybersecurity & IT.', {
+      source: input.source, agent: input.agent ?? 'unknown', message: input.message.slice(0, 240),
+    });
     return;
   }
   if (!dbConfigured()) {
