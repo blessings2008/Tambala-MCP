@@ -70,6 +70,7 @@ test('CEO handoff reviews preserve the employee deliverable for acceptance', () 
     '**Public organisational contact evidence:** centralres@sunbirdmalawi.com; +265 885 996 521.',
     '**Verification gaps:** Verify the listed phone and email against the official contact page.',
     '**Recommendation:** INVESTIGATE.',
+    'Additional evidence notes: '.concat('verified record detail '.repeat(180)),
   ].join(' ');
   const prompt = [
     'CEO REVIEW — you own acceptance of this delegated work.',
@@ -81,7 +82,7 @@ test('CEO handoff reviews preserve the employee deliverable for acceptance', () 
   ].join('\n\n');
 
   const budget = getAIRequestBudget('orchestrator', prompt);
-  assert.equal(budget.userInputLimit, 4_200);
+  assert.equal(budget.userInputLimit, 6_500);
   assert.equal(budget.contextLimit, 300);
   assert.equal(budget.completionBudget, 700);
   assert.ok(prompt.length < budget.userInputLimit);
