@@ -22,7 +22,7 @@ export function getAIRequestBudget(agent: AgentName, input: string): AIRequestBu
     && /(?:reviewing one existing lead_discovery_queue record|re-assess this existing queue record)/i.test(input)
     && /Queue record ID:\s*[0-9a-f-]{36}\./i.test(input);
   const outreachProspectReview = agent === 'outreach'
-    && /Review this single researched Tambala prospect using the attached record/i.test(input)
+    && /Review(?:ing)? this single researched Tambala prospect using the attached record/i.test(input)
     && /Queue record ID:\s*[0-9a-f-]{36}\./i.test(input);
   const handoffReview = agent === 'orchestrator'
     && input.includes('CEO REVIEW — you own acceptance of this delegated work.')
