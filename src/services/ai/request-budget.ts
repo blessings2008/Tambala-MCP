@@ -20,7 +20,7 @@ export function getAIRequestBudget(agent: AgentName, input: string): AIRequestBu
     && /STANDING DUTY: Daily prospect queue intelligence|STANDING DUTY: Research department queue assessment/i.test(input);
   const queueRecordReview = agent === 'research'
     && /(?:reviewing one existing lead_discovery_queue record|re-assess this existing queue record)/i.test(input)
-    && /Queue record ID:\\s*[0-9a-f-]{36}\\./i.test(input);
+    && /Queue record ID:\s*[0-9a-f-]{36}\./i.test(input);
   const securityReview = agent === 'security'
     && input.includes('STANDING DUTY: Daily incident monitoring and security review');
 
