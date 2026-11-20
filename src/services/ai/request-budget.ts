@@ -21,6 +21,9 @@ export function getAIRequestBudget(agent: AgentName, input: string): AIRequestBu
   const queueRecordReview = agent === 'research'
     && /(?:reviewing one existing lead_discovery_queue record|re-assess this existing queue record)/i.test(input)
     && /Queue record ID:\s*[0-9a-f-]{36}\./i.test(input);
+  const outreachProspectReview = agent === 'outreach'
+    && /Review(?:ing)? this single researched Tambala prospect using the attached record/i.test(input)
+    && /Queue record ID:\s*[0-9a-f-]{36}\./i.test(input);
   const handoffReview = agent === 'orchestrator'
     && input.includes('CEO REVIEW — you own acceptance of this delegated work.')
     && input.includes('EMPLOYEE DELIVERABLE:');
@@ -30,16 +33,17 @@ export function getAIRequestBudget(agent: AgentName, input: string): AIRequestBu
   return {
     userInputLimit: researchHeavyOutreach ? 5_500
       : queueOnlyResearch ? 1_800
-      : queueRecordReview ? 4_200
+      : queueRecordReview || outreachProspectReview ? 4_200
       : handoffReview ? 6_500
       : MAX_USER_INPUT_CHARS,
     contextLimit: researchHeavyOutreach ? 250
       : queueOnlyResearch ? 2_800
-      : queueRecordReview ? 700
+      : queueRecordReview || outreachProspectReview ? 700
       : handoffReview ? 300
       : securityReview ? 2_200
       : MAX_CONTEXT_CHARS,
     completionBudget: queueOnlyResearch ? 2_600
+      : outreachProspectReview ? 2_800
       : handoffReview ? 700
       : agent === 'operations' ? 3_200
       : researchHeavyOutreach ? (input.includes('discovery pass') ? 1_200 : 1_600)
