@@ -13,6 +13,7 @@ const clients = new Map<AgentName, OpenAI>();
 
 // Preserve the full organization and grounding rules while keeping total requests below provider TPM limits.
 const MAX_SYSTEM_PROMPT_CHARS = 3_600;
+const MAX_CONTEXT_CHARS = 1_200;
 
 function boundText(value: string, maxChars: number): string {
   const normalized = value.replace(/[ \t]+/g, ' ').replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
