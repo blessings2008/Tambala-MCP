@@ -30,20 +30,29 @@ export function getAIRequestBudget(agent: AgentName, input: string): AIRequestBu
   const securityReview = agent === 'security'
     && input.includes('STANDING DUTY: Daily incident monitoring and security review');
 
+  const recordReview = queueRecordReview || outreachProspectReview;
+
   return {
     userInputLimit: researchHeavyOutreach ? 5_500
       : queueOnlyResearch ? 1_800
-      : queueRecordReview || outreachProspectReview ? 4_200
+      : recordReview ? 4_200
       : handoffReview ? 6_500
       : MAX_USER_INPUT_CHARS,
+    // Queue-record payloads are passed separately as context_summary. A 700
+    // character cap silently removed key evidence and contact fields, causing
+    // agents to ask for records that were already attached. Keep enough room
+    // for the compact JSON record while retaining the conservative default.
     contextLimit: researchHeavyOutreach ? 250
       : queueOnlyResearch ? 2_800
-      : queueRecordReview || outreachProspectReview ? 700
+      : recordReview ? 2_800
       : handoffReview ? 300
       : securityReview ? 2_200
       : MAX_CONTEXT_CHARS,
+    // These reviews should return concise decisions, not long reports. The
+    // lower output cap leaves room for the record and system prompt on free
+    // provider TPM limits.
     completionBudget: queueOnlyResearch ? 2_600
-      : outreachProspectReview ? 2_800
+      : recordReview ? 1_800
       : handoffReview ? 700
       : agent === 'operations' ? 3_200
       : researchHeavyOutreach ? (input.includes('discovery pass') ? 1_200 : 1_600)
