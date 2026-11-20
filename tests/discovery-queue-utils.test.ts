@@ -25,3 +25,27 @@ test('preserves rows across a partial final page', async () => {
   assert.equal(result.length, 1207);
   assert.equal(result[1206], 1206);
 });
+
+
+test('allows an old failed handoff to be retried after its cooldown', () => {
+  const marker = 'Review this record. Queue record ID: queue-789.';
+  const rows = [
+    { request: marker, status: 'failed', created_at: '2026-11-18T08:00:00.000Z' },
+  ];
+  assert.equal(hasDiscoveryQueueHandoff('queue-789', rows, '2026-11-19T08:00:00.000Z'), false);
+});
+
+test('does not retry a recent failure during its cooldown', () => {
+  const marker = 'Review this record. Queue record ID: queue-789.';
+  const rows = [
+    { request: marker, status: 'failed', created_at: '2026-11-20T08:00:00.000Z' },
+  ];
+  assert.equal(hasDiscoveryQueueHandoff('queue-789', rows, '2026-11-19T08:00:00.000Z'), true);
+});
+
+test('active and completed handoffs remain idempotent', () => {
+  const marker = 'Review this record. Queue record ID: queue-789.';
+  for (const status of ['queued', 'running', 'awaiting_founder', 'completed']) {
+    assert.equal(hasDiscoveryQueueHandoff('queue-789', [{ request: marker, status }], '2026-11-19T08:00:00.000Z'), true);
+  }
+});
