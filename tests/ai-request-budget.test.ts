@@ -96,3 +96,45 @@ test('ordinary orchestrator prompts keep the default budget', () => {
   assert.equal(budget.contextLimit, 1_200);
   assert.equal(budget.completionBudget, 3_200);
 });
+
+
+test('Outreach prospect-record reviews preserve the supplied queue record', () => {
+  const recordId = '94876992-4205-4c27-bbe3-420cae4f5ea4';
+  const prompt = [
+    'TASK ROOM ASSIGNMENT',
+    'You are Head of Sales & Business Development reviewing this single researched Tambala prospect using the attached record.',
+    'Return the organisation name, service fit, source evidence, available public contact, and a qualify / investigate / reject recommendation.',
+    `Queue record ID: ${recordId}.`,
+    JSON.stringify({
+      source: 'public.lead_discovery_queue',
+      prospect: {
+        id: recordId,
+        organisation_name: 'HMS Foods & Grains Limited',
+        website: 'https://hmsmalawi.net/',
+        sector: 'Manufacturing — food milling and processing, pulses and soap products',
+        service_fit: ['web_development', 'digital_product_development', 'social_media_management'],
+        reason_for_fit: 'Its official website lists wheat and maize milling, toor-dal processing, laundry-soap manufacturing, domestic product lines and contact information.',
+        public_email: 'info@hmsmalawi.net',
+        public_phone: '+265 991 657 155; +265 991 657 199',
+        source_url: 'https://hmsmalawi.net/',
+        verification_status: 'verified',
+      },
+    }),
+    'Do not repeat research or contact the prospect.',
+  ].join('\n\n');
+
+  const budget = getAIRequestBudget('outreach', prompt);
+  assert.equal(budget.userInputLimit, 4_200);
+  assert.equal(budget.contextLimit, 700);
+  assert.equal(budget.completionBudget, 2_800);
+  assert.ok(prompt.length < budget.userInputLimit);
+  assert.ok(prompt.includes('HMS Foods & Grains Limited'));
+  assert.ok(prompt.includes('info@hmsmalawi.net'));
+});
+
+test('ordinary Outreach requests retain the existing default budget', () => {
+  const budget = getAIRequestBudget('outreach', 'Draft a personalised WhatsApp introduction.');
+  assert.equal(budget.userInputLimit, 1_800);
+  assert.equal(budget.contextLimit, 1_200);
+  assert.equal(budget.completionBudget, 3_200);
+});
