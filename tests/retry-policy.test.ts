@@ -16,3 +16,8 @@ test('transient provider failures remain eligible for bounded retries', () => {
   assert.equal(isPermanentAgentFailure('HTTP 429 rate limit exceeded; retry after 30 seconds.'), false);
   assert.equal(isPermanentAgentFailure('The provider returned HTTP 503.'), false);
 });
+
+
+test('daily free-model quota exhaustion is not retried repeatedly', () => {
+  assert.equal(isPermanentAgentFailure('HTTP 429: Rate limit exceeded: free-models-per-day.'), true);
+});
