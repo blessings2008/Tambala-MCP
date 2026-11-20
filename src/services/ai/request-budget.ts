@@ -30,7 +30,8 @@ export function getAIRequestBudget(agent: AgentName, input: string): AIRequestBu
   return {
     userInputLimit: researchHeavyOutreach ? 5_500
       : queueOnlyResearch ? 1_800
-      : queueRecordReview || handoffReview ? 4_200
+      : queueRecordReview ? 4_200
+      : handoffReview ? 6_500
       : MAX_USER_INPUT_CHARS,
     contextLimit: researchHeavyOutreach ? 250
       : queueOnlyResearch ? 2_800
