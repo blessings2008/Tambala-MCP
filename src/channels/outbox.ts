@@ -118,14 +118,26 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
     return { id: row.id, status: 'queued' };
   }
 
-  const approvalId = await deps.approvals.create({
-    actionType: 'whatsapp_message',
-    summary: `WhatsApp ${input.purpose} to ${input.contactLabel ?? to}${input.documentId ? ' with a document' : ''}`,
-    requestedByRoleId: input.roleId, riskLevel: input.purpose === 'outreach' ? 'medium' : 'low', taskId: input.taskId ?? null,
-    content: `To: ${input.contactLabel ? `${input.contactLabel} ` : ''}${to}${input.documentId ? '\nAttachment: PDF document' : ''}\n\n${text}\n\n${stamp.block}`,
-    subjectType: 'outbox_message', subjectId: row.id,
-  }).catch(() => null);
-  await deps.store.update(row.id, { ...patch, status: 'pending_approval', approval_id: approvalId, reason: approvalId ? null : 'Waiting for the approval inbox (needs the database).' });
+  let approvalId: string | null;
+  try {
+    approvalId = await deps.approvals.create({
+      actionType: 'whatsapp_message',
+      summary: `WhatsApp ${input.purpose} to ${input.contactLabel ?? to}${input.documentId ? ' with a document' : ''}`,
+      requestedByRoleId: input.roleId, riskLevel: input.purpose === 'outreach' ? 'medium' : 'low', taskId: input.taskId ?? null,
+      content: `To: ${input.contactLabel ? `${input.contactLabel} ` : ''}${to}${input.documentId ? '\nAttachment: PDF document' : ''}\n\n${text}\n\n${stamp.block}`,
+      subjectType: 'outbox_message', subjectId: row.id,
+    });
+  } catch (error) {
+    const reason = `Founder approval request could not be created: ${error instanceof Error ? error.message : 'approval service unavailable'}`.slice(0, 500);
+    await deps.store.update(row.id, { ...patch, status: 'failed', approval_id: null, reason });
+    return { id: row.id, status: 'failed', reason };
+  }
+  if (!approvalId) {
+    const reason = 'Founder approval request could not be created because the approval database is unavailable. No customer message was sent.';
+    await deps.store.update(row.id, { ...patch, status: 'failed', approval_id: null, reason });
+    return { id: row.id, status: 'failed', reason };
+  }
+  await deps.store.update(row.id, { ...patch, status: 'pending_approval', approval_id: approvalId, reason: null });
 
   // Tell the Founder right away, so he can answer from his phone.
   if (approvalId && founder) {

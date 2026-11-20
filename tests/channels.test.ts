@@ -661,3 +661,29 @@ test('Evolution provider history lookup treats an unknown response shape as inco
     if (oldInstance === undefined) delete process.env.EVOLUTION_INSTANCE; else process.env.EVOLUTION_INSTANCE = oldInstance;
   }
 });
+
+
+test('outbox: failed approval creation never leaves an unlinked pending customer message', async () => {
+  for (const create of [
+    async () => { throw new Error('approval table unavailable'); },
+    async () => null,
+  ]) {
+    const h = outboxHarness({ approvals: { create } });
+    const result = await queueMessage(h.deps, {
+      ...sales,
+      to: '0888 123 456',
+      text: 'Hello, this is a test customer message.',
+      purpose: 'followup',
+      contactLabel: 'Test Lodge',
+    });
+    assert.equal(result.status, 'failed');
+    assert.match(result.reason ?? '', /approval request could not be created/i);
+    const row = await h.store.byId(result.id);
+    assert.equal(row?.status, 'failed');
+    assert.equal(row?.approval_id, null);
+    assert.equal(h.store.rows.some((item) => item.number === FOUNDER), false);
+    const outcomes = await processOutbox(h.deps);
+    assert.equal(outcomes.some((item) => item.id === result.id && item.status === 'sent'), false);
+    assert.equal(h.sent.some((item) => item.number === '265888123456'), false);
+  }
+});
