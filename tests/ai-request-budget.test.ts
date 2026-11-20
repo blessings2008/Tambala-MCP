@@ -59,3 +59,39 @@ test('ordinary research requests keep the default input and context budgets', ()
   assert.equal(budget.contextLimit, 1_200);
   assert.equal(budget.completionBudget, 2_800);
 });
+
+
+test('CEO handoff reviews preserve the employee deliverable for acceptance', () => {
+  const deliverable = [
+    '**Organisation:** Sunbird Tourism plc',
+    '**Queue Record ID:** 669033c0-6c6e-4920-abe7-c7fa4f5729ed',
+    '**Service-fit evidence:** Operates nine hotels across Malawi with central reservations and online booking.',
+    '**Source URLs:** https://www.sunbirdmalawi.com/ and https://www.sunbirdmalawi.com/contact-us.html',
+    '**Public organisational contact evidence:** centralres@sunbirdmalawi.com; +265 885 996 521.',
+    '**Verification gaps:** Verify the listed phone and email against the official contact page.',
+    '**Recommendation:** INVESTIGATE.',
+  ].join(' ');
+  const prompt = [
+    'CEO REVIEW — you own acceptance of this delegated work.',
+    'Review only whether the employee completed the exact request.',
+    'Return exactly one first-line decision: DECISION: ACCEPT, DECISION: REVISION_REQUIRED, or DECISION: FOUNDER_INPUT_REQUIRED.',
+    'ORIGINAL REQUEST: review the supplied prospect record and return evidence-based qualification.',
+    `EMPLOYEE DELIVERABLE: ${deliverable}`,
+    'Accept when the requested work is complete against the supplied evidence.',
+  ].join('\n\n');
+
+  const budget = getAIRequestBudget('orchestrator', prompt);
+  assert.equal(budget.userInputLimit, 4_200);
+  assert.equal(budget.contextLimit, 300);
+  assert.equal(budget.completionBudget, 700);
+  assert.ok(prompt.length < budget.userInputLimit);
+  assert.ok(prompt.includes('Sunbird Tourism plc'));
+  assert.ok(prompt.includes('INVESTIGATE'));
+});
+
+test('ordinary orchestrator prompts keep the default budget', () => {
+  const budget = getAIRequestBudget('orchestrator', 'Summarise the organisation.');
+  assert.equal(budget.userInputLimit, 1_800);
+  assert.equal(budget.contextLimit, 1_200);
+  assert.equal(budget.completionBudget, 3_200);
+});
