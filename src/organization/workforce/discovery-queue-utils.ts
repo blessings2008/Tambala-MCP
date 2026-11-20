@@ -1,9 +1,24 @@
-export interface DiscoveryQueueHandoffMarker { request: string }
+export interface DiscoveryQueueHandoffMarker { request: string; status?: string; created_at?: string; completed_at?: string | null }
 
-/** True when either the normal watcher or recovery has already created a room for this queue row. */
-export function hasDiscoveryQueueHandoff(recordId: string, handoffs: readonly DiscoveryQueueHandoffMarker[]): boolean {
+/**
+ * True when a queue row already has durable work that should suppress another dispatch.
+ * Failed attempts suppress redispatch only during the cooldown window; old failures must
+ * not permanently strand a record in "reviewing".
+ */
+export function hasDiscoveryQueueHandoff(
+  recordId: string,
+  handoffs: readonly DiscoveryQueueHandoffMarker[],
+  retryFailedBeforeIso?: string,
+): boolean {
   const marker = `Queue record ID: ${recordId}.`;
-  return handoffs.some((item) => item.request.includes(marker));
+  return handoffs.some((item) => {
+    if (!item.request.includes(marker)) return false;
+    if (item.status !== 'failed') return true;
+    // Preserve the historical conservative behaviour when callers omit status/timestamps.
+    const lastFailureAt = item.completed_at ?? item.created_at;
+    if (!retryFailedBeforeIso || !lastFailureAt) return true;
+    return lastFailureAt >= retryFailedBeforeIso;
+  });
 }
 
 /** Fetch every page without silently treating the first page as the whole table. */

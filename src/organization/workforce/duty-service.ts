@@ -303,16 +303,17 @@ export async function dispatchReviewingDiscoveryQueue(maxCount = 5): Promise<num
       'lead_discovery_queue',
       `select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id&processing_status=eq.reviewing&order=created_at.asc&offset=${offset}&limit=${limit}`,
     )),
-    supabaseSelect<{ request: string; status: string }>(
+    supabaseSelect<{ request: string; status: string; created_at: string; completed_at: string | null }>(
       'organization_handoffs',
-      'select=request,status&source_duty_id=in.(lead-discovery-queue-watcher,lead-discovery-queue-research-review)&limit=5000',
+      'select=request,status,created_at,completed_at&source_duty_id=in.(lead-discovery-queue-watcher,lead-discovery-queue-research-review)&limit=5000',
     ),
   ]);
   let dispatched = 0;
   for (const prospect of pending) {
     if (dispatched >= Math.min(5, Math.floor(maxCount))) break;
     const marker = 'Queue record ID: ' + prospect.id + '.';
-    if (hasDiscoveryQueueHandoff(prospect.id, previous)) continue;
+    const retryFailedBefore = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    if (hasDiscoveryQueueHandoff(prospect.id, previous, retryFailedBefore)) continue;
     const contextSummary = JSON.stringify({
       source: 'public.lead_discovery_queue',
       instruction: 'Recovery review of an existing queue record. Use only the supplied evidence; no new web discovery while the engine is paused.',
