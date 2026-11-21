@@ -79,7 +79,7 @@ function handoffDeps(over: Partial<HandoffDeps> = {}) {
   const deps: HandoffDeps = {
     store, now: () => at('2026-11-09T07:00:00Z'), agentUnavailableReason: async () => null,
     senderLabel: async (r) => (r === 'founder' ? 'The Founder' : r), recipientLabel: async () => 'employee TT-005, Head of Marketing', actions: { run: async () => '' }, sign: async () => ({ block: '— TT-005\n  ✍ TEST-SIG' }),
-    buildContext: async () => ({}), askAgent: async (agent, prompt) => { asked.push(prompt); return agent === 'orchestrator' ? 'DECISION: ACCEPT\\nThe deliverable meets the request.' : 'SELF_REVIEW: PASS\\nHere is the overview.'; },
+    buildContext: async () => ({}), askAgent: async (agent, prompt) => { asked.push(prompt); return agent === 'orchestrator' ? 'DECISION: ACCEPT\nThe deliverable meets the request.' : 'SELF_REVIEW: PASS\nHere is the overview.'; },
     tasks: { begin: async () => ({ taskId: 't' }), advance: async () => {}, fail: async () => {} }, ...over,
   };
   return { deps, store, asked };
@@ -103,9 +103,9 @@ test('employee self-review runs before independent CEO acceptance, and actions w
     askAgent: async (agent, prompt) => {
       events.push(agent);
       if (agent === 'orchestrator') return 'DECISION: ACCEPT\\nThe deliverable and proposed notification are acceptable.';
-      return 'SELF_REVIEW: PASS\\nThe requested overview is complete.\\n\\nACTIONS:\\n{"type":"notify_founder","text":"The approved internal overview is ready."}';
+      return 'SELF_REVIEW: PASS\nThe requested overview is complete.\n\nACTIONS:\n{"type":"notify_founder","text":"The approved internal overview is ready."}';
     },
-    actions: { run: async () => { events.push('action'); return 'Actions:\\n✔ notify_founder: Message to the Founder queued.'; } },
+    actions: { run: async () => { events.push('action'); return 'Actions:\n✔ notify_founder: Message to the Founder queued.'; } },
   });
   await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'marketing', request: 'Draft a one-page overview of our web services' });
   const out = await processHandoffs(deps);
@@ -122,7 +122,7 @@ test('an employee deliverable without a passing self-review cannot reach CEO app
       if (agent === 'orchestrator') { ceoCalled = true; return 'DECISION: ACCEPT\\nAccept.'; }
       return 'Here is an overview without a self-review marker.';
     },
-    actions: { run: async () => { actionCalled = true; return 'Actions:\\n✔ notify_founder: queued.'; } },
+    actions: { run: async () => { actionCalled = true; return 'Actions:\n✔ notify_founder: queued.'; } },
   });
   await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'marketing', request: 'Draft a one-page overview of our web services' });
   const out = await processHandoffs(deps);
@@ -258,7 +258,7 @@ test('Founder clarification reopens the same room and resumes its original task'
   let answer = 'Clarification Required: which Malabi do you mean?';
   let starts = 0;
   const { deps, store } = handoffDeps({
-    askAgent: async (agent) => agent === 'orchestrator' ? 'DECISION: ACCEPT\\nThe deliverable meets the request.' : answer.includes('Clarification Required') ? answer : `SELF_REVIEW: PASS\\n${answer}`,
+    askAgent: async (agent) => agent === 'orchestrator' ? 'DECISION: ACCEPT\nThe deliverable meets the request.' : answer.includes('Clarification Required') ? answer : `SELF_REVIEW: PASS\n${answer}`,
     tasks: { begin: async () => { starts += 1; return { taskId: 'same-task' }; }, advance: async () => {}, fail: async () => {} },
   });
   const handoff = await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'research', request: 'Research Malabi and verify the correct entity' });
