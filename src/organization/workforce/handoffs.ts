@@ -607,9 +607,9 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
           outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason: 'The worker lease was lost during approved action execution; verify side effects before any retry.', taskId, roomId: h.room_id ?? undefined });
           continue;
         }
-        if (/^\\s*Actions:\\s*[\\s\\S]*?^\\s*✘/im.test(actionsText)) {
+        if (/^\s*Actions:\s*[\s\S]*?^\s*✘/im.test(actionsText)) {
           const reason = 'The CEO accepted the work, but one or more requested actions failed or were rejected. The action result is recorded; do not replay automatically because partial side effects may have occurred.';
-          stamped = `${result}\\n\\n${actionsText}\\n\\n${stamp.block}`;
+          stamped = `${result}\n\n${actionsText}\n\n${stamp.block}`;
           await deps.tasks.fail(taskId, reason, agent);
           await deps.store.update(h.id, { status: 'failed', result: stamped.slice(0, 8000), error: reason, completed_at: deps.now().toISOString() });
           if (h.room_id) {
@@ -619,7 +619,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
           outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'failed', reason, taskId, roomId: h.room_id ?? undefined });
           continue;
         }
-        stamped = `${result}\\n\\n${actionsText}\\n\\n${stamp.block}`;
+        stamped = `${result}\n\n${actionsText}\n\n${stamp.block}`;
         if (h.room_id) await deps.store.roomEvent(h.room_id, 'ceo_approved_actions_executed', 'ceo', { actions: actionsText });
       }
       await deps.tasks.advance(taskId, [
