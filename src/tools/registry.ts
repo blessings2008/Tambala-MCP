@@ -6,6 +6,7 @@ import { registerActivityTools } from './activity.js';
 import { registerClientActionTools } from './client-actions.js';
 import { registerAITools } from './ai-actions.js';
 import { registerLeadIntelligenceTools } from './lead-intelligence.js';
+import { registerLeadDiscoveryTools } from './lead-discovery.js';
 import { registerDailyReportTools } from './daily-report.js';
 import { registerEmailReportTools } from './email-report.js';
 import { registerAutomationTools } from './automation.js';
@@ -23,6 +24,7 @@ export function registerAllTools(server: McpServer): void {
     registerCompanyTools,
     registerPortfolioTools,
     registerLeadIntelligenceTools,
+    registerLeadDiscoveryTools,
     registerDailyReportTools,
     registerEmailReportTools,
     registerAutomationTools,

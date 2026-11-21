@@ -15,6 +15,14 @@ export function normalizePhone(input: unknown, defaultCountry: string = DEFAULT_
   return digits;
 }
 
+/** Normalize one phone number embedded in a CRM label, without guessing when multiple numbers are present. */
+export function normalizePhoneFromLabel(input: unknown, defaultCountry: string = DEFAULT_COUNTRY_CODE): string | null {
+  if (typeof input !== 'string' || !input.trim()) return null;
+  const candidates = input.match(/\+?\d[\d\s().-]*\d/g) ?? [];
+  if (candidates.length !== 1) return null;
+  return normalizePhone(candidates[0], defaultCountry);
+}
+
 /** The phone number inside a WhatsApp JID, or null for groups and privacy (@lid) identifiers. */
 export function jidToNumber(jid: unknown): string | null {
   if (typeof jid !== 'string') return null;

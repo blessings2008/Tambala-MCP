@@ -1,16 +1,28 @@
-import { supabaseSelect } from '../lib/supabase.js';
+import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../lib/supabase.js';
 import { createApprovalRequest, decideApproval, listPendingApprovals, registerApprovalHook } from '../organization/workforce/approvals-service.js';
 import { dbConfigured } from '../organization/workforce/db-util.js';
-import { labelForRole } from '../organization/workforce/profiles.js';
+import { identityForRole, labelForRole } from '../organization/workforce/profiles.js';
+import { demoteEmployeeTrust } from '../organization/workforce/trust-ledger.js';
+import { getOrganizationSnapshot, routeOrganizationObjective } from '../organization/service.js';
+import { requireConfiguredRuntime, resolveExecutionRoute } from '../organization/execution-router.js';
+import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../services/ai.js';
+import { getBusinessSummary, getCompactCompanyContext } from '../services/ai/context.js';
+import { buildProspectingSearchQueries } from '../services/web-research.js';
 import { signWork } from '../organization/workforce/sign-work.js';
 import { loadPdfForSending } from '../documents/service.js';
-import { connectionState, evolutionConfig, evolutionConfigured, sendDocument, sendText } from './evolution.js';
-import { handleEvolutionWebhook, type InboundDeps, type InboundSummary } from './inbound.js';
+import { documentStore } from '../documents/store.js';
+import { markDocumentSent, recordQuotationAcceptance } from '../documents/acceptance.js';
+import { connectionState, evolutionConfig, evolutionConfigured, findMessages, isWhatsAppNumber, sendDocument, sendText } from './evolution.js';
+import { handleEvolutionWebhook, type FounderMessageEnvelope, type InboundDeps, type InboundSummary } from './inbound.js';
 import { messageStore, type MessageStore } from './message-store.js';
 import { onApprovalDecided, processOutbox, queueMessage, type OutboxDeps, type QueueInput, type QueueResult, type SendOutcome } from './outbox.js';
-import { CLIENT_DAILY_LIMIT, FOUNDER_DAILY_LIMIT } from './policy.js';
-import { maskNumber, normalizePhone } from './phone.js';
+import { FOUNDER_DAILY_LIMIT } from './policy.js';
+import { maskNumber, normalizePhone, normalizePhoneFromLabel } from './phone.js';
 import { localTime } from '../organization/workforce/schedule.js';
+import { isCompanyStatusRequest, isFounderKnowledgeQuestion, runCompanyStatusReport } from './founder-execution.js';
+import { getRuntimeControl, setRuntimePaused } from '../organization/runtime-control.js';
+import { planFounderObjective } from '../organization/intelligence-service.js';
+import { persistFounderPlanProposal } from '../organization/workforce/plan-approval-bridge.js';
 
 /** The Founder's own WhatsApp number, where employees reach him. Set TAMBALA_FOUNDER_WHATSAPP. */
 export function founderNumber(): string | null {
@@ -22,21 +34,271 @@ export function productionOutboxDeps(store: MessageStore = messageStore(), now: 
     store, now, founderNumber,
     transport: { configured: evolutionConfigured, sendText, sendDocument },
     loadDocument: (id) => loadPdfForSending(id),
+    markDocumentSent: async (id, sentAt) => { await markDocumentSent(id, sentAt, documentStore()); },
     sign: (input) => signWork(input),
     approvals: { create: (input) => createApprovalRequest({ ...input }) },
     senderLabel: (roleId) => labelForRole(roleId),
-    pauseMs: 4000,
+    cooldownMs: Math.max(90_000, Number(process.env.TAMBALA_WHATSAPP_COOLDOWN_MS) || 90_000),
+    verifyOutreachLead,
   };
 }
 
-export const queueWhatsApp = (input: QueueInput): Promise<QueueResult> => queueMessage(productionOutboxDeps(), input);
+export async function queueWhatsApp(input: QueueInput): Promise<QueueResult> {
+  return queueMessage(productionOutboxDeps(), input);
+}
 
 let sending = false;
+
+/**
+ * Keep the workforce task state aligned with the authoritative WhatsApp outbox result.
+ * A message being queued is not the same as being sent; a later permanent send failure
+ * must return the first-contact task to Founder review instead of leaving it completed.
+ */
+async function reconcileOutreachOutbox(outcomes: SendOutcome[]): Promise<void> {
+  if (!dbConfigured()) return;
+  for (const outcome of outcomes) {
+    if (outcome.status === 'waiting') continue;
+    try {
+      const message = await messageStore().byId(outcome.id);
+      if (!message?.task_id || message.direction !== 'out' || message.audience !== 'client' || message.purpose !== 'outreach') continue;
+      const handoffs = await supabaseSelect<{ id: string; room_id: string | null; status: string }>(
+        'organization_handoffs',
+        `select=id,room_id,status&task_id=eq.${encodeURIComponent(message.task_id)}&source_duty_id=eq.approved-prospect-first-contact&limit=5`,
+      );
+      if (!handoffs.length) continue;
+
+      const reason = (outcome.reason ?? message.reason ?? '').slice(0, 300);
+      const needsFounder = outcome.status === 'failed'
+        && /exists.*false|not registered|no destination number|invalid phone|worker lease expired|delivery outcome is unknown|unknown delivery outcome/i.test(reason);
+      const nextStatus = outcome.status === 'sent' ? 'completed' : needsFounder ? 'awaiting_founder' : 'failed';
+      const sentAt = message.sent_at ?? new Date().toISOString();
+      const payload = {
+        summary: outcome.status === 'sent'
+          ? 'Founder-approved WhatsApp first-contact message was sent successfully.'
+          : needsFounder
+            ? 'WhatsApp could not deliver to this destination; Founder correction is required before another attempt.'
+            : 'WhatsApp outbox reached a terminal failure for this first-contact message.',
+        message_id: message.id,
+        outbox_status: outcome.status,
+        delivery_confirmed: outcome.status === 'sent',
+        provider_message_id: message.provider_message_id,
+        sent_at: message.sent_at,
+        reason: reason || null,
+      };
+      await supabaseUpdate('organization_tasks', {
+        status: nextStatus,
+        current_stage: nextStatus === 'completed' ? 'complete' : nextStatus === 'awaiting_founder' ? 'founder' : 'failed',
+        result: payload,
+        error_message: nextStatus === 'completed' ? null : (reason || 'WhatsApp outbox failed.'),
+        completed_at: nextStatus === 'completed' ? sentAt : null,
+        updated_at: new Date().toISOString(),
+      }, `id=eq.${encodeURIComponent(message.task_id)}`);
+
+      for (const handoff of handoffs) {
+        const changed = handoff.status !== nextStatus;
+        await supabaseUpdate('organization_handoffs', {
+          status: nextStatus,
+          result: JSON.stringify(payload),
+          error: nextStatus === 'completed' ? null : (reason || 'WhatsApp outbox failed.'),
+          completed_at: nextStatus === 'completed' ? sentAt : null,
+        }, `id=eq.${encodeURIComponent(handoff.id)}`);
+        if (handoff.room_id) {
+          await supabaseUpdate('organization_task_rooms', {
+            status: nextStatus === 'completed' ? 'archived' : nextStatus,
+            deliverable: nextStatus === 'completed' ? 'WhatsApp first-contact message sent successfully.' : null,
+            blocker: nextStatus === 'completed' ? null : (reason || 'WhatsApp outbox failed.'),
+            closed_at: nextStatus === 'completed' ? sentAt : null,
+            updated_at: new Date().toISOString(),
+          }, `id=eq.${encodeURIComponent(handoff.room_id)}`);
+          if (changed) {
+            await supabaseInsert('organization_task_room_events', {
+              room_id: handoff.room_id,
+              event_type: 'whatsapp_outbox_reconciled',
+              actor_role_id: 'ceo',
+              payload,
+            });
+          }
+        }
+        if (changed) {
+          await supabaseInsert('organization_task_events', {
+            task_id: message.task_id,
+            event_type: 'whatsapp_outbox_reconciled',
+            stage: nextStatus === 'completed' ? 'complete' : nextStatus === 'awaiting_founder' ? 'founder' : 'failed',
+            actor_role_id: 'ceo',
+            payload,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('WhatsApp outbox task reconciliation failed:', outcome.id, error instanceof Error ? error.message : 'unknown error');
+    }
+  }
+}
+
 /** Send whatever is due. One pass at a time per process. */
+/**
+ * Recover only the specific worker-lease failures whose delivery result is unknown.
+ * Provider history is authoritative: a unique exact outbound match reconciles to sent;
+ * a complete history with no match requeues the same approved row. Unknown/incomplete
+ * history, multiple matches, revoked approvals, and media messages remain held.
+ */
+async function recoverUncertainOutbox(): Promise<void> {
+  if (!dbConfigured()) return;
+  const rows = (await messageStore().recent(200)).filter((row) =>
+    row.direction === 'out' &&
+    row.audience === 'client' &&
+    row.status === 'failed' &&
+    Boolean(row.approval_id) &&
+    row.reason?.includes('Worker lease expired; delivery outcome is unknown.') &&
+    !row.document_id &&
+    Boolean(row.number),
+  );
+  for (const row of rows) {
+    try {
+      const approvals = await supabaseSelect<{ status: string }>(
+        'organization_approval_requests',
+        `select=status&id=eq.${encodeURIComponent(row.approval_id!)}&limit=1`,
+      );
+      if (approvals[0]?.status !== 'approved') {
+        console.info('WhatsApp recovery held: approval is not currently approved.', { messageId: row.id });
+        continue;
+      }
+      const history = await findMessages(row.number!);
+      const targetTime = new Date(row.created_at).getTime();
+      const matches = history.records.filter((record) => {
+        const key = record.key && typeof record.key === 'object' ? record.key as Record<string, unknown> : {};
+        const message = record.message && typeof record.message === 'object' ? record.message as Record<string, unknown> : {};
+        const extended = message.extendedTextMessage && typeof message.extendedTextMessage === 'object'
+          ? message.extendedTextMessage as Record<string, unknown> : {};
+        const image = message.imageMessage && typeof message.imageMessage === 'object'
+          ? message.imageMessage as Record<string, unknown> : {};
+        const video = message.videoMessage && typeof message.videoMessage === 'object'
+          ? message.videoMessage as Record<string, unknown> : {};
+        const document = message.documentMessage && typeof message.documentMessage === 'object'
+          ? message.documentMessage as Record<string, unknown> : {};
+        const body = String(message.conversation ?? extended.text ?? image.caption ?? video.caption ?? document.caption ?? '');
+        const timestampRaw = record.messageTimestamp ?? record.message_timestamp;
+        const timestamp = typeof timestampRaw === 'number' ? timestampRaw * 1000
+          : typeof timestampRaw === 'string' && /^\d+$/.test(timestampRaw) ? Number(timestampRaw) * 1000
+          : NaN;
+        return key.fromMe === true &&
+          key.remoteJid === `${row.number}@s.whatsapp.net` &&
+          body === row.text &&
+          Number.isFinite(timestamp) &&
+          Math.abs(timestamp - targetTime) <= 15 * 60_000;
+      });
+      if (matches.length === 1) {
+        const match = matches[0];
+        const key = match.key as Record<string, unknown>;
+        const timestampRaw = match.messageTimestamp ?? match.message_timestamp;
+        const sentAt = new Date(Number(timestampRaw) * 1000).toISOString();
+        await messageStore().update(row.id, {
+          status: 'sent',
+          provider_message_id: typeof key.id === 'string' ? key.id : null,
+          sent_at: sentAt,
+          claimed_at: null,
+          reason: 'Recovered from Evolution provider history; exact outbound message confirmed.',
+        });
+        console.info('WhatsApp recovery reconciled provider-confirmed send.', { messageId: row.id });
+      } else if (matches.length > 1) {
+        await messageStore().update(row.id, {
+          claimed_at: null,
+          reason: 'Delivery remains uncertain: multiple matching provider messages found. Held to prevent a duplicate.',
+        });
+      } else if (history.complete) {
+        await messageStore().update(row.id, {
+          status: 'queued',
+          claimed_at: null,
+          reason: 'Provider history checked; no matching outbound message found. Original Founder approval retained; safe retry queued.',
+        });
+        console.info('WhatsApp recovery requeued verified non-delivery.', { messageId: row.id });
+      } else {
+        await messageStore().update(row.id, {
+          claimed_at: null,
+          reason: 'Delivery remains uncertain: Evolution history response was incomplete. Held to prevent a duplicate.',
+        });
+      }
+    } catch (error) {
+      console.warn('WhatsApp recovery could not reconcile message; original record retained.', {
+        messageId: row.id,
+        error: error instanceof Error ? error.message : 'Unknown provider-history error',
+      });
+    }
+  }
+}
+
+/**
+ * If an approved message failed because its published destination is not on WhatsApp,
+ * try only alternative numbers publicly listed by that same organisation. Every candidate
+ * must independently pass Evolution's WhatsApp-number check before the original message
+ * row is retargeted. No draft is copied and the Founder approval remains attached.
+ */
+const publishedWhatsAppAlternatives: Record<string, string[]> = {
+  'The Makokola Retreat': ['265884602424'], // official direct reservations contact
+  'Cargo Line Services': ['265999951442'], // official company mobile
+  "MJ's Restaurant": ['265990861433'], // current business listing contact
+  'Automotive Products Limited': ['265888838113'], // company-published Managing Director contact
+  'Kingfisher Insurance Brokers & Consultants Limited': ['265884024930'], // official Blantyre branch contact
+  'Alwayn Consulting Group': ['265999228229'], // Malawi Accountants Board public listing (2021)
+  'Casa Mia Lodge & Restaurant': ['265888955242', '265996963111'], // public guest/contact listings
+  'Continental Asset Management Limited': ['265887376469', '265999971579', '265888899538', '265999165444'], // official Blantyre and Lilongwe contacts
+  'Boyds Property Centre Ltd (Boyds)': ['265888364885'], // official company contact
+};
+
+async function recoverInvalidWhatsAppNumbers(): Promise<void> {
+  if (!dbConfigured()) return;
+  const rows = (await messageStore().recent(200)).filter((row) =>
+    row.direction === 'out' &&
+    row.audience === 'client' &&
+    row.status === 'failed' &&
+    Boolean(row.approval_id) &&
+    /exists.{0,12}false/i.test(row.reason ?? ''),
+  );
+  for (const row of rows) {
+    const alternatives = publishedWhatsAppAlternatives[row.contact_label ?? ''] ?? [];
+    if (!alternatives.length) continue;
+    try {
+      const approvals = await supabaseSelect<{ status: string }>(
+        'organization_approval_requests',
+        `select=status&id=eq.${encodeURIComponent(row.approval_id!)}&limit=1`,
+      );
+      if (approvals[0]?.status !== 'approved') continue;
+      for (const candidate of alternatives) {
+        if (!(await isWhatsAppNumber(candidate))) continue;
+        await messageStore().update(row.id, {
+          number: candidate,
+          status: 'queued',
+          claimed_at: null,
+          reason: `Original number ${row.number} was not registered on WhatsApp. Retargeted to the organisation's published contact ${candidate}, verified on WhatsApp. Original message and Founder approval retained.`,
+        });
+        console.info('WhatsApp recovery retargeted approved message to a verified public contact.', {
+          messageId: row.id,
+          contact: row.contact_label,
+        });
+        break;
+      }
+    } catch (error) {
+      console.warn('WhatsApp alternative-number check failed; original message retained.', {
+        messageId: row.id,
+        error: error instanceof Error ? error.message : 'Unknown verification error',
+      });
+    }
+  }
+}
+
 export async function runOutbox(): Promise<SendOutcome[]> {
   if (sending) return [];
   sending = true;
-  try { return await processOutbox(productionOutboxDeps()); } finally { sending = false; }
+  try {
+    await recoverUncertainOutbox();
+    await recoverInvalidWhatsAppNumbers();
+    // Claim one customer message per pass. Claiming a batch and then processing only one can strand the rest as `sending` if the worker restarts mid-pass.
+    const outcomes = await processOutbox(productionOutboxDeps(), 1);
+    await reconcileOutreachOutbox(outcomes);
+    return outcomes;
+  } finally {
+    sending = false;
+  }
 }
 
 // When the Founder decides on a message approval, release or retire the message right away.
@@ -54,7 +316,7 @@ async function contacts() {
   for (const table of ['clients', 'leads'] as const) {
     const data = await supabaseSelect<Record<string, unknown>>(table, 'select=name,business_name,phone,whatsapp&limit=2000');
     for (const r of data) {
-      const numbers = [r.phone, r.whatsapp].map((v) => normalizePhone(v)).filter(Boolean) as string[];
+      const numbers = [r.phone, r.whatsapp].map((v) => normalizePhoneFromLabel(v)).filter(Boolean) as string[];
       if (numbers.length) rows.push({ type: table === 'clients' ? 'client' : 'lead', name: String(r.business_name || r.name || ''), numbers });
     }
   }
@@ -65,6 +327,318 @@ export async function contactLabel(number: string): Promise<string | null> {
   if (!dbConfigured()) return null;
   const hit = (await contacts()).find((c) => c.numbers.includes(number));
   return hit ? `${hit.name} (${hit.type})` : null;
+}
+
+let lastWhatsAppCheckAt = 0;
+let whatsappCheckQueue: Promise<void> = Promise.resolve();
+const whatsappCheckCache = new Map<string, { at: number; exists: boolean }>();
+
+/** Only a CRM lead is eligible for autonomous first contact; verify WhatsApp registration too. */
+async function verifyOutreachLead(number: string): Promise<string | null> {
+  if (!dbConfigured()) return null;
+  const hit = (await contacts()).find((contact) => contact.type === 'lead' && contact.numbers.includes(number));
+  if (!hit) return null;
+  const cached = whatsappCheckCache.get(number);
+  if (cached && Date.now() - cached.at < 24 * 60 * 60_000) return cached.exists ? hit.name + ' (lead)' : null;
+
+  let release!: () => void;
+  const previous = whatsappCheckQueue;
+  whatsappCheckQueue = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+  try {
+    const waitMs = Math.max(0, 90_000 - (Date.now() - lastWhatsAppCheckAt));
+    if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+    lastWhatsAppCheckAt = Date.now();
+    const exists = await isWhatsAppNumber(number);
+    whatsappCheckCache.set(number, { at: Date.now(), exists });
+    return exists ? hit.name + ' (lead)' : null;
+  } finally {
+    release();
+  }
+}
+
+async function answerFounderKnowledgeQuestion(envelope: FounderMessageEnvelope): Promise<string> {
+  const warnings: string[] = [];
+  const [companyContext, businessSummary, snapshot, queueRows, messageRows, approvalRows, documentRows] = await Promise.all([
+    getCompactCompanyContext().catch((error) => { warnings.push('Company profile/services unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return null; }),
+    getBusinessSummary().catch((error) => { warnings.push('CRM summary unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return null; }),
+    getOrganizationSnapshot().catch((error) => { warnings.push('Organization chart unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return null; }),
+    supabaseSelect<Record<string, unknown>>('lead_discovery_queue', 'select=organisation_name,processing_status,verification_status,crm_lead_id,updated_at&order=created_at.desc&limit=500').catch((error) => { warnings.push('Prospect queue unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return []; }),
+    supabaseSelect<Record<string, unknown>>('organization_messages', 'select=id,direction,audience,purpose,status,sent_at,created_at,contact_label,from_role_id,document_id,reply_to_message_id,reply_intent&order=created_at.desc&limit=1000').catch((error) => { warnings.push('Message history unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return []; }),
+    supabaseSelect<Record<string, unknown>>('organization_approval_requests', 'select=action_type,status,summary,created_at,resolved_at&order=created_at.desc&limit=300').catch((error) => { warnings.push('Approval history unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return []; }),
+    supabaseSelect<Record<string, unknown>>('organization_documents', 'select=id,kind,status,total_minor,currency,created_by_role_id,created_at,sent_at,accepted_at,accepted_by_message_id&order=created_at.desc&limit=1000').catch((error) => { warnings.push('Document outcomes unavailable: ' + (error instanceof Error ? error.message : 'unknown error')); return []; }),
+  ]);
+
+  const countBy = (rows: Record<string, unknown>[], field: string) => rows.reduce<Record<string, number>>((counts, row) => {
+    const key = String(row[field] ?? 'unknown');
+    counts[key] = (counts[key] ?? 0) + 1;
+    return counts;
+  }, {});
+  const clientOutbound = messageRows.filter((row) => row.direction === 'out' && row.audience === 'client');
+  const sentClientMessages = clientOutbound.filter((row) => row.status === 'sent');
+  const outboundById = new Map(clientOutbound.map((row) => [String(row.id), row]));
+  const inboundById = new Map(messageRows.filter((row) => row.direction === 'in').map((row) => [String(row.id), row]));
+  const attributedReplies = messageRows.filter((row) => row.direction === 'in' && typeof row.reply_to_message_id === 'string');
+  const replyIntents = countBy(attributedReplies, 'reply_intent');
+  const repliesByEmployee = attributedReplies.reduce<Record<string, { replies: number; accepted: number; interested: number }>>((counts, reply) => {
+    const outbound = outboundById.get(String(reply.reply_to_message_id));
+    const employee = String(outbound?.from_role_id ?? 'unavailable');
+    const bucket = counts[employee] ?? { replies: 0, accepted: 0, interested: 0 };
+    bucket.replies += 1;
+    if (reply.reply_intent === 'accepted') bucket.accepted += 1;
+    if (reply.reply_intent === 'interested') bucket.interested += 1;
+    counts[employee] = bucket;
+    return counts;
+  }, {});
+  const quotations = documentRows.filter((row) => row.kind === 'quotation');
+  const acceptedQuotations = quotations.filter((row) => row.status === 'accepted');
+  const acceptedQuoteEmployee = acceptedQuotations.reduce<Record<string, number>>((counts, quote) => {
+    const acceptanceMessage = inboundById.get(String(quote.accepted_by_message_id ?? ''));
+    const outbound = acceptanceMessage?.reply_to_message_id ? outboundById.get(String(acceptanceMessage.reply_to_message_id)) : undefined;
+    const employee = String(outbound?.from_role_id ?? 'unavailable');
+    counts[employee] = (counts[employee] ?? 0) + 1;
+    return counts;
+  }, {});
+  const units = snapshot?.organization?.units ?? [];
+  const roles = snapshot?.organization?.roles ?? [];
+  const crm = businessSummary ? {
+    leads_total: businessSummary.leads_total,
+    leads_by_status: businessSummary.leads_by_status,
+    clients_total: businessSummary.clients_total,
+    clients_by_status: businessSummary.clients_by_status,
+    projects_total: businessSummary.projects_total,
+    projects_by_status: businessSummary.projects_by_status,
+    tasks_total: businessSummary.tasks_total,
+    tasks_by_status: businessSummary.tasks_by_status,
+    task_details: businessSummary.task_details,
+  } : null;
+  const verifiedRecords = {
+    generated_at: new Date().toISOString(),
+    company: companyContext,
+    crm,
+    organization: snapshot ? {
+      source: snapshot.source,
+      departments: units.map((unit) => ({ name: unit.name, kind: unit.kind, status: unit.status })),
+      roles: roles.map((role) => ({ title: role.title, activation: role.activation, unitId: role.unitId })),
+    } : null,
+    prospect_queue: {
+      total_loaded: queueRows.length,
+      by_processing_status: countBy(queueRows, 'processing_status'),
+      by_verification_status: countBy(queueRows, 'verification_status'),
+      recent: queueRows.slice(0, 30).map((row) => ({
+        organisation_name: row.organisation_name,
+        processing_status: row.processing_status,
+        verification_status: row.verification_status,
+        has_crm_lead: Boolean(row.crm_lead_id),
+        updated_at: row.updated_at,
+      })),
+    },
+    client_messaging: {
+      outbound_client_messages_loaded: clientOutbound.length,
+      sent_to_clients: sentClientMessages.length,
+      outbound_by_status: countBy(clientOutbound, 'status'),
+      latest_successful_client_message_at: sentClientMessages.find((row) => typeof row.sent_at === 'string')?.sent_at ?? null,
+      recent_outbound: clientOutbound.slice(0, 15).map((row) => ({
+        purpose: row.purpose, status: row.status, contact_label: row.contact_label,
+        sent_at: row.sent_at, created_at: row.created_at,
+      })),
+      replies_linked_to_outbound: attributedReplies.length,
+      replies_by_intent: replyIntents,
+      replies_by_employee: repliesByEmployee,
+      quotations: {
+        sent: quotations.filter((row) => row.status === 'sent' || row.status === 'accepted').length,
+        accepted: acceptedQuotations.length,
+        awaiting_acceptance: quotations.filter((row) => row.status === 'sent').length,
+        accepted_value_minor: acceptedQuotations.reduce((sum, row) => sum + Number(row.total_minor ?? 0), 0),
+        accepted_by_employee: acceptedQuoteEmployee,
+      },
+      note: 'Replies are counted only when a customer inbound message is linked to a previously sent outbound message. A quotation is accepted only when explicit acceptance wording is linked to a sent quotation; interest alone is not acceptance.',
+    },
+    approvals: {
+      total_loaded: approvalRows.length,
+      by_action_and_status: approvalRows.reduce<Record<string, number>>((counts, row) => {
+        const key = String(row.action_type ?? 'unknown') + ':' + String(row.status ?? 'unknown');
+        counts[key] = (counts[key] ?? 0) + 1;
+        return counts;
+      }, {}),
+      recent: approvalRows.slice(0, 20).map((row) => ({
+        action_type: row.action_type, status: row.status, summary: row.summary,
+        created_at: row.created_at, resolved_at: row.resolved_at,
+      })),
+    },
+    data_warnings: warnings,
+  };
+
+  const prompt = [
+    'You are the Chief Executive Officer of Tambala Technologies answering a direct factual or operational question from the Founder.',
+    'Answer the exact question directly using the verified live records below. You do NOT need to route a question to a department before answering it.',
+    'Use counts and timestamps exactly as supplied. Distinguish CRM lead creation from contacting a prospect; distinguish messages to the Founder from messages sent to clients.',
+    'If a fact is absent, say it is unavailable in the records. If the records show no client messages, say so plainly.',
+    'Never invent work, approvals, messages, department activity, or system status.',
+    'If the question actually requests a new action rather than information, explain the next responsible department and approval gate, but do not claim it has been performed.',
+    'Founder question:', envelope.content.text,
+    'Verified live organizational records:', JSON.stringify(verifiedRecords).slice(0, 14000),
+    'Respond in clear, concise language. State relevant blockers and the next concrete action where useful.',
+  ].join('\n\n');
+
+  return askTambalaAI(
+    'orchestrator',
+    prompt,
+    { communicationType: 'Founder factual question', sender: envelope.sender.name, recipient: 'Chief Executive Officer', messageId: envelope.message_id, verifiedRecords },
+  );
+}
+
+function formatFounderPlanPreview(
+  result: Awaited<ReturnType<typeof planFounderObjective>>,
+  persisted?: { taskId: string; approvalRequests: number; queuedSteps: number },
+): string {
+  const assessment = result.assessment;
+  const lines = [
+    'CEO ADAPTIVE PLAN REVIEW',
+    '',
+    `Objective: ${assessment.objective.desiredOutcome}`,
+    `Assessment: ${assessment.status.replace(/_/g, ' ')}`,
+  ];
+  if (assessment.blockers.length) lines.push('', 'Blockers:', ...assessment.blockers.map((item) => `- ${item}`));
+  if (assessment.interpretation.unresolvedQuestions.length) lines.push('', 'Clarifications needed:', ...assessment.interpretation.unresolvedQuestions.map((item) => `- ${item}`));
+  if (assessment.warnings.length) lines.push('', 'Warnings:', ...assessment.warnings.map((item) => `- ${item}`));
+  if ('plan' in result && result.plan) {
+    lines.push('', `Proposed work sequence (${result.plan.steps.length} steps):`);
+    for (const [index, step] of result.plan.steps.entries()) {
+      const capability = step.capabilityRequirements.map((item) => item.capabilityId).join(', ');
+      const dependencies = step.dependsOn.length ? `; depends on ${step.dependsOn.join(', ')}` : '';
+      const approval = step.approvalRequired ? '; Founder approval required' : '';
+      lines.push(`${index + 1}. ${step.title} — owner role: ${step.accountableRoleId}; capability: ${capability}${dependencies}${approval}`, `   Deliverable: ${step.expectedDeliverable}`);
+    }
+    if (result.plan.assumptions.length) lines.push('', 'Assumptions:', ...result.plan.assumptions.map((item) => `- ${item}`));
+    if (persisted) {
+      lines.push('', `Persistent task: ${persisted.taskId}`, `Employee handoffs queued: ${persisted.queuedSteps}`, `Founder approval requests created: ${persisted.approvalRequests}`);
+      lines.push(persisted.approvalRequests > 0
+        ? 'Status: saved. Approval-gated steps remain blocked until you approve their exact plan revision. Approved steps become eligible for dispatch when their dependencies and employee runtime are ready.'
+        : persisted.queuedSteps > 0
+          ? 'Status: saved and delegated. Employee work is queued; no external action is authorized by this plan.'
+          : 'Status: saved, but no step is currently dispatchable. The workforce reconciler will retry when dependencies or employee runtime become ready.');
+    } else {
+      lines.push('', 'Status: proposal only. No tasks or handoffs have been created, no employee has been dispatched, and no external action has been taken. Resolve the blockers above before execution.');
+    }
+  } else {
+    lines.push('', 'No executable plan was produced. The CEO must resolve the blockers above before assigning work.');
+  }
+  return lines.join('\n');
+}
+
+async function handleFounderInstruction(envelope: FounderMessageEnvelope): Promise<string> {
+  if (isCompanyStatusRequest(envelope.content.text)) {
+    try { return await runCompanyStatusReport(envelope); }
+    catch (error) {
+      const detail = error instanceof Error ? error.message : 'Status-report execution failed.';
+      console.error('Founder status report could not be completed:', detail);
+      const safeDetail = detail.replace(/(?:gsk_|sk-|Bearer\\s+)[A-Za-z0-9._-]{12,}/g, '[redacted]').slice(0, 240);
+      return `I received your status-report instruction, but the coordinated report could not finish. Runtime issue: ${safeDetail}. The CEO workflow needs its task/runtime configuration checked.`;
+    }
+  }
+  if (isFounderKnowledgeQuestion(envelope.content.text)) {
+    try { return await answerFounderKnowledgeQuestion(envelope); }
+    catch (error) {
+      const detail = error instanceof Error ? error.message : 'Founder question lookup failed.';
+      console.error('Founder factual question could not be answered:', detail);
+      return 'I received your question, but I could not retrieve the live company records needed to answer it. The lookup failed: ' + detail.slice(0, 220) + '. I will not guess.';
+    }
+  }
+  try {
+    // Multi-capability requests go through the adaptive CEO planner and the
+    // durable plan/approval bridge. External and high-risk steps remain gated.
+    const adaptive = await planFounderObjective(envelope.content.text, {
+      correlationId: envelope.message_id,
+      objectiveId: `founder-${envelope.message_id}`,
+      planId: `plan-${envelope.message_id}`,
+    });
+    if (adaptive.assessment.interpretation.requiredCapabilityIds.length > 1) {
+      if ('plan' in adaptive && adaptive.plan && adaptive.assessment.status === 'ready_for_planning') {
+        const persisted = await persistFounderPlanProposal({
+          objective: adaptive.assessment.objective.statement,
+          plan: adaptive.plan,
+        });
+        return formatFounderPlanPreview(adaptive, persisted);
+      }
+      return formatFounderPlanPreview(adaptive);
+    }
+
+    const matches = await routeOrganizationObjective(envelope.content.text);
+    const mapped = resolveExecutionRoute(matches[0]);
+    const execution = mapped.status === 'ready'
+      ? requireConfiguredRuntime(mapped, getAgentOperationalInfo(mapped.agent))
+      : mapped;
+    const companyContext = await getCompactCompanyContext().catch((error) => {
+      console.warn('Verified company context unavailable to Founder workflow:', error instanceof Error ? error.message : error);
+      return {
+        company: { name: 'Tambala Technologies', country: 'Malawi', base: 'Lilongwe, Malawi', description: 'Software, websites, and digital products' },
+        services: [],
+        prospecting_defaults: {
+          geographic_scope: 'Malawi-wide',
+          market_approach: 'Cross-sector; qualify businesses against Tambala services rather than asking for a market type.',
+          first_batch_target: 20,
+          clarification_rule: 'Do not ask obvious scoping questions; use these defaults unless a genuine blocker remains.',
+        },
+      };
+    });
+    const routeSummary = matches.slice(0, 3).map((match) =>
+      `${match.department ?? 'Unassigned'} — ${match.role ?? 'No role'} (score ${match.score}; role ${match.roleActivation ?? 'unknown'})`,
+    ).join('\n') || 'No department capability matched. CEO must clarify ownership.';
+    const envelopeText = JSON.stringify({
+      ...envelope,
+      routing: {
+        assigned_by: 'capability_router',
+        department: matches[0]?.department ?? null,
+        capability_id: matches[0]?.capabilityId ?? null,
+        role: matches[0]?.role ?? null,
+        role_status: matches[0]?.roleActivation ?? null,
+        execution_status: execution.status,
+        execution_reason: execution.status === 'ready' ? null : execution.reason,
+      },
+    });
+    const ceoBrief = await askTambalaAI(
+      'orchestrator',
+      `You are Tambala Technologies' CEO receiving a direct Founder instruction over WhatsApp. Treat the structured envelope as the source message, not as a customer request. Acknowledge it, interpret the objective, and prepare a precise department handoff where possible. Never claim a task is complete unless a specialist actually returned the deliverable. If the route is not activated or its runtime is not configured, explain the exact blocker and what is needed. Do not invent facts or approvals.\n\nVERIFIED TAMBALA OPERATING CONTEXT (company profile, active services and CRM exclusions):\n${JSON.stringify(companyContext).slice(0, 10000)}\n\nPROSPECTING DEFAULTS: When the objective is to identify potential clients, use Malawi-wide cross-sector prospecting, assess fit against Tambala's active services, default to 20 qualified prospects, infer reasonable decision-maker roles, and exclude existing CRM leads/clients. Do not ask the Founder to choose a market type, industry, company size, revenue range, job title, or batch size. Ask only if a genuine blocker cannot be resolved from company records or research.\n\nStructured message envelope:\n${envelopeText}\n\nDeterministic capability matches:\n${routeSummary}\n\nExecution gate:\n${JSON.stringify(execution)}`,
+      { communicationType: 'Founder -> CEO', sender: envelope.sender.name, recipient: 'Chief Executive Officer', messageId: envelope.message_id, companyContext },
+    );
+
+    if (execution.status !== 'ready') {
+      return `${ceoBrief}\n\nDepartment routing: ${execution.department ?? 'Unassigned'} — ${execution.status}. ${execution.reason}`;
+    }
+
+    const isProspecting = execution.capabilityId === 'sales_prospecting';
+    const activeServices = Array.isArray(companyContext.services)
+      ? (companyContext.services as Array<Record<string, unknown>>).filter((service) => service.active === true)
+      : [];
+    const prospectResearchQueries = buildProspectingSearchQueries(activeServices.map((service) => String(service.name ?? '')));
+    const specialistTask = `CEO handoff from Founder WhatsApp instruction. Execute the actual task and return the requested deliverable. Use the CEO's interpretation below, but treat the original Founder instruction as authoritative if there is any conflict. Do not claim external actions, messages, payments, deployments, or database changes unless a connected tool has verifiably completed them. If required information or permissions are missing, state the blocker clearly.\n\nVERIFIED TAMBALA OPERATING CONTEXT:\n${JSON.stringify(companyContext).slice(0, 10000)}\n\nCEO handoff summary:\n${ceoBrief}\n\nFounder instruction:\n${envelope.content.text}\n\nDepartment: ${execution.department}\nRole: ${execution.role}\nDeliverable guidance: ${execution.deliverableHints.join('; ')}\nPriority: ${envelope.priority}${isProspecting ? '\n\nPROSPECTING EXECUTION RULES: Identify up to 20 new, qualified Malawi-wide business prospects across relevant sectors. Do not ask the Founder for a market type, industry, company size, revenue range, decision-maker title, or number. Use only verified active Tambala services to judge fit. Prioritize individual, named Malawian organisations, not generic directories, competitor websites, or industry summaries. Use directories only as discovery clues; do not list a directory as a prospect. A prospect can qualify when its existence and at least one plausible service-fit signal are supported by evidence. Do not require a source URL for every field: cite the source(s) that support each material claim, and mark unavailable fields unknown. Public contact and decision-maker details are helpful but optional; never invent them. Exclude all names in prospecting_defaults.excluded_existing_prospects. Return up to 20 candidates, ranked by evidence strength, with business name, location, sector, fit signal, current website if found, public contact if found, and source URLs. If the first source is a directory entry, retain it only as a discovery lead and clearly label it as directory-sourced unless corroborated by a company or credible independent source. Do not stop merely because contact names are unavailable.' : ''}`;
+    const specialistContext = { communicationType: 'CEO -> Department', sender: 'Chief Executive Officer', recipient: execution.role, messageId: envelope.message_id, companyContext };
+    let specialistResult: string;
+    const requiresWebResearch = isProspecting || /\b(research|investigate|look\s*up|find|identify|web\s+search|search\s+online|current|latest|prospect|lead generation)\b/i.test(envelope.content.text);
+    if (requiresWebResearch) {
+      const researched = await askTambalaAIWithWebResearch(
+        execution.agent,
+        specialistTask,
+        specialistContext,
+        isProspecting ? prospectResearchQueries : execution.researchQuery,
+        isProspecting ? { maxResults: 4, searchDepth: 'advanced', country: 'Malawi' } : { maxResults: 8, searchDepth: 'advanced' },
+      );
+      specialistResult = `${researched.response}\n\nVERIFIED WEB RESEARCH EVIDENCE:\n${researched.research}`;
+    } else {
+      specialistResult = await askTambalaAI(execution.agent, specialistTask, specialistContext);
+    }
+    return await askTambalaAI(
+      'orchestrator',
+      `Review the specialist's returned work against the original Founder instruction. Give the Founder a clear, useful answer. Distinguish completed analysis/drafting from any external action that still needs approval or a real integration. Do not invent execution.\n\nOriginal instruction:\n${envelope.content.text}\n\nDepartment: ${execution.department}\nSpecialist: ${execution.role}\n\nSpecialist return:\n${specialistResult}`,
+      { communicationType: 'Department -> CEO -> Founder', sender: execution.role, recipient: 'Founder / Bless', messageId: envelope.message_id, companyContext },
+    );
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'AI runtime unavailable.';
+    console.error('Founder WhatsApp instruction could not be routed:', detail);
+    const safeDetail = detail.replace(/(?:gsk_|sk-|Bearer\\s+)[A-Za-z0-9._-]{12,}/g, '[redacted]').slice(0, 240);
+    return `I received your instruction, but the CEO workflow could not complete it. Runtime issue: ${safeDetail}. Please check the CEO and department runtime configuration; your message has been saved in the inbound message log.`;
+  }
 }
 
 export function productionInboundDeps(store: MessageStore = messageStore()): InboundDeps {
@@ -79,6 +653,27 @@ export function productionInboundDeps(store: MessageStore = messageStore()): Inb
       await runOutbox();
     },
     contactLookup: contactLabel,
+    recordQuotationAcceptance: async (outbound, inbound, customerText) => {
+      if (!outbound.document_id) return false;
+      return recordQuotationAcceptance(outbound.document_id, {
+        messageId: inbound.id, acceptedAt: new Date().toISOString(), customerText,
+      }, documentStore());
+    },
+    demoteTrustForNumber: async (number, reason) => {
+      if (!dbConfigured()) return;
+      const rows = await supabaseSelect<{ from_role_id: string | null }>(
+        'organization_messages',
+        `select=from_role_id&direction=eq.out&audience=eq.client&number=eq.${encodeURIComponent(number)}&status=eq.sent&order=sent_at.desc&limit=1`,
+      );
+      const roleId = rows[0]?.from_role_id;
+      const identity = roleId ? identityForRole(roleId) : null;
+      if (identity && identity.employeeNumber !== 'TT-000') await demoteEmployeeTrust(identity.employeeNumber, reason);
+    },
+    handleFounderInstruction,
+    runtimeControl: {
+      get: async () => { const state = await getRuntimeControl(); return { paused: state.paused, reason: state.reason }; },
+      set: async (paused, reason) => { await setRuntimePaused(paused, reason, 'founder'); },
+    },
     approvals: {
       pending: async () => (dbConfigured() ? (await listPendingApprovals()).map((a) => ({ id: a.id, summary: a.summary })) : []),
       async decide(prefix, decision, note) {
@@ -111,8 +706,16 @@ export async function channelStatus() {
     configured, state, error, instance: evolutionConfig()?.instance ?? null,
     founderNumber: founder ? maskNumber(founder) : null, founderConfigured: Boolean(founder),
     webhookTokenSet: Boolean(process.env.EVOLUTION_WEBHOOK_TOKEN && process.env.EVOLUTION_WEBHOOK_TOKEN.length >= 16),
+    webhookPath: '/webhooks/evolution',
+    webhookEvent: 'MESSAGES_UPSERT',
+    outboxWorker: {
+      mode: process.env.TAMBALA_WHATSAPP_OUTBOX_SCHEDULER === 'true' ? 'in_process' : 'external_cron',
+      schedulerTokenSet: Boolean(process.env.TAMBALA_SCHEDULER_TOKEN && process.env.TAMBALA_SCHEDULER_TOKEN.length >= 24),
+      intervalMinutes: Math.max(1, Number(process.env.TAMBALA_WHATSAPP_OUTBOX_INTERVAL_MINUTES) || 1),
+      endpoint: '/api/channels/outbox/run',
+    },
     sentToday: { clients: await store.sentSince(dayStart, 'client').catch(() => 0), founder: await store.sentSince(dayStart, 'founder').catch(() => 0) },
-    limits: { clients: CLIENT_DAILY_LIMIT(), founder: FOUNDER_DAILY_LIMIT() },
+    limits: { founder: FOUNDER_DAILY_LIMIT() },
     blocked: (await store.blockedNumbers().catch(() => new Set<string>())).size,
   };
 }

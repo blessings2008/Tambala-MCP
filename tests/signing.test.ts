@@ -109,12 +109,12 @@ test('finished duty work carries its signature everywhere it is stored', () => w
     tasks: { begin: async () => ({ taskId: 't', tracking: 'unavailable' }), advance: async () => {}, fail: async () => {} },
     approvals: { create: async (a) => { approvals.push(a); } }, reports: { save: async (r) => { reports.push(r); } },
   };
-  const duty = resolveDuties([], []).find((d) => d.id === 'sales-pipeline-review')!;
+  const duty = resolveDuties([], []).find((d) => d.id === 'customer-followups')!;
   const out = await runDuty(deps, duty);
   assert.equal(out.status, 'awaiting_approval');
   assert.equal(ledger.rows.length, 1);
   const fp = ledger.rows[0].fingerprint;
-  assert.match(approvals[0].content, new RegExp(fp)); assert.match(approvals[0].content, /TT-002/);
+  assert.match(approvals[0].content, new RegExp(fp)); assert.match(approvals[0].content, /TT-003/);
   assert.equal(ledger.rows[0].subject_id, out.runId);
   assert.equal(ledger.rows[0].content, 'Five drafts ready.'); // the ledger holds the raw work, not the sign-off
   const ceo = resolveDuties([], []).find((d) => d.id === 'ceo-daily-briefing')!;

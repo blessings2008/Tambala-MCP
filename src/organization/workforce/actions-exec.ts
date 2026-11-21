@@ -15,7 +15,7 @@ export interface ActionExecDeps {
   createInvoice: (input: { roleId: string; clientName: string; clientPhone?: string; clientEmail?: string; description: string; amount: number }) => Promise<{ invoice: InvoiceRow; created: boolean }>;
 }
 
-export interface ActionContext { agent: string; roleId: string; taskId: string | null }
+export interface ActionContext { agent: string; roleId: string; taskId: string | null; founderApprovedFirstContact?: boolean }
 
 const fail = (type: string, detail: string): ActionResult => ({ type, ok: false, detail });
 
@@ -37,8 +37,8 @@ export async function executeActions(deps: ActionExecDeps, ctx: ActionContext, a
         results.push((await toFounder(action.text)) ? { type: 'notify_founder', ok: true, detail: 'Message to the Founder queued.' } : fail('notify_founder', 'The Founder WhatsApp number is not configured (TAMBALA_FOUNDER_WHATSAPP).'));
 
       } else if (action.type === 'whatsapp') {
-        const r = await queueMessage(deps.outbox, { ...base, to: action.to, text: action.text, purpose: action.purpose, contactLabel: action.contact ?? null });
-        results.push(r.status === 'blocked' ? fail('whatsapp', `Not sent to ${maskNumber(action.to)}: ${r.reason}`) : { type: 'whatsapp', ok: true, detail: `Message to ${action.contact ?? maskNumber(action.to)} is waiting for the Founder's approval.` });
+        const r = await queueMessage(deps.outbox, { ...base, to: action.to, text: action.text, purpose: action.purpose, contactLabel: action.contact ?? null, founderApprovedFirstContact: ctx.founderApprovedFirstContact === true && action.purpose === 'outreach' });
+        results.push(r.status === 'blocked' ? fail('whatsapp', `Not sent to ${maskNumber(action.to)}: ${r.reason}`) : r.status === 'pending_approval' ? { type: 'whatsapp', ok: true, detail: `Message to ${action.contact ?? maskNumber(action.to)} is awaiting Founder approval.` } : { type: 'whatsapp', ok: true, detail: `Message to ${action.contact ?? maskNumber(action.to)} was queued for sending; delivery is not confirmed yet.` });
 
       } else if (action.type === 'document') {
         const doc = await deps.createDocument({ kind: action.kind, client: action.client, items: action.items, subject: action.subject, body: action.body, notes: action.notes, terms: action.terms, validityDays: action.validityDays }, ctx.roleId);

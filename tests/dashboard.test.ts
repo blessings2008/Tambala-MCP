@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { section, summarizeTasks, buildDashboard } from '../src/http/dashboard-api.ts';
+import { section, summarizeTasks, mergeRecentActivity, buildDashboard } from '../src/http/dashboard-api.ts';
 
 test('summarizeTasks counts open/completed/failed and success rate', () => {
   const s = summarizeTasks([
@@ -17,6 +17,18 @@ test('summarizeTasks counts open/completed/failed and success rate', () => {
   assert.equal(s.avgCompletionMinutes, 6);
   assert.equal(s.byDepartment['sales-business-development'], 2);
   assert.equal(s.byDepartment.unassigned, 1);
+});
+
+test('recent activity includes real duty-run outcomes alongside task events', () => {
+  const merged = mergeRecentActivity(
+    [{ event_type: 'department_execution_started', stage: 'department', created_at: '2026-11-09T08:00:00Z' }],
+    [{ duty_id: 'sales-board-update', role_id: 'director-sales-business-development', status: 'completed', attempts: 1, summary: 'Pipeline checked.', started_at: '2026-11-09T08:01:00Z', completed_at: '2026-11-09T08:02:00Z' }],
+  );
+  assert.equal(merged.length, 2);
+  assert.equal(merged[0].event_type, 'duty_completed');
+  assert.equal(merged[0].stage, 'duty');
+  assert.equal(merged[0].summary, 'Pipeline checked.');
+  assert.equal(merged[1].event_type, 'department_execution_started');
 });
 
 test('summarizeTasks has no rate or average when nothing finished', () => {

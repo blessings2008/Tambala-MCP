@@ -1,8 +1,9 @@
 import { normalizePhone } from './phone.js';
 import { EvolutionError } from './evolution.js';
-import { CLIENT_DAILY_LIMIT, FOUNDER_DAILY_LIMIT, decide, sendWindowOpen, withOptOut, type Purpose } from './policy.js';
+import { FOUNDER_DAILY_LIMIT, decide, sendWindowOpen, type Purpose } from './policy.js';
 import type { MessageRow, MessageStore } from './message-store.js';
 import { localTime } from '../organization/workforce/schedule.js';
+import { assertRuntimeActive, isRuntimePaused } from '../organization/runtime-control.js';
 
 export class OutboxError extends Error {}
 
@@ -16,11 +17,16 @@ export interface OutboxDeps {
     sendDocument: (number: string, base64: string, fileName: string, caption: string) => Promise<{ id: string | null }>;
   };
   loadDocument: (id: string) => Promise<{ base64: string; fileName: string } | null>;
+  markDocumentSent?: (id: string, sentAt: string) => Promise<void>;
   sign: (input: { roleId: string; kind: 'message'; subjectId: string; content: string }) => Promise<{ block: string; fingerprint: string | null }>;
   approvals: { create: (input: { actionType: string; summary: string; requestedByRoleId: string; riskLevel: 'low' | 'medium'; taskId: string | null; content: string; subjectType: string; subjectId: string }) => Promise<string | null> };
   senderLabel: (roleId: string) => string;
   /** Pause between customer sends, to look like a person rather than a script. Zero in tests. */
   pauseMs?: number;
+  /** Minimum gap between customer sends, including across separate worker runs. */
+  cooldownMs?: number;
+  /** CRM/WhatsApp verification used only by the explicitly Founder-approved first-contact workflow. */
+  verifyOutreachLead?: (number: string) => Promise<string | null>;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -29,8 +35,21 @@ export interface QueueInput {
   documentId?: string | null; taskId?: string | null; contactLabel?: string | null;
   /** The Founder himself pressed send in the dashboard: no approval needed. Ignored for every other sender. */
   founderApproved?: boolean;
+  /** Server-only provenance from the approved-prospect-first-contact handoff; verification still runs and send still needs Founder approval. */
+  founderApprovedFirstContact?: boolean;
 }
 export interface QueueResult { id: string; status: MessageRow['status']; reason?: string; approvalId?: string | null }
+
+/** Remove internal employee identities and workflow annotations from customer-facing copy. */
+export function sanitizeCustomerMessage(value: string): string {
+  const internalLine = /^\s*(?:by\s+(?:the\s+)?(?:ceo|chief executive officer|head of|director of)\b.*|(?:prepared|generated|drafted|sent)\s+by\b.*|(?:agent|role|employee|department|internal analysis|routing note|internal note|internal only|internal use only)\s*:\s*.*|(?:ceo|chief executive officer|head of [^|—–-]+|director of [^|—–-]+)\s*[|—–-]\s*TT[-\s]?\d{3}.*|(?:—|–|-{1,2})?\s*TT[-\s]?\d{3}\b.*)$/i;
+  return value.split(/\r?\n/)
+    .filter((line) => !internalLine.test(line) && !/^\s*reply\s+stop\s+to\s+opt\s+out[.!]*\s*$/i.test(line))
+    .map((line) => line.replace(/\bTT[-\s]?\d{3}\b/gi, '').trimEnd())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 
 const dayStartIso = (now: Date): string => {
   const lt = localTime(now);
@@ -38,18 +57,42 @@ const dayStartIso = (now: Date): string => {
 };
 
 export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise<QueueResult> {
+  await assertRuntimeActive();
   const to = normalizePhone(input.to);
   if (!to) throw new OutboxError(`"${input.to}" is not a valid phone number. Use international format, e.g. +265888123456.`);
   const now = deps.now();
+  const outreachCopy = input.purpose === 'outreach';
+  if (outreachCopy && /\[(?:name|company|business(?: name)?|contact(?: name)?|recipient)\]|\{\{\s*(?:name|company|business(?:_name)?|contact(?:_name)?)\s*\}\}|(?:^|[\s,])(?:hi|hello)\s+name\b/i.test(input.text)) {
+    throw new OutboxError('First-contact message contains an unresolved placeholder. No customer message was queued.');
+  }
+  if (outreachCopy && /\b(?:we|our team)\s+(?:have|has|had)\s+(?:helped|worked with|served|built|delivered|supported|generated|increased|grown|achieved)\b|\bwe['’]ve\s+(?:helped|worked with|served|built|delivered|supported|generated|increased|grown|achieved)\b/i.test(input.text)) {
+    throw new OutboxError('First-contact message contains an unverified past-work or results claim. Remove it unless approved portfolio evidence supports it.');
+  }
+  let verifiedContactLabel = input.contactLabel?.trim() || null;
   const founder = deps.founderNumber();
   const blocked = await deps.store.blockedNumbers();
   const base = decide({ to, purpose: input.purpose, agent: input.agent, text: input.text, hasDocument: Boolean(input.documentId) }, { founderNumber: founder, blocked });
-  const text = base.audience === 'client' ? withOptOut(input.text.trim(), input.purpose) : input.text.trim();
+  if (input.founderApprovedFirstContact) {
+    // Validate provenance before any other policy outcome so a blocked/unknown
+    // sender cannot smuggle the privileged first-contact flag through this path.
+    if (input.agent !== 'outreach' || input.roleId !== 'director-sales-business-development' || input.purpose !== 'outreach' || !input.taskId) {
+      throw new OutboxError('Founder-approved first-contact verification is restricted to the approved Outreach workflow.');
+    }
+    if (base.verdict !== 'block') {
+      if (!deps.verifyOutreachLead) throw new OutboxError('The CRM/WhatsApp verification service is unavailable; no customer message was queued.');
+      const verified = await deps.verifyOutreachLead(to);
+      if (!verified) throw new OutboxError('Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number.');
+      verifiedContactLabel = verified;
+    }
+  }
+  const customerCopy = base.audience === 'client' ? sanitizeCustomerMessage(input.text.trim()) : input.text.trim();
+  if (base.audience === 'client' && customerCopy.length < 2) throw new OutboxError('The customer message contains no usable business content after internal notes were removed.');
+  const text = customerCopy;
 
   const row = await deps.store.add({
     direction: 'out', number: to, audience: base.audience, purpose: input.purpose, from_role_id: input.roleId, text,
     document_id: input.documentId ?? null, approval_id: null, status: 'queued', reason: null, provider_message_id: null,
-    attempts: 0, task_id: input.taskId ?? null, signature: null, contact_label: input.contactLabel ?? null, created_at: now.toISOString(), sent_at: null,
+    attempts: 0, task_id: input.taskId ?? null, signature: null, contact_label: verifiedContactLabel, created_at: now.toISOString(), sent_at: null,
   });
 
   if (base.verdict === 'block') { await deps.store.update(row.id, { status: 'blocked', reason: base.reason }); return { id: row.id, status: 'blocked', reason: base.reason }; }
@@ -75,14 +118,26 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
     return { id: row.id, status: 'queued' };
   }
 
-  const approvalId = await deps.approvals.create({
-    actionType: 'whatsapp_message',
-    summary: `WhatsApp ${input.purpose} to ${input.contactLabel ?? to}${input.documentId ? ' with a document' : ''}`,
-    requestedByRoleId: input.roleId, riskLevel: input.purpose === 'outreach' ? 'medium' : 'low', taskId: input.taskId ?? null,
-    content: `To: ${input.contactLabel ? `${input.contactLabel} ` : ''}${to}${input.documentId ? '\nAttachment: PDF document' : ''}\n\n${text}\n\n${stamp.block}`,
-    subjectType: 'outbox_message', subjectId: row.id,
-  }).catch(() => null);
-  await deps.store.update(row.id, { ...patch, status: 'pending_approval', approval_id: approvalId, reason: approvalId ? null : 'Waiting for the approval inbox (needs the database).' });
+  let approvalId: string | null;
+  try {
+    approvalId = await deps.approvals.create({
+      actionType: 'whatsapp_message',
+      summary: `WhatsApp ${input.purpose} to ${input.contactLabel ?? to}${input.documentId ? ' with a document' : ''}`,
+      requestedByRoleId: input.roleId, riskLevel: input.purpose === 'outreach' ? 'medium' : 'low', taskId: input.taskId ?? null,
+      content: `To: ${input.contactLabel ? `${input.contactLabel} ` : ''}${to}${input.documentId ? '\nAttachment: PDF document' : ''}\n\n${text}\n\n${stamp.block}`,
+      subjectType: 'outbox_message', subjectId: row.id,
+    });
+  } catch (error) {
+    const reason = `Founder approval request could not be created: ${error instanceof Error ? error.message : 'approval service unavailable'}`.slice(0, 500);
+    await deps.store.update(row.id, { ...patch, status: 'failed', approval_id: null, reason });
+    return { id: row.id, status: 'failed', reason };
+  }
+  if (!approvalId) {
+    const reason = 'Founder approval request could not be created because the approval database is unavailable. No customer message was sent.';
+    await deps.store.update(row.id, { ...patch, status: 'failed', approval_id: null, reason });
+    return { id: row.id, status: 'failed', reason };
+  }
+  await deps.store.update(row.id, { ...patch, status: 'pending_approval', approval_id: approvalId, reason: null });
 
   // Tell the Founder right away, so he can answer from his phone.
   if (approvalId && founder) {
@@ -112,24 +167,40 @@ export interface SendOutcome { id: string; status: 'sent' | 'failed' | 'waiting'
 
 /** Send what is queued, respecting the sending window, daily caps, opt-outs and retries. */
 export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOutcome[]> {
+  if (await isRuntimePaused()) return [];
   const out: SendOutcome[] = [];
   const now = deps.now();
   const since = dayStartIso(now);
   const blocked = await deps.store.blockedNumbers();
-  const counts = { client: await deps.store.sentSince(since, 'client'), founder: await deps.store.sentSince(since, 'founder') };
+  const counts = { founder: await deps.store.sentSince(since, 'founder') };
   let sentClient = 0;
+  let clientAttempted = 0;
 
   for (const row of await deps.store.queued(max)) {
-    const wait = async (reason: string) => { if (row.reason !== reason) await deps.store.update(row.id, { reason }); out.push({ id: row.id, status: 'waiting', reason }); };
-    if (!row.number) continue;
+    const wait = async (reason: string) => { await deps.store.update(row.id, { status: 'queued', claimed_at: null, reason }); out.push({ id: row.id, status: 'waiting', reason }); };
+    if (!row.number) { await deps.store.update(row.id, { status: 'failed', claimed_at: null, reason: 'No destination number is available.' }); out.push({ id: row.id, status: 'failed', reason: 'No destination number is available.' }); continue; }
     if (!deps.transport.configured()) { await wait('WhatsApp is not configured yet.'); continue; }
     if (row.audience === 'client') {
-      if (blocked.has(row.number)) { await deps.store.update(row.id, { status: 'blocked', reason: 'This number opted out before the message was sent.' }); out.push({ id: row.id, status: 'blocked' }); continue; }
+      // Defence in depth: legacy autonomous rows without a Founder approval are held, too.
+      if (!row.approval_id && row.from_role_id !== 'founder') {
+        await deps.store.update(row.id, { status: 'pending_approval', claimed_at: null, reason: 'Founder approval is required before any customer message can be sent.' });
+        out.push({ id: row.id, status: 'waiting', reason: 'Founder approval is required.' });
+        continue;
+      }
+      if (blocked.has(row.number)) { await deps.store.update(row.id, { status: 'blocked', claimed_at: null, reason: 'This number opted out before the message was sent.' }); out.push({ id: row.id, status: 'blocked' }); continue; }
       if (!sendWindowOpen(now)) { await wait('Outside the sending window (Mon-Sat 07:30-19:30). It will go out when the window opens.'); continue; }
-      if (counts.client >= CLIENT_DAILY_LIMIT()) { await wait(`Daily customer limit of ${CLIENT_DAILY_LIMIT()} reached. It will go out tomorrow.`); continue; }
+      const cooldownMs = Math.max(0, deps.cooldownMs ?? deps.pauseMs ?? 0);
+      if (cooldownMs > 0) {
+        const latest = (await deps.store.recent(200)).find((message) => message.direction === 'out' && message.audience === 'client' && message.status === 'sent' && message.sent_at);
+        const sentAt = latest?.sent_at ? new Date(latest.sent_at).getTime() : 0;
+        const remaining = sentAt ? cooldownMs - (now.getTime() - sentAt) : 0;
+        if (remaining > 0) { await wait(`Customer-send cooldown active. Try again in about ${Math.ceil(remaining / 1000)} seconds.`); continue; }
+      }
+      if (clientAttempted >= 1) { await wait('One customer message per outbox pass; the rest will be picked up by the next scheduler cycle.'); continue; }
     } else if (counts.founder >= FOUNDER_DAILY_LIMIT()) { await wait('Daily limit of messages to the Founder reached.'); continue; }
 
     try {
+      if (row.audience === 'client') clientAttempted += 1;
       if (row.audience === 'client' && sentClient > 0 && deps.pauseMs) await (deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(deps.pauseMs);
       let result: { id: string | null };
       if (row.document_id) {
@@ -137,15 +208,21 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
         if (!doc) throw new EvolutionError('The attached document could not be found.', false);
         result = await deps.transport.sendDocument(row.number, doc.base64, doc.fileName, row.text);
       } else result = await deps.transport.sendText(row.number, row.text);
-      await deps.store.update(row.id, { status: 'sent', provider_message_id: result.id, sent_at: deps.now().toISOString(), attempts: row.attempts + 1, reason: null });
-      if (row.audience === 'client') { counts.client += 1; sentClient += 1; } else counts.founder += 1;
-      out.push({ id: row.id, status: 'sent' });
+      const sentAt = deps.now().toISOString();
+      await deps.store.update(row.id, { status: 'sent', claimed_at: null, provider_message_id: result.id, sent_at: sentAt, attempts: row.attempts + 1, reason: null });
+      let documentWarning: string | undefined;
+      if (row.document_id && deps.markDocumentSent) {
+        try { await deps.markDocumentSent(row.document_id, sentAt); }
+        catch (error) { documentWarning = 'Message was sent, but the document status could not be updated: ' + (error instanceof Error ? error.message : 'unknown error'); }
+      }
+      if (row.audience === 'client') sentClient += 1; else counts.founder += 1;
+      out.push({ id: row.id, status: 'sent', ...(documentWarning ? { reason: documentWarning } : {}) });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Send failed.';
       const retryable = error instanceof EvolutionError ? error.retryable : false;
       const attempts = row.attempts + 1;
       const final = !retryable || attempts >= 3;
-      await deps.store.update(row.id, { attempts, status: final ? 'failed' : 'queued', reason: message.slice(0, 300) });
+      await deps.store.update(row.id, { attempts, status: final ? 'failed' : 'queued', claimed_at: null, reason: message.slice(0, 300) });
       out.push({ id: row.id, status: final ? 'failed' : 'waiting', reason: message });
     }
   }

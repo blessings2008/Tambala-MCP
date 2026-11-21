@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage } from 'node:http';
 import { createHash } from 'node:crypto';
 import { computeTotals, formatMoney, lineAmountMinor, toMinor } from '../src/documents/model.ts';
 import { createDocument, DocumentError, loadPdfForSending } from '../src/documents/service.ts';
+import { markDocumentSent, recordQuotationAcceptance } from '../src/documents/acceptance.ts';
 import { InMemoryDocumentStore } from '../src/documents/store.ts';
 import { pdfSafe, renderDocument } from '../src/documents/renderer.ts';
 import { loadDesign } from '../src/documents/design.ts';
@@ -50,11 +51,11 @@ test('quotations: price-list lines, custom lines, totals, numbering, signature a
     const d = q.data as any;
     assert.equal(d.totals.subtotalMinor, 45000000 + 15000100);          // 450,000.00 + 150,001.00
     assert.equal(d.totals.vatMinor, Math.round(60000100 * 0.165)); assert.equal(q.total_minor, d.totals.totalMinor);
-    assert.equal(d.validUntil.slice(0, 10), '2026-11-23');               // 14 days by default
+    assert.equal(d.validUntil.slice(0, 10), '2026-12-09');               // 30 days by default
     const pdf = Buffer.from(q.pdf_base64, 'base64');
     assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
     assert.equal(createHash('sha256').update(pdf).digest('hex'), q.pdf_sha256);
-    assert.equal(pages(pdf), 1);
+    assert.equal(pages(pdf), 2);
     assert.match(q.signature!, /^[0-9A-F]{4}(-[0-9A-F]{4}){3}$/);
 
     const q2 = await createDocument({ kind: 'quotation', client: { name: 'B' }, items: [{ sku: 'WEB-STD' }] }, SALES, { store });
@@ -63,6 +64,29 @@ test('quotations: price-list lines, custom lines, totals, numbering, signature a
     assert.deepEqual((await loadPdfForSending(q2.id, store))!.fileName, 'TT-Q-2026-0002.pdf');
     assert.equal(await loadPdfForSending('nope', store), null);
     void ledger;
+  });
+});
+
+test('quotation acceptance is recorded only for a sent quotation and is idempotent', async () => {
+  await withEnv({ TAMBALA_SIGNING_SECRET: SIGNING }, async () => {
+    const store = new InMemoryDocumentStore();
+    const quote = await createDocument({ kind: 'quotation', client: { name: 'Lakeview Lodge' }, items: [{ description: 'Website development', unitPrice: 100000 }] }, SALES, { store, now: () => new Date('2026-11-15T08:00:00Z') });
+    assert.equal(await recordQuotationAcceptance(quote.id, {
+      messageId: 'inbound-1', acceptedAt: '2026-11-15T09:00:00Z', customerText: 'We accept the quotation.',
+    }, store), false);
+    assert.equal(await markDocumentSent(quote.id, '2026-11-15T08:30:00Z', store), true);
+    assert.equal((await store.byId(quote.id))?.sent_at, '2026-11-15T08:30:00Z');
+    assert.equal(await recordQuotationAcceptance(quote.id, {
+      messageId: 'inbound-1', acceptedAt: '2026-11-15T09:00:00Z', customerText: 'We accept the quotation.',
+    }, store), true);
+    const accepted = await store.byId(quote.id);
+    assert.equal(accepted?.status, 'accepted');
+    assert.equal(accepted?.accepted_at, '2026-11-15T09:00:00Z');
+    assert.equal(accepted?.accepted_by_message_id, 'inbound-1');
+    assert.equal(accepted?.acceptance_text, 'We accept the quotation.');
+    assert.equal(await recordQuotationAcceptance(quote.id, {
+      messageId: 'inbound-2', acceptedAt: '2026-11-15T10:00:00Z', customerText: 'We accept again.',
+    }, store), false);
   });
 });
 

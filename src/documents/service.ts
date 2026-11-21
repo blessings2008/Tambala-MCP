@@ -20,7 +20,7 @@ export async function resolveItems(items: DocumentInput['items'], prices: PriceI
       return { sku: p.sku, description: p.name, quantity: raw.quantity, unitPriceMinor: p.unit_price_minor, amountMinor: lineAmountMinor(raw.quantity, p.unit_price_minor), custom: false };
     }
     const unit = toMinor(raw.unitPrice);
-    return { sku: null, description: raw.description, quantity: raw.quantity, unitPriceMinor: unit, amountMinor: lineAmountMinor(raw.quantity, unit), custom: true };
+    return { sku: null, component: raw.component, description: raw.description, quantity: raw.quantity, unitPriceMinor: unit, amountMinor: lineAmountMinor(raw.quantity, unit), custom: true };
   });
 }
 
@@ -31,6 +31,7 @@ export async function createDocument(input: unknown, roleId: string, deps: Creat
   const parsed = documentInputSchema.safeParse(input);
   if (!parsed.success) throw new DocumentError(parsed.error.issues.slice(0, 3).map((i) => `${i.path.join('.') || 'document'}: ${i.message}`).join('; '));
   const data = parsed.data;
+  if (data.kind === 'quotation' && data.milestones?.length && data.milestones.reduce((sum, item) => sum + item.percentage, 0) !== 100) throw new DocumentError('Quotation payment milestone percentages must total exactly 100%.');
   const store = deps.store ?? documentStore();
   const now = (deps.now ?? (() => new Date()))();
   const kind: DocKind = data.kind;
@@ -43,20 +44,24 @@ export async function createDocument(input: unknown, roleId: string, deps: Creat
   const vat = data.vatPercent ?? defaultVat();
   const totals = computeTotals(items, vat);
   if (kind !== 'letter' && totals.totalMinor <= 0 && kind !== 'quotation') throw new DocumentError('The total must be greater than zero.');
-  const validityDays = kind === 'quotation' ? data.validityDays ?? 14 : null;
+  const validityDays = kind === 'quotation' ? data.validityDays ?? 30 : null;
   const doc: Omit<StoredDocument, 'number'> = {
     kind, issuedAt: now.toISOString(), validUntil: validityDays ? new Date(now.getTime() + validityDays * 86_400_000).toISOString() : null,
     client: data.client, items, totals, currency: 'MWK', reference: data.reference, subject: data.subject, body: data.body,
     notes: data.notes, terms: data.terms, paymentLink: data.paymentLink, paidAt: data.paidAt, paidVia: data.paidVia,
+    project: data.project, sections: data.sections, milestones: data.milestones ?? (kind === 'quotation' ? [{ label: 'Upon acceptance and commencement', percentage: 50 }, { label: 'Upon presentation of the working system for review', percentage: 30 }, { label: 'Upon final acceptance and handover', percentage: 20 }] : undefined),
+    recurringFees: data.recurringFees, termsBullets: data.termsBullets, closingLine: data.closingLine,
   };
 
   const id = newDocumentId();
   const design = deps.design ?? loadDesign();
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const number = await store.nextNumber(KIND_PREFIX[kind], now.getUTCFullYear());
-    const full: StoredDocument = { ...doc, number };
-    // Sign the content of the document (not the PDF bytes), so the fingerprint can be printed inside the PDF itself.
-    const canonical = JSON.stringify({ number, kind, issuedAt: doc.issuedAt, client: doc.client.name, items: items.map((i) => [i.description, i.quantity, i.unitPriceMinor]), total: totals.totalMinor });
+    const sequence = number.match(/(\d+)$/)?.[1]?.replace(/^0+(?=\d)/, '') ?? '1';
+    const clientCode = (data.clientCode ?? (data.client.business || data.client.name).split(/\s+/).filter(Boolean).map((word) => word[0]).join('').slice(0, 8)).toUpperCase();
+    const quotationReference = kind === 'quotation' ? `TT-${clientCode}-${now.getUTCFullYear()}-${sequence.padStart(3, '0')}` : data.reference;
+    const full: StoredDocument = { ...doc, number, reference: quotationReference };
+    const canonical = JSON.stringify({ number, kind, issuedAt: doc.issuedAt, client: doc.client.name, items: items.map((i) => [i.component, i.description, i.quantity, i.unitPriceMinor]), total: totals.totalMinor });
     const stamp = await signWork({ roleId, kind: 'document', subjectId: id, content: canonical, now });
     const pdf = await renderDocument(full, design, { employeeNumber: who.employeeNumber, title: who.title, fingerprint: stamp.fingerprint });
     const row: DocumentRow = {

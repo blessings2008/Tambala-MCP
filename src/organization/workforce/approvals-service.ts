@@ -2,11 +2,12 @@ import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../../lib/supaba
 import { recordAudit } from '../audit.js';
 import { recordOrganizationTaskEvent } from '../task-store.js';
 import { signWork } from './sign-work.js';
+import { recordTrustOutcome } from './trust-ledger.js';
 
 export type ApprovalRow = {
   id: string; action_type: string; summary: string; requested_by_role_id: string; required_authority: string;
   status: 'pending' | 'approved' | 'rejected' | 'cancelled'; risk_level: 'low' | 'medium' | 'high' | 'critical';
-  decision_note: string | null; resolved_by_role_id: string | null; task_id: string | null; content: string | null;
+  resolution_note: string | null; resolved_by_role_id: string | null; task_id: string | null; content: string | null;
   subject_type: string | null; subject_id: string | null;
   created_at: string; resolved_at: string | null;
 };
@@ -56,7 +57,7 @@ export async function decideApproval(input: {
   let updated: ApprovalRow;
   try {
     updated = await supabaseUpdate<ApprovalRow>('organization_approval_requests', {
-      status: input.decision, decision_note: note || null, resolved_by_role_id: deciderRoleId, resolved_at: new Date().toISOString(),
+      status: input.decision, resolution_note: note || null, resolved_by_role_id: deciderRoleId, resolved_at: new Date().toISOString(),
     }, `id=eq.${input.id}&status=eq.pending`);
   } catch (error) {
     if (error instanceof Error && /returned no record/.test(error.message)) throw new ApprovalError('This request was just resolved by someone else.', 409);
@@ -69,6 +70,20 @@ export async function decideApproval(input: {
     try {
       await recordOrganizationTaskEvent({ taskId: current.task_id, eventType: input.decision === 'approved' ? 'founder_approved' : 'founder_rejected', stage: 'review', actorRoleId: deciderRoleId, payload: { approvalId: input.id, note: note || null, signature: stamp.fingerprint } });
     } catch (error) { console.error('Could not link decision to task:', error instanceof Error ? error.message : error); }
+  }
+  try {
+    const trust = await recordTrustOutcome({
+      requestedByRoleId: current.requested_by_role_id,
+      actionType: current.action_type,
+      approved: input.decision === 'approved',
+      riskLevel: current.risk_level,
+      // Resolution notes explain the decision; they are not edits to the approved work.
+      // This decision endpoint has no content-edit field, so an approval is unedited.
+      unedited: input.decision === 'approved',
+    });
+    if (trust?.standing_approval) console.info('Employee earned standing approval for an eligible low-risk action type:', trust.employee_number, trust.action_type);
+  } catch (error) {
+    console.error('Employee trust ledger update failed:', error instanceof Error ? error.message : error);
   }
   const hook = current.subject_type ? hooks.get(current.subject_type) : undefined;
   if (hook) {

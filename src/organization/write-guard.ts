@@ -2,19 +2,20 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { recordAudit } from './audit.js';
 import { resolveOrganizationIdentity } from './identity-service.js';
 import type { OrganizationalRole } from './model.js';
+import { assertRuntimeActive } from './runtime-control.js';
 
 /** Tools that change CRM/work records. Need a bound role with delegated workflow authority. */
 export const STANDARD_WRITE_TOOLS: ReadonlySet<string> = new Set([
   'create_client', 'update_client', 'create_project', 'update_project',
-  'create_lead', 'update_lead', 'create_task', 'update_task',
-  'record_activity', 'run_tambala_automation', 'run_due_organization_duties', 'assign_work_to_employee', 'create_document',
+  'create_lead', 'update_lead', 'submit_prospect_for_review', 'update_prospect_review_status', 'create_task', 'update_task',
+  'record_activity', 'run_tambala_automation', 'run_due_organization_duties', 'assign_work_to_employee', 'create_document', 'propose_organization_duty', 'propose_organization_role',
 ]);
 
 /** Tools that move money, contact people, archive data or approve actions. Founder only. */
 export const SENSITIVE_TOOLS: ReadonlySet<string> = new Set([
   'archive_client', 'send_daily_report', 'decide_organization_approval', 'send_whatsapp_message', 'set_price_list_item', 'create_invoice_link',
   'approve_automation_action', 'mark_automation_action_sent',
-  'tambala_pay_create_invoice', 'tambala_pay_create_invoice_payment', 'tambala_pay_create_payment_request',
+  'tambala_pay_create_invoice', 'tambala_pay_create_invoice_payment', 'tambala_pay_create_payment_request', 'set_global_runtime_pause',
 ]);
 
 export type GuardDecision = { allowed: boolean; reason: string; roleId: string | null };
@@ -63,6 +64,7 @@ export function withWriteGuard(server: McpServer): McpServer {
         const guarded = STANDARD_WRITE_TOOLS.has(name) || SENSITIVE_TOOLS.has(name);
         const wrapped = guarded
           ? async (...args: unknown[]) => {
+              if (name !== 'set_global_runtime_pause') await assertRuntimeActive();
               const decision = await authorizeToolCall(name);
               if (!decision.allowed) {
                 return { isError: true, content: [{ type: 'text', text: JSON.stringify({ denied: true, tool: name, reason: decision.reason }, null, 2) }] };

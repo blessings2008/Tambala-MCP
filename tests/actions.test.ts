@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { actionHelp, allowedActionTypes, mayDo, parseActions, MAX_ACTIONS_PER_RUN, type Action } from '../src/organization/workforce/actions.ts';
 import { describeResults, executeActions, type ActionExecDeps } from '../src/organization/workforce/actions-exec.ts';
-import { extractHandoffs } from '../src/organization/workforce/handoffs.ts';
+import { approvedFirstContactTarget, extractHandoffs } from '../src/organization/workforce/handoffs.ts';
 import { splitBlocks } from '../src/organization/workforce/blocks.ts';
 import { InMemoryMessageStore } from '../src/channels/message-store.ts';
 import type { OutboxDeps } from '../src/channels/outbox.ts';
@@ -35,6 +35,96 @@ test('actions parse strictly; bad lines are reported, never silently dropped', (
   assert.equal(parseActions('Just text, no blocks.').clean, 'Just text, no blocks.');
 });
 
+test('actions accept fenced, pretty-printed and array-form JSON without weakening validation', () => {
+  const fenced = parseActions(`Work completed.
+ACTIONS:
+\`\`\`json
+{
+  "type": "notify_founder",
+  "text": "The board report is ready."
+}
+\`\`\`
+`);
+  assert.equal(fenced.actions.length, 1);
+  assert.equal(fenced.actions[0].type, 'notify_founder');
+  assert.deepEqual(fenced.rejected, []);
+
+  const array = parseActions(`Work completed.
+ACTIONS:
+[
+  {"type":"notify_founder","text":"First update"},
+  {"type":"notify_founder","text":"Second update"}
+]
+`);
+  assert.equal(array.actions.length, 2);
+  assert.deepEqual(array.rejected, []);
+
+  const mixed = parseActions(`Work completed.
+ACTIONS:
+\`\`\`json
+[
+  {"type":"notify_founder","text":"Valid action"},
+  {"type":"teleport","to":"mars"}
+]
+\`\`\`
+`);
+  assert.equal(mixed.actions.length, 1);
+  assert.equal(mixed.rejected.length, 1);
+  assert.match(mixed.rejected[0], /teleport/);
+});
+
+test('approved first-contact target normalizes labeled Malawi numbers and rejects ambiguous or malformed numbers', () => {
+  const valid = approvedFirstContactTarget(JSON.stringify({
+    crm_lead: { whatsapp: 'Lilongwe: +265 888 826 648 (office)' },
+    prospect: { organisation_name: 'SFS Property Consultants' },
+  }));
+  assert.deepEqual(valid, { phone: '265888826648', contact: 'SFS Property Consultants' });
+
+  const local = approvedFirstContactTarget(JSON.stringify({
+    crm_lead: { phone: 'Limbe: 0888 123 456' },
+    prospect: { organisation_name: 'Example Lodge' },
+  }));
+  assert.deepEqual(local, { phone: '265888123456', contact: 'Example Lodge' });
+
+  assert.equal(approvedFirstContactTarget(JSON.stringify({
+    crm_lead: { phone: '+265 1 832 085' },
+    prospect: { organisation_name: 'Landline Ltd' },
+  })), null);
+  assert.equal(approvedFirstContactTarget(JSON.stringify({
+    crm_lead: { phone: '322' },
+    prospect: { organisation_name: 'Incomplete Contact' },
+  })), null);
+  assert.equal(approvedFirstContactTarget(JSON.stringify({
+    crm_lead: { phone: '+265 888 123 456 / +265 999 123 456' },
+    prospect: { organisation_name: 'Ambiguous Contact' },
+  })), null);
+});
+
+test('legacy security notify payload is normalized to the current safe action schema', () => {
+  const parsed = parseActions('Review complete.\nACTIONS:\n{ "action": "notify_founder", "payload": { "subject": "Security alert", "message": "Two failures need review." } }');
+  assert.equal(parsed.actions.length, 1);
+  assert.deepEqual(parsed.actions[0], { type: 'notify_founder', text: 'Security alert — Two failures need review.' });
+  assert.deepEqual(parsed.rejected, []);
+});
+
+test('legacy action discriminator is normalized but still validated and permission-checked', () => {
+  const parsed = parseActions('Done.\nACTIONS:\n{ "action": "notify_founder", "text": "Review the incident report." }');
+  assert.deepEqual(parsed.actions, [{ type: 'notify_founder', text: 'Review the incident report.' }]);
+  assert.deepEqual(parsed.rejected, []);
+  assert.equal(mayDo('security', parsed.actions[0]), null);
+  const invalid = parseActions('Done.\nACTIONS:\n{ "action": "teleport", "text": "No." }');
+  assert.equal(invalid.actions.length, 0);
+  assert.match(invalid.rejected[0], /teleport/);
+});
+
+test('outreach action help forbids placeholders and requires an executable ACTIONS block', () => {
+  const help = actionHelp('outreach');
+  assert.match(help, /ACTIONS:/);
+  assert.match(help, /unresolved placeholders/i);
+  assert.match(help, /exact verified business name/i);
+  assert.match(help, /Do not claim Tambala has served similar businesses/i);
+});
+
 test('permissions: only the right roles may message customers, make documents and create payment links', () => {
   assert.deepEqual(allowedActionTypes('security'), ['notify_founder']);
   assert.deepEqual(allowedActionTypes('outreach'), ['notify_founder', 'whatsapp', 'document']);
@@ -52,7 +142,7 @@ function harness(over: Partial<ActionExecDeps> & { founder?: string | null } = {
   const outbox: OutboxDeps = {
     store, now: () => new Date('2026-11-09T08:00:00Z'), founderNumber: () => (over.founder === undefined ? FOUNDER : over.founder),
     transport: { configured: () => true, sendText: async () => ({ id: 'x' }), sendDocument: async () => ({ id: 'x' }) },
-    loadDocument: async () => ({ base64: 'JVBERi0=', fileName: 'x.pdf' }), sign: async () => ({ block: '— sig', fingerprint: 'AAAA-BBBB-CCCC-DDDD' }),
+    loadDocument: async () => ({ base64: 'JVBERi0=', fileName: 'x.pdf' }), verifyOutreachLead: async () => 'Lakeview Lodge (lead)', sign: async () => ({ block: '— sig', fingerprint: 'AAAA-BBBB-CCCC-DDDD' }),
     approvals: { create: async (a) => { approvals.push(a); return `abcdef12-0000-4000-8000-00000000000${approvals.length}`; } }, senderLabel: (r) => r, pauseMs: 0,
   };
   const deps: ActionExecDeps = {
@@ -69,12 +159,22 @@ const parse = (...lines: string[]) => parseActions(`ACTIONS:\n${lines.join('\n')
 test('a whatsapp action waits for approval, and an unauthorised role is refused', async () => {
   const h = harness();
   const [r] = await executeActions(h.deps, ctx('outreach'), parse(WA));
-  assert.equal(r.ok, true); assert.match(r.detail, /waiting for the Founder/);
+  assert.equal(r.ok, true); assert.match(r.detail, /awaiting Founder approval/);
   assert.equal(h.store.rows.filter((m) => m.number === '265888123456')[0].status, 'pending_approval');
   const [denied] = await executeActions(h.deps, ctx('security'), parse(WA));
   assert.equal(denied.ok, false); assert.match(denied.detail, /not allowed/);
   const [bad] = await executeActions(h.deps, ctx('outreach'), parse(WA.replace('+265888123456', 'call me please')));
   assert.equal(bad.ok, false); assert.match(bad.detail, /not a valid phone number/);
+});
+
+test('first-contact outreach action waits for Founder approval', async () => {
+  const h = harness();
+  const outreach = parse(WA.replace('"purpose":"followup"', '"purpose":"outreach"'));
+  const [r] = await executeActions(h.deps, ctx('outreach'), outreach);
+  assert.equal(r.ok, true);
+  assert.match(r.detail, /awaiting Founder approval/i);
+  assert.doesNotMatch(r.detail, /queued for sending/i);
+  assert.equal(h.store.rows.find((m) => m.number === '265888123456')?.status, 'pending_approval');
 });
 
 test('notify_founder reaches the Founder immediately, and says so honestly when no number is set', async () => {

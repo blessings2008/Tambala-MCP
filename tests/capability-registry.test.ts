@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildResearchQuery, routeObjective } from '../src/organization/capability-registry.js';
+import { buildResearchQuery, routeCapabilityById, routeObjective } from '../src/organization/capability-registry.js';
 import type { OrganizationDefinition } from '../src/organization/model.js';
 
 const definition: OrganizationDefinition = {
@@ -21,13 +21,15 @@ const definition: OrganizationDefinition = {
   ],
 };
 
-test('routes next-client objectives to sales and produces a short research query', () => {
+test('routes next-client objectives to sales and produces a service-aware Malawi research query', () => {
   const objective = 'Find our next client and identify a qualified prospect we can contact.';
   const matches = routeObjective(definition, objective);
   assert.equal(matches[0]?.capability.id, 'sales_prospecting');
   const query = buildResearchQuery(objective, matches[0]!);
   assert.ok(query.length > 0);
-  assert.ok(query.length < objective.length);
+  assert.ok(query.length <= 500);
+  assert.match(query, /Malawi/i);
+  assert.match(query, /website development/i);
   assert.doesNotMatch(query, /Find our next client/i);
 });
 
@@ -39,6 +41,15 @@ test('research query stays keyword-oriented for web research', () => {
   const query = buildResearchQuery(objective, research!);
   assert.match(query, /official sources|recent information|verified evidence/i);
   assert.ok(query.length <= 500);
+});
+
+test('generic web-search requests route to Research and retain the requested subject', () => {
+  const objective = 'Do a web search on Malabi';
+  const matches = routeObjective(definition, objective);
+  assert.equal(matches[0]?.capability.id, 'web_research');
+  const query = buildResearchQuery(objective, matches[0]!);
+  assert.match(query, /^Malabi,/i);
+  assert.match(query, /official sources|recent information|verified evidence/i);
 });
 
 test('every declared capability resolves to a real unit and an accountable role in the full organization', async () => {
@@ -106,4 +117,14 @@ test('capability registry identifiers are unique and every capability has comple
     assert.ok(match?.role, `${capability.id} must resolve to an accountable role`);
     assert.ok(match.unit.accountableRoleIds.includes(match.role.id));
   }
+});
+
+test('explicit capability lookup does not depend on objective keywords', () => {
+  const match = routeCapabilityById(definition, 'web_research');
+  assert.ok(match);
+  assert.equal(match.capability.id, 'web_research');
+  assert.equal(match.unit?.id, 'research');
+  assert.equal(match.role?.id, 'research-head');
+  assert.equal(match.keywordScore, 0);
+  assert.equal(routeCapabilityById(definition, 'unknown-capability'), null);
 });
