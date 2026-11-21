@@ -444,7 +444,8 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
           : '',
         h.context_summary ? `CONTEXT FROM ${sender.toUpperCase()}:\n${h.context_summary}` : '',
         actionHelp(agent),
-        'Keep it under 300 words, plain and scannable. Say what you did, what you found, and anything blocked.',
+        'SELF-REVIEW BEFORE SUBMISSION: Check the original request, every required deliverable field, factual support in the supplied context, source URLs, arithmetic, consistency, customer-facing wording, and every proposed ACTIONS item. Correct omissions and unsupported claims yourself before submitting. Do not execute actions. Return exactly SELF_REVIEW: PASS as the first line only when the final work passes; if a missing Founder-controlled fact or decision prevents completion, return SELF_REVIEW: BLOCKED as the first line and clearly ask one precise question under Clarification Required. Never mark unverified work as passed.',
+        'Keep the final work under 300 words, plain and scannable. Say what you did, what you found, and anything blocked.',
       ].filter(Boolean).join('\n\n');
       const contextPacket = await deps.buildContext();
       if (h.room_id) await deps.store.updateRoom(h.room_id, { context_packet: { context_summary: h.context_summary, source_duty_id: h.source_duty_id, organization_context: contextPacket } });
@@ -465,8 +466,15 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         result = acted.clean;
       } else {
         const raw = (await deps.askAgent(agent, prompt, contextPacket)).trim();
-        acted = parseActions(raw);
+        const selfReview = raw.match(/^\s*SELF_REVIEW:\s*(PASS|BLOCKED)\s*(?:\r?\n|$)/i);
+        const selfReviewedBody = raw.replace(/^\s*SELF_REVIEW:\s*(?:PASS|BLOCKED)\s*(?:\r?\n|$)/i, '').trim();
+        acted = parseActions(selfReviewedBody);
         result = acted.clean.trim();
+        if (selfReview?.[1]?.toUpperCase() !== 'PASS' && !isFounderClarificationRequest(result)) {
+          throw new Error(selfReview?.[1]?.toUpperCase() === 'BLOCKED'
+            ? `Employee self-review blocked the deliverable: ${result.slice(0, 400)}`
+            : 'Employee omitted the required SELF_REVIEW: PASS check; no actions were executed.');
+        }
       }
       if (!result && autonomousFirstContact && firstContactTarget) result = `Prepared the first-contact WhatsApp action for ${firstContactTarget.contact}.`;
       if (!result) throw new Error('The employee returned no work product.');
@@ -475,10 +483,15 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason: 'The worker lease was lost before action execution; work remains paused for safe recovery.', taskId, roomId: h.room_id ?? undefined });
         continue;
       }
-      const actionsText = await deps.actions.run({ agent, roleId: h.to_role_id, taskId, founderApprovedFirstContact: autonomousFirstContact }, acted.actions, acted.rejected);
-      if (leaseLost) {
-        outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason: 'The worker lease was lost during action execution; verify side effects before resuming.', taskId, roomId: h.room_id ?? undefined });
-        continue;
+      let actionsText = '';
+      // This deterministic, Founder-authorized first-contact path still enters the
+      // Founder approval inbox. All other actions wait for CEO acceptance below.
+      if (autonomousFirstContact) {
+        actionsText = await deps.actions.run({ agent, roleId: h.to_role_id, taskId, founderApprovedFirstContact: true }, acted.actions, acted.rejected);
+        if (leaseLost) {
+          outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason: 'The worker lease was lost during action execution; verify side effects before resuming.', taskId, roomId: h.room_id ?? undefined });
+          continue;
+        }
       }
       if (autonomousFirstContact && /✘\s*whatsapp:.*Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number/i.test(actionsText)) {
         const reason = 'The supplied CRM number could not be verified as a WhatsApp-registered lead. No message was queued. Correct the CRM number or verify its WhatsApp registration before retrying.';
@@ -496,7 +509,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         throw new Error('The WhatsApp action did not confirm a queued or sent result; no first-contact message is recorded as complete.');
       }
       const stamp = await deps.sign({ roleId: h.to_role_id, kind: 'handoff_result', subjectId: h.id, content: result });
-      const stamped = `${result}${actionsText ? `\n\n${actionsText}` : ''}\n\n${stamp.block}`;
+      let stamped = `${result}${actionsText ? `\n\n${actionsText}` : ''}\n\n${stamp.block}`;
       if (h.room_id) await deps.store.roomEvent(h.room_id, 'employee_deliverable_submitted', h.to_role_id, { response: result.slice(0, 8000), actions: actionsText || null });
       if (autonomousFirstContact && confirmsPendingApprovalAction(actionsText)) {
         const reason = 'The verified first-contact message is waiting in the Founder approval inbox; it has not been sent.';
@@ -551,7 +564,10 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         'Review only whether the employee completed the exact request. Use the request and deliverable below; do not add facts or assume missing work was done.',
         'Return exactly one first-line decision: DECISION: ACCEPT, DECISION: REVISION_REQUIRED, or DECISION: FOUNDER_INPUT_REQUIRED. Follow it with a short reason.',
         `ORIGINAL REQUEST: ${h.request}`,
-        `EMPLOYEE DELIVERABLE: ${stamped.slice(0, 4500)}`,
+        `EMPLOYEE SELF-REVIEWED DELIVERABLE: ${stamped.slice(0, 3500)}`,
+        `PROPOSED ACTIONS — NOT YET EXECUTED: ${JSON.stringify(acted.actions).slice(0, 1800)}`,
+        `REJECTED OR UNPARSED ACTIONS: ${JSON.stringify(acted.rejected).slice(0, 500)}`,
+        'Check the deliverable and proposed actions independently. Do not execute or authorize any action that exceeds the employee role, the original request, or the existing Founder approval and safety policy.',
         reviewRule,
       ].join('\n\n'), {})).trim();
       const decision = review.match(/^\s*(?:\*\*)?DECISION:\s*(ACCEPT|REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)\b/im)?.[1];
@@ -580,6 +596,31 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         }
         outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: awaitingFounder ? 'waiting' : 'retry', reason, taskId, roomId: h.room_id ?? undefined });
         continue;
+      }
+      if (acted.actions.length || acted.rejected.length) {
+        if (leaseLost) {
+          outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason: 'The worker lease was lost before approved actions could run; no actions were executed.', taskId, roomId: h.room_id ?? undefined });
+          continue;
+        }
+        actionsText = await deps.actions.run({ agent, roleId: h.to_role_id, taskId }, acted.actions, acted.rejected);
+        if (leaseLost) {
+          outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason: 'The worker lease was lost during approved action execution; verify side effects before any retry.', taskId, roomId: h.room_id ?? undefined });
+          continue;
+        }
+        if (/^\\s*Actions:\\s*[\\s\\S]*?^\\s*✘/im.test(actionsText)) {
+          const reason = 'The CEO accepted the work, but one or more requested actions failed or were rejected. The action result is recorded; do not replay automatically because partial side effects may have occurred.';
+          stamped = `${result}\\n\\n${actionsText}\\n\\n${stamp.block}`;
+          await deps.tasks.fail(taskId, reason, agent);
+          await deps.store.update(h.id, { status: 'failed', result: stamped.slice(0, 8000), error: reason, completed_at: deps.now().toISOString() });
+          if (h.room_id) {
+            await deps.store.updateRoom(h.room_id, { status: 'blocked', deliverable: stamped.slice(0, 8000), blocker: reason, closed_at: null });
+            await deps.store.roomEvent(h.room_id, 'approved_action_failed', 'ceo', { reason, actions: actionsText, noAutomaticReplay: true });
+          }
+          outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'failed', reason, taskId, roomId: h.room_id ?? undefined });
+          continue;
+        }
+        stamped = `${result}\\n\\n${actionsText}\\n\\n${stamp.block}`;
+        if (h.room_id) await deps.store.roomEvent(h.room_id, 'ceo_approved_actions_executed', 'ceo', { actions: actionsText });
       }
       await deps.tasks.advance(taskId, [
         { status: 'returned_to_ceo', stage: 'review', eventType: 'department_work_returned', roleId: h.to_role_id, result: { handoffId: h.id, roomId: h.room_id, summary: stamped.slice(0, 8000) } },
