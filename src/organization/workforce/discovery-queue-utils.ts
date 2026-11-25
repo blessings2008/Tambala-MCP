@@ -11,7 +11,7 @@ export function isResearchDailyQuotaExhausted(
     if (handoff.to_agent !== 'research' || handoff.status !== 'failed') return false;
     if (!/free-models-per-day/i.test(handoff.error ?? '')) return false;
     const createdAt = Date.parse(handoff.created_at ?? '');
-    return Number.isFinite(createdAt) && createdAt >= cutoff;
+    return Number.isFinite(createdAt) && createdAt >= cutoff && createdAt <= now.getTime();
   });
 }
 
