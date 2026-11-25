@@ -15,6 +15,11 @@ test('pauses Research after a recent OpenRouter free daily quota failure only', 
     created_at: '2026-11-24T10:00:00.000Z',
   }], now), false);
   assert.equal(isResearchDailyQuotaExhausted([{
+    to_agent: 'research', status: 'failed',
+    error: 'HTTP 429: free-models-per-day quota exceeded',
+    created_at: '2026-11-26T11:30:00.000Z',
+  }], now), false);
+  assert.equal(isResearchDailyQuotaExhausted([{
     to_agent: 'outreach', status: 'failed',
     error: 'HTTP 429: free-models-per-day quota exceeded',
     created_at: '2026-11-25T11:30:00.000Z',
