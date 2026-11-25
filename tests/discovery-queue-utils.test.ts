@@ -19,7 +19,7 @@ test('extracts only explicit discovery recommendations for the exact organisatio
   assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. **Recommendation:** INVESTIGATE', 'Alpha Malawi'), 'INVESTIGATE');
   assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. Recommendation: REJECT', 'Alpha Malawi'), 'REJECT');
   assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. **Decision:** INVESTIGATE', 'Alpha Malawi'), 'INVESTIGATE');
-  assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi.\\nQUALIFY\\n', 'Alpha Malawi'), 'QUALIFY');
+  assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi.\nQUALIFY\n', 'Alpha Malawi'), 'QUALIFY');
   assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. Recommendation: QUALIFIED', 'Alpha Malawi'), 'QUALIFY');
   assert.equal(extractDiscoveryRecommendation('Organisation: Beta Malawi. Recommendation: QUALIFY', 'Alpha Malawi'), null);
   assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. Recommendation pending.', 'Alpha Malawi'), null);
