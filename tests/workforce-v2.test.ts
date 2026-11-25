@@ -87,6 +87,7 @@ function handoffDeps(over: Partial<HandoffDeps> = {}) {
 
 test('discovery queue reports are accepted by a deterministic evidence check, not a false CEO missing-deliverable escalation', async () => {
   let orchestratorCalled = false;
+  let researchPrompt = '';
   const contextSummary = JSON.stringify({
     source: 'public.lead_discovery_queue',
     prospect: {
@@ -110,8 +111,9 @@ test('discovery queue reports are accepted by a deterministic evidence check, no
     '**Recommendation:** INVESTIGATE',
   ].join('\n');
   const { deps, store } = handoffDeps({
-    askAgent: async (agent) => {
+    askAgent: async (agent, prompt) => {
       if (agent === 'orchestrator') { orchestratorCalled = true; return 'DECISION: FOUNDER_INPUT_REQUIRED\nThe deliverable was not supplied.'; }
+      researchPrompt = prompt;
       return report;
     },
   });
@@ -124,6 +126,8 @@ test('discovery queue reports are accepted by a deterministic evidence check, no
   });
   const out = await processHandoffs(deps);
   assert.equal(orchestratorCalled, false);
+  assert.match(researchPrompt, /MANDATORY DISCOVERY QUEUE REPORT FORMAT/);
+  assert.match(researchPrompt, /Recommendation: QUALIFY \\| INVESTIGATE \\| REJECT/);
   assert.equal(out[0].status, 'completed');
   assert.equal(store.rows[0].status, 'completed');
 });
