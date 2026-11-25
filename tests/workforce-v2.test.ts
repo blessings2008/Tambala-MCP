@@ -149,7 +149,7 @@ test('discovery queue QUALIFY requires a verified public WhatsApp phone number',
     '**Public Organisational Contact Evidence:** info@example.mw',
     '**Verification Gaps:** No public WhatsApp phone number is supplied, so WhatsApp-first outreach cannot proceed.',
     '**Recommendation:** QUALIFY',
-  ].join('\\n');
+  ].join('\n');
   const { deps, store } = handoffDeps({ askAgent: async () => report });
   await queueHandoff(store, {
     fromRoleId: 'ceo',
