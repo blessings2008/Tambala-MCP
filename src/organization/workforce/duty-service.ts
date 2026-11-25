@@ -202,9 +202,9 @@ async function researchQuotaCoolingDown(): Promise<boolean> {
   if (!dbConfigured()) return false;
   try {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const failures = await supabaseSelect<{ to_agent: string; status: string; error: string | null; created_at: string }>(
+    const failures = await supabaseSelect<{ to_agent: string; status: string; error: string | null; created_at: string; completed_at: string | null }>(
       'organization_handoffs',
-      `select=to_agent,status,error,created_at&to_agent=eq.research&status=eq.failed&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=50`,
+      `select=to_agent,status,error,created_at,completed_at&to_agent=eq.research&status=eq.failed&completed_at=gte.${encodeURIComponent(since)}&order=completed_at.desc&limit=50`,
     );
     return isResearchDailyQuotaExhausted(failures);
   } catch (error) {
