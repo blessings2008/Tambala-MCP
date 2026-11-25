@@ -26,7 +26,7 @@ export function routeDiscoveryRecommendation(
   const gaps = [
     verificationStatus !== 'verified' ? 'the prospect record is not fully verified' : '',
     serviceFitCount <= 0 ? 'no Tambala service fit is recorded' : '',
-    !publicPhone?.trim() ? 'no public WhatsApp phone number is available' : '',
+    (publicPhone?.replace(/\D/g, '').length ?? 0) < 8 ? 'no valid public WhatsApp phone number is available' : '',
   ].filter(Boolean);
   if (gaps.length) {
     return {
