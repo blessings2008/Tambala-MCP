@@ -386,7 +386,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
     }
     outcomes.push({ handoffId: stale.id, toAgent: stale.to_agent, status: 'waiting', reason, taskId: stale.task_id ?? undefined, roomId: stale.room_id ?? undefined });
   }
-  const recent = await deps.store.recent(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+  const recent = await deps.store.recent(new Date(deps.now().getTime() - 7 * 24 * 60 * 60 * 1000).toISOString());
   for (const waiting of recent) {
     // Earlier deployments quarantined stale handoffs even when the task state transition
     // was rejected. Reconcile that parent task now, without re-queuing the handoff or
