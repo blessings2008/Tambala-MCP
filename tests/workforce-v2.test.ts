@@ -127,7 +127,7 @@ test('discovery queue reports are accepted by a deterministic evidence check, no
   const out = await processHandoffs(deps);
   assert.equal(orchestratorCalled, false);
   assert.match(researchPrompt, /MANDATORY DISCOVERY QUEUE REPORT FORMAT/);
-  assert.match(researchPrompt, /Recommendation: QUALIFY \\| INVESTIGATE \\| REJECT/);
+  assert.match(researchPrompt, /Recommendation: QUALIFY \| INVESTIGATE \| REJECT/);
   assert.equal(out[0].status, 'completed');
   assert.equal(store.rows[0].status, 'completed');
 });
