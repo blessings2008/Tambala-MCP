@@ -85,6 +85,81 @@ function handoffDeps(over: Partial<HandoffDeps> = {}) {
   return { deps, store, asked };
 }
 
+test('discovery queue reports are accepted by a deterministic evidence check, not a false CEO missing-deliverable escalation', async () => {
+  let orchestratorCalled = false;
+  const contextSummary = JSON.stringify({
+    source: 'public.lead_discovery_queue',
+    prospect: {
+      id: 'queue-record-123',
+      organisation_name: 'Malawi Lake Services',
+      service_fit: ['Software Development', 'Digital Product Development', 'Web Development'],
+      public_email: null,
+      public_phone: null,
+      source_urls: ['https://transport.gov.mw/index.php/component/content/', 'https://mwnation.com/example/'],
+      verification_status: 'verified',
+    },
+  });
+  const report = [
+    'SELF_REVIEW: PASS',
+    '**Organisation Name:** Malawi Lake Services',
+    '**Queue Record ID:** queue-record-123',
+    '**Service-Fit Evidence:** The supplied record supports Software Development and Web Development opportunities.',
+    '**Source URLs:** https://transport.gov.mw/index.php/component/content/',
+    '**Public Organisational Contact Evidence:** None. No public organisational email or phone is supplied in the record.',
+    '**Verification Gaps:** No public organisational contact is verified; confirm an official contact before qualification.',
+    '**Recommendation:** INVESTIGATE',
+  ].join('\\n');
+  const { deps, store } = handoffDeps({
+    askAgent: async (agent) => {
+      if (agent === 'orchestrator') { orchestratorCalled = true; return 'DECISION: FOUNDER_INPUT_REQUIRED\\nThe deliverable was not supplied.'; }
+      return report;
+    },
+  });
+  await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'research',
+    sourceDutyId: 'lead-discovery-queue-watcher',
+    request: 'Review this existing discovery queue record and provide the required evidence-backed recommendation.',
+    contextSummary,
+  });
+  const out = await processHandoffs(deps);
+  assert.equal(orchestratorCalled, false);
+  assert.equal(out[0].status, 'completed');
+  assert.equal(store.rows[0].status, 'completed');
+});
+
+test('discovery queue reports with missing required evidence are returned for revision, not escalated as missing Founder input', async () => {
+  let orchestratorCalled = false;
+  const contextSummary = JSON.stringify({
+    prospect: {
+      id: 'queue-record-456',
+      organisation_name: 'Example Malawi Limited',
+      service_fit: ['Web Development'],
+      public_email: 'info@example.mw',
+      public_phone: null,
+      source_urls: ['https://example.mw/'],
+      verification_status: 'verified',
+    },
+  });
+  const { deps, store } = handoffDeps({
+    askAgent: async (agent) => {
+      if (agent === 'orchestrator') { orchestratorCalled = true; return 'DECISION: ACCEPT\\nLooks good.'; }
+      return 'SELF_REVIEW: PASS\\nOrganisation: Example Malawi Limited. Recommendation: QUALIFY.';
+    },
+  });
+  await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'research',
+    sourceDutyId: 'lead-discovery-queue-research-review',
+    request: 'Review this existing discovery queue record and provide the required evidence-backed recommendation.',
+    contextSummary,
+  });
+  const out = await processHandoffs(deps);
+  assert.equal(orchestratorCalled, false);
+  assert.equal(out[0].status, 'retry');
+  assert.match(store.rows[0].error ?? '', /service-fit evidence|record ID/i);
+});
+
 test('the Founder assigns work and the employee completes it', async () => {
   const { deps, store, asked } = handoffDeps();
   const h = await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'marketing', request: 'Draft a one-page overview of our web services' });
