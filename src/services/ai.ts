@@ -37,6 +37,13 @@ function serializeBoundedContext(context: unknown, maxChars = MAX_CONTEXT_CHARS)
 
 const RATE_LIMIT_RETRY_DELAY_MS = 60_000;
 
+function isDailyFreeModelQuotaError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const value = error as { message?: unknown };
+  const message = typeof value.message === 'string' ? value.message : '';
+  return /free-models-per-day|daily free[- ]model quota/i.test(message);
+}
+
 function isRateLimitError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const value = error as { status?: unknown; code?: unknown; message?: unknown };
@@ -51,6 +58,10 @@ async function requestWithRateLimitRetry<T>(request: () => Promise<T>, agent: Ag
   try {
     return await request();
   } catch (error) {
+    if (isDailyFreeModelQuotaError(error)) {
+      console.warn('AI provider daily free-model quota exhausted; skipping futile retry', JSON.stringify({ agent, model }));
+      throw error;
+    }
     if (!isRateLimitError(error)) throw error;
     console.warn('AI provider rate limit hit; waiting 60 seconds before one retry', JSON.stringify({ agent, model, waitMs: RATE_LIMIT_RETRY_DELAY_MS }));
     await new Promise<void>((resolve) => setTimeout(resolve, RATE_LIMIT_RETRY_DELAY_MS));
