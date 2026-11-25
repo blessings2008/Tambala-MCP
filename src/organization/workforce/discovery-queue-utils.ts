@@ -75,7 +75,7 @@ export function extractDiscoveryRecommendation(result: string | null | undefined
 /** True only when a CEO review claimed the employee report was absent, despite a stored result. */
 export function isFalseMissingDeliverableReview(error: string | null | undefined, result: string | null | undefined): boolean {
   if (!result?.trim()) return false;
-  return /(?:no employee (?:completed )?(?:deliverable|output|report|review) (?:was )?(?:provided|included|supplied)|employee['’]s (?:completed )?(?:deliverable|output|report|review).{0,140}(?:not|never) (?:been )?(?:provided|included|supplied)|submitted (?:report|deliverable).{0,80}(?:not|never) (?:been )?(?:provided|included|supplied))/i.test(error ?? '');
+  return /(?:no employee (?:completed )?(?:deliverable|output|report|review) (?:was )?(?:provided|included|supplied)|employee['’]s (?:completed )?(?:deliverable|output|report|review).{0,140}(?:not|never) (?:been )?(?:provided|included|supplied)|submitted (?:report|deliverable).{0,80}(?:not|never) (?:been )?(?:provided|included|supplied)|please (?:provide|supply|send) (?:the )?(?:employee['’]s )?(?:submitted|completed|finished) (?:deliverable|output|report|review))/i.test(error ?? '');
 }
 
 /**
