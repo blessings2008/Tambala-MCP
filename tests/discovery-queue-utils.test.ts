@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview } from '../src/organization/workforce/discovery-queue-utils.ts';
+import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview } from '../src/organization/workforce/discovery-queue-utils.ts';
 
 test('recognises false missing-deliverable escalations only when an employee result exists', () => {
   const errors = [
@@ -12,6 +12,14 @@ test('recognises false missing-deliverable escalations only when an employee res
   for (const error of errors) assert.equal(isFalseMissingDeliverableReview(error, 'Stored employee report'), true);
   assert.equal(isFalseMissingDeliverableReview(errors[0], null), false);
   assert.equal(isFalseMissingDeliverableReview('DECISION: FOUNDER_INPUT_REQUIRED — Please supply an official contact number.', 'Stored employee report'), false);
+});
+
+test('extracts only explicit discovery recommendations for the exact organisation', () => {
+  assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. Recommendation: QUALIFY', 'Alpha Malawi'), 'QUALIFY');
+  assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. **Recommendation:** INVESTIGATE', 'Alpha Malawi'), 'INVESTIGATE');
+  assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. Recommendation: REJECT', 'Alpha Malawi'), 'REJECT');
+  assert.equal(extractDiscoveryRecommendation('Organisation: Beta Malawi. Recommendation: QUALIFY', 'Alpha Malawi'), null);
+  assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. Recommendation pending.', 'Alpha Malawi'), null);
 });
 
 test('recognises a record already handed to Research by either workflow', () => {
