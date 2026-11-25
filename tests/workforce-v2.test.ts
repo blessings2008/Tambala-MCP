@@ -213,6 +213,7 @@ test('preserves queued Research handoffs when the daily free-model quota is exha
   await store.update(failed.id, {
     status: 'failed',
     error: 'HTTP 429: free-models-per-day quota exceeded',
+    created_at: '2026-11-09T06:00:00.000Z',
     completed_at: '2026-11-09T06:00:00.000Z',
   });
   const queuedResearch = await queueHandoff(store, {
