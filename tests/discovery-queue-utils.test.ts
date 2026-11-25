@@ -1,6 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview, routeDiscoveryRecommendation } from '../src/organization/workforce/discovery-queue-utils.ts';
+import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview, isResearchDailyQuotaExhausted, routeDiscoveryRecommendation } from '../src/organization/workforce/discovery-queue-utils.ts';
+
+test('pauses Research after a recent OpenRouter free daily quota failure only', () => {
+  const now = new Date('2026-11-25T12:00:00.000Z');
+  assert.equal(isResearchDailyQuotaExhausted([{
+    to_agent: 'research', status: 'failed',
+    error: 'HTTP 429: free-models-per-day quota exceeded',
+    created_at: '2026-11-25T11:30:00.000Z',
+  }], now), true);
+  assert.equal(isResearchDailyQuotaExhausted([{
+    to_agent: 'research', status: 'failed',
+    error: 'HTTP 429: free-models-per-day quota exceeded',
+    created_at: '2026-11-24T10:00:00.000Z',
+  }], now), false);
+  assert.equal(isResearchDailyQuotaExhausted([{
+    to_agent: 'outreach', status: 'failed',
+    error: 'HTTP 429: free-models-per-day quota exceeded',
+    created_at: '2026-11-25T11:30:00.000Z',
+  }], now), false);
+  assert.equal(isResearchDailyQuotaExhausted([{
+    to_agent: 'research', status: 'completed',
+    error: 'HTTP 429: free-models-per-day quota exceeded',
+    created_at: '2026-11-25T11:30:00.000Z',
+  }], now), false);
+});
 
 test('recognises false missing-deliverable escalations only when an employee result exists', () => {
   const errors = [
