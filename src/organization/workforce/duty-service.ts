@@ -12,7 +12,7 @@ import { isNonSecurityWorkflowBlock } from './incident-routing.js';
 import { type ContextKind, type StandingDuty } from './duties.js';
 import { dbConfigured as dbOn } from './db-util.js';
 import { loadDuties, requireConfigStore, saveBuiltinOverride, saveCustomDuty, SupabaseDutyConfigStore, type DutyConfigStore } from './duty-config.js';
-import { InMemoryHandoffStore, SupabaseHandoffStore, processHandoffs, queueHandoff, resumeFounderTaskRoom, type Handoff, type HandoffDeps, type HandoffOutcome, type HandoffStore } from './handoffs.js';
+import { InMemoryHandoffStore, SupabaseHandoffStore, processHandoffs, queueHandoff, resumeFounderTaskRoom, validateDiscoveryQueueDeliverable, type Handoff, type HandoffDeps, type HandoffOutcome, type HandoffStore } from './handoffs.js';
 import { identityMark, signingAvailable } from './signing.js';
 import { assertRuntimeActive } from '../runtime-control.js';
 import { signWork, signatureStore } from './sign-work.js';
@@ -303,9 +303,9 @@ export async function dispatchReviewingDiscoveryQueue(maxCount = 5): Promise<num
       'lead_discovery_queue',
       `select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id&processing_status=eq.reviewing&order=created_at.asc&offset=${offset}&limit=${limit}`,
     )),
-    supabaseSelect<{ request: string; status: string; created_at: string; completed_at: string | null }>(
+    supabaseSelect<{ request: string; status: string; created_at: string; completed_at: string | null; error: string | null; result: string | null; context_summary: string | null }>(
       'organization_handoffs',
-      'select=request,status,created_at,completed_at&source_duty_id=in.(lead-discovery-queue-watcher,lead-discovery-queue-research-review)&limit=5000',
+      'select=request,status,created_at,completed_at,error,result,context_summary&source_duty_id=in.(lead-discovery-queue-watcher,lead-discovery-queue-research-review)&limit=5000',
     ),
   ]);
   let dispatched = 0;
@@ -313,7 +313,15 @@ export async function dispatchReviewingDiscoveryQueue(maxCount = 5): Promise<num
     if (dispatched >= Math.min(5, Math.floor(maxCount))) break;
     const marker = 'Queue record ID: ' + prospect.id + '.';
     const retryFailedBefore = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    if (hasDiscoveryQueueHandoff(prospect.id, previous, retryFailedBefore)) continue;
+    const previousForSuppression = previous.filter((item) => {
+      if (!['failed', 'awaiting_founder'].includes(item.status)) return true;
+      if (!/DECISION:\\s*(?:REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)/i.test(item.error ?? '')) return true;
+      if (!item.context_summary || !item.result) return true;
+      // Re-dispatch only when the old CEO rejection contradicts a complete report.
+      // Genuine missing evidence and non-review failures remain safely blocked.
+      return !validateDiscoveryQueueDeliverable(item.context_summary, item.result).ok;
+    });
+    if (hasDiscoveryQueueHandoff(prospect.id, previousForSuppression, retryFailedBefore)) continue;
     const contextSummary = JSON.stringify({
       source: 'public.lead_discovery_queue',
       instruction: 'Recovery review of an existing queue record. Use only the supplied evidence; no new web discovery while the engine is paused.',
