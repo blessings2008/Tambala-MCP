@@ -624,7 +624,7 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
           prospect.processing_status !== route.processingStatus ||
           !prospect.research_notes?.startsWith(prefix)
         ) {
-          const note = `${prefix}\\n${route.reason}\\n\\n${handoff.result.slice(0, 3200)}`;
+          const note = `${prefix}\n${route.reason}\n\n${handoff.result.slice(0, 3200)}`;
           await supabaseUpdate(
             'lead_discovery_queue',
             { processing_status: route.processingStatus, research_notes: note, updated_at: new Date().toISOString() },
