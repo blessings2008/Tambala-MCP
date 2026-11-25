@@ -22,6 +22,21 @@ test('extracts only explicit discovery recommendations for the exact organisatio
   assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. Recommendation pending.', 'Alpha Malawi'), null);
 });
 
+test('routes Research recommendations without promoting incomplete WhatsApp prospects', () => {
+  assert.deepEqual(routeDiscoveryRecommendation('REJECT', 'verified', 1, '+265999000000'), {
+    outcome: 'REJECT', processingStatus: 'rejected', requiresFounderApproval: false,
+    reason: 'Research rejected this prospect based on the supplied evidence.',
+  });
+  assert.equal(routeDiscoveryRecommendation('INVESTIGATE', 'verified', 1, '+265999000000')?.processingStatus, 'reviewing');
+  const noPhone = routeDiscoveryRecommendation('QUALIFY', 'verified', 1, null);
+  assert.equal(noPhone?.outcome, 'INVESTIGATE');
+  assert.equal(noPhone?.processingStatus, 'reviewing');
+  assert.equal(noPhone?.requiresFounderApproval, false);
+  assert.match(noPhone?.reason ?? '', /WhatsApp phone/i);
+  assert.equal(routeDiscoveryRecommendation('QUALIFY', 'verified', 1, '+265999000000')?.requiresFounderApproval, true);
+  assert.equal(routeDiscoveryRecommendation(null, 'verified', 1, '+265999000000'), null);
+});
+
 test('recognises a record already handed to Research by either workflow', () => {
   const marker = 'Please review. Queue record ID: queue-123.';
   assert.equal(hasDiscoveryQueueHandoff('queue-123', [{ request: marker }]), true);
