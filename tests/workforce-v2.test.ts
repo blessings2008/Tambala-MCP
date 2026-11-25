@@ -229,7 +229,7 @@ test('reconciles false Founder escalations when the stored discovery report pass
     'Public Organisational Contact Evidence: info@example.mw',
     'Verification Gaps: A public WhatsApp phone number was not supplied.',
     'Recommendation: INVESTIGATE',
-  ].join('\\n');
+  ].join('\n');
   const handoff = await queueHandoff(store, {
     fromRoleId: 'ceo',
     toAgent: 'research',
@@ -241,7 +241,7 @@ test('reconciles false Founder escalations when the stored discovery report pass
     status: 'awaiting_founder',
     task_id: 'task-false-founder-escalation',
     result: report,
-    error: 'DECISION: FOUNDER_INPUT_REQUIRED\\nNo employee deliverable was provided for review.',
+    error: 'DECISION: FOUNDER_INPUT_REQUIRED\nNo employee deliverable was provided for review.',
     completed_at: null,
   });
   const outcomes = await processHandoffs(deps);
