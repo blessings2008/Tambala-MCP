@@ -1,5 +1,5 @@
 import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../../lib/supabase.js';
-import { fetchAllPages, hasDiscoveryQueueHandoff } from './discovery-queue-utils.js';
+import { fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview } from './discovery-queue-utils.js';
 import { getBusinessSummary, getDetailedCRMContext, getVerifiedCompanyContext } from '../../services/ai/context.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../../services/ai.js';
 import { getOrganizationSnapshot } from '../service.js';
@@ -316,11 +316,7 @@ export async function dispatchReviewingDiscoveryQueue(maxCount = 5): Promise<num
     const previousForSuppression = previous.filter((item) => {
       if (!['failed', 'awaiting_founder'].includes(item.status)) return true;
       const error = item.error ?? '';
-      if (
-        item.status === 'awaiting_founder' &&
-        item.result?.trim() &&
-        /(?:no employee deliverable (?:was )?(?:provided|included)|employee['’]s (?:completed )?deliverable.{0,100}(?:not|never) provided|submitted report.{0,80}(?:not|never) provided|employee['’]s deliverable.{0,100}not included)/i.test(error)
-      ) return false;
+      if (item.status === 'awaiting_founder' && isFalseMissingDeliverableReview(error, item.result)) return false;
       if (!/DECISION:\s*(?:REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)/i.test(error)) return true;
       if (!item.context_summary || !item.result) return true;
       // Re-dispatch only when the old CEO rejection contradicts a complete report.
