@@ -1,5 +1,22 @@
 export interface DiscoveryQueueHandoffMarker { request: string; status?: string; created_at?: string; completed_at?: string | null }
 
+export type DiscoveryRecommendation = 'QUALIFY' | 'INVESTIGATE' | 'REJECT';
+
+function normaliseDiscoveryText(value: string): string {
+  return value.toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\\s+/g, ' ');
+}
+
+/** Extract a recommendation only when the report names the exact queue organisation. */
+export function extractDiscoveryRecommendation(result: string | null | undefined, organisationName: string): DiscoveryRecommendation | null {
+  if (!result?.trim() || !organisationName.trim()) return null;
+  if (!normaliseDiscoveryText(result).includes(normaliseDiscoveryText(organisationName))) return null;
+  const recommendation = result.match(/\\brecommendation\\b[\\s*:_-]{0,12}(QUALIFY|INVESTIGATE|REJECT)\\b/i)?.[1]?.toUpperCase();
+  return recommendation === 'QUALIFY' || recommendation === 'INVESTIGATE' || recommendation === 'REJECT'
+    ? recommendation
+    : null;
+}
+
 /** True only when a CEO review claimed the employee report was absent, despite a stored result. */
 export function isFalseMissingDeliverableReview(error: string | null | undefined, result: string | null | undefined): boolean {
   if (!result?.trim()) return false;
