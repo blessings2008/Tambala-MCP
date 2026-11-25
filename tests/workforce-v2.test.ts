@@ -128,6 +128,41 @@ test('discovery queue reports are accepted by a deterministic evidence check, no
   assert.equal(store.rows[0].status, 'completed');
 });
 
+test('discovery queue QUALIFY requires a verified public WhatsApp phone number', async () => {
+  const contextSummary = JSON.stringify({
+    prospect: {
+      id: 'queue-record-789',
+      organisation_name: 'Example Malawi Limited',
+      service_fit: ['Web Development'],
+      public_email: 'info@example.mw',
+      public_phone: null,
+      source_urls: ['https://example.mw/'],
+      verification_status: 'verified',
+    },
+  });
+  const report = [
+    'SELF_REVIEW: PASS',
+    '**Organisation Name:** Example Malawi Limited',
+    '**Queue Record ID:** queue-record-789',
+    '**Service-Fit Evidence:** Web Development fits the organisation’s public-facing service information.',
+    '**Source URLs:** https://example.mw/',
+    '**Public Organisational Contact Evidence:** info@example.mw',
+    '**Verification Gaps:** No public WhatsApp phone number is supplied, so WhatsApp-first outreach cannot proceed.',
+    '**Recommendation:** QUALIFY',
+  ].join('\\n');
+  const { deps, store } = handoffDeps({ askAgent: async () => report });
+  await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'research',
+    sourceDutyId: 'lead-discovery-queue-research-review',
+    request: 'Review this existing discovery queue record and provide the required evidence-backed recommendation.',
+    contextSummary,
+  });
+  const out = await processHandoffs(deps);
+  assert.equal(out[0].status, 'retry');
+  assert.match(store.rows[0].error ?? '', /public WhatsApp phone number/i);
+});
+
 test('discovery queue reports with missing required evidence are returned for revision, not escalated as missing Founder input', async () => {
   let orchestratorCalled = false;
   const contextSummary = JSON.stringify({
