@@ -58,19 +58,28 @@ export function validateDiscoveryQueueDeliverable(contextSummary: string | null,
   if (fits.length && !fits.some((fit) => normalized(text).includes(normalized(fit)))) return { ok: false, reason: 'The report must name at least one service fit recorded in the supplied prospect record.' };
   const sources = Array.isArray(prospect.source_urls) ? prospect.source_urls.filter((v): v is string => typeof v === 'string' && /^https?:\/\//i.test(v)) : [];
   if (!sources.length || !sources.some((url) => text.includes(url))) return { ok: false, reason: 'The report must cite at least one source URL supplied with the prospect record.' };
-  if (!/public organisational contact evidence|public organizational contact evidence/i.test(text)) return { ok: false, reason: 'The report must explicitly state the public organisational contact evidence.' };
+  const contactHeading = text.match(/public organisational contact evidence|public organizational contact evidence/i);
+  if (!contactHeading || contactHeading.index === undefined) return { ok: false, reason: 'The report must explicitly state the public organisational contact evidence.' };
+  const contactTail = text.slice(contactHeading.index + contactHeading[0].length);
+  const contactEnd = contactTail.search(/\n\s*\*{0,2}(?:remaining\s+)?verification gaps\b|\n\s*\*{0,2}recommendation\b/i);
+  const contactSection = contactTail.slice(0, contactEnd < 0 ? undefined : contactEnd);
   const emails = typeof prospect.public_email === 'string' ? prospect.public_email.split(/[;,]/).map((v) => v.trim()).filter(Boolean) : [];
   const phones = typeof prospect.public_phone === 'string' ? prospect.public_phone.split(/[;,/]/).map((v) => v.trim()).filter(Boolean) : [];
-  const hasEmail = emails.some((email) => text.toLowerCase().includes(email.toLowerCase()));
+  const hasEmail = emails.some((email) => contactSection.toLowerCase().includes(email.toLowerCase()));
   const hasPhone = phones.some((phone) => {
     const digits = phone.replace(/\D/g, '');
-    return digits.length >= 8 && text.replace(/\D/g, '').includes(digits);
+    return digits.length >= 8 && contactSection.replace(/\D/g, '').includes(digits);
   });
   const hasSuppliedContact = emails.length > 0 || phones.length > 0;
-  const explicitlyNoContact = /\bnone\b|no (?:verified )?(?:public )?(?:organisational )?(?:email|phone|contact)|not available|not supplied|not verified/i.test(text);
-  if (hasSuppliedContact && !hasEmail && !hasPhone) return { ok: false, reason: 'The report must reproduce at least one public email or phone number supplied in the prospect record.' };
-  if (!hasSuppliedContact && !explicitlyNoContact) return { ok: false, reason: 'The report must explicitly say that no public organisational email or phone is supplied.' };
-  if (!/verification gaps/i.test(text)) return { ok: false, reason: 'The report must explicitly list remaining verification gaps, or state that none were identified.' };
+  const explicitlyNoContact = /\bnone\b|no (?:verified )?(?:public )?(?:organisational )?(?:email|phone|contact)|not available|not supplied|not verified/i.test(contactSection);
+  if (hasSuppliedContact && !hasEmail && !hasPhone) return { ok: false, reason: 'The report must reproduce at least one public email or phone number supplied in the prospect record under its contact-evidence section.' };
+  if (!hasSuppliedContact && !explicitlyNoContact) return { ok: false, reason: 'The report must explicitly say in its contact-evidence section that no public organisational email or phone is supplied.' };
+  const gapsHeading = text.match(/verification gaps/i);
+  if (!gapsHeading || gapsHeading.index === undefined) return { ok: false, reason: 'The report must explicitly list remaining verification gaps, or state that none were identified.' };
+  const gapsTail = text.slice(gapsHeading.index + gapsHeading[0].length);
+  const gapsEnd = gapsTail.search(/\n\s*\*{0,2}recommendation\b/i);
+  const gapsSection = gapsTail.slice(0, gapsEnd < 0 ? undefined : gapsEnd).replace(/[\s*:*-]/g, '');
+  if (gapsSection.length < 3) return { ok: false, reason: 'The report must state the remaining verification gaps or explicitly say none were identified.' };
   const recommendation = text.match(/\brecommendation\b[\s*:_-]{0,12}(QUALIFY|INVESTIGATE|REJECT)\b/i)?.[1]?.toUpperCase();
   if (!recommendation) return { ok: false, reason: 'The report must end with one explicit QUALIFY, INVESTIGATE, or REJECT recommendation.' };
   if (recommendation === 'QUALIFY' && (String(prospect.verification_status ?? '').toLowerCase() !== 'verified' || !hasSuppliedContact || (!hasEmail && !hasPhone))) {
