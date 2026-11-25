@@ -82,8 +82,8 @@ export function validateDiscoveryQueueDeliverable(contextSummary: string | null,
   if (gapsSection.length < 3) return { ok: false, reason: 'The report must state the remaining verification gaps or explicitly say none were identified.' };
   const recommendation = text.match(/\brecommendation\b[\s*:_-]{0,12}(QUALIFY|INVESTIGATE|REJECT)\b/i)?.[1]?.toUpperCase();
   if (!recommendation) return { ok: false, reason: 'The report must end with one explicit QUALIFY, INVESTIGATE, or REJECT recommendation.' };
-  if (recommendation === 'QUALIFY' && (String(prospect.verification_status ?? '').toLowerCase() !== 'verified' || !hasSuppliedContact || (!hasEmail && !hasPhone))) {
-    return { ok: false, reason: 'QUALIFY requires a verified prospect record and at least one supplied public organisational email or phone reproduced in the report.' };
+  if (recommendation === 'QUALIFY' && (String(prospect.verification_status ?? '').toLowerCase() !== 'verified' || phones.length === 0 || !hasPhone)) {
+    return { ok: false, reason: 'QUALIFY requires a verified prospect record and at least one supplied public WhatsApp phone number reproduced in the contact-evidence section.' };
   }
   return { ok: true, reason: 'The discovery report identifies the exact record, supported service fit, supplied source evidence, public contact status, verification gaps, and a permitted recommendation.' };
 }
