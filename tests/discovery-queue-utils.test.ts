@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchAllPages, hasDiscoveryQueueHandoff } from '../src/organization/workforce/discovery-queue-utils.ts';
+import { fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview } from '../src/organization/workforce/discovery-queue-utils.ts';
+
+test('recognises false missing-deliverable escalations only when an employee result exists', () => {
+  const errors = [
+    'DECISION: FOUNDER_INPUT_REQUIRED — No employee deliverable was provided. Please supply the submitted report.',
+    'DECISION: FOUNDER_INPUT_REQUIRED — The employee’s completed deliverable has not been provided.',
+    'DECISION: FOUNDER_INPUT_REQUIRED — The employee’s output for this record was not included.',
+    'DECISION: FOUNDER_INPUT_REQUIRED — The employee’s completed review has not been provided.',
+  ];
+  for (const error of errors) assert.equal(isFalseMissingDeliverableReview(error, 'Stored employee report'), true);
+  assert.equal(isFalseMissingDeliverableReview(errors[0], null), false);
+  assert.equal(isFalseMissingDeliverableReview('DECISION: FOUNDER_INPUT_REQUIRED — Please supply an official contact number.', 'Stored employee report'), false);
+});
 
 test('recognises a record already handed to Research by either workflow', () => {
   const marker = 'Please review. Queue record ID: queue-123.';
