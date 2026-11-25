@@ -199,6 +199,58 @@ test('discovery queue reports with missing required evidence are returned for re
   assert.match(store.rows[0].error ?? '', /service-fit evidence|record ID/i);
 });
 
+test('reconciles false Founder escalations when the stored discovery report passes deterministic review', async () => {
+  const taskTransitions: string[] = [];
+  const { deps, store } = handoffDeps({
+    tasks: {
+      begin: async () => ({ taskId: 'unused-task' }),
+      advance: async (_taskId, updates) => { taskTransitions.push(...updates.map((item) => item.status)); },
+      fail: async () => {},
+      getStatus: async () => 'awaiting_founder',
+    },
+  });
+  const contextSummary = JSON.stringify({
+    source: 'public.lead_discovery_queue',
+    prospect: {
+      id: 'queue-record-123',
+      organisation_name: 'Example Malawi',
+      service_fit: ['Web Development'],
+      source_urls: ['https://example.mw/about'],
+      public_email: 'info@example.mw',
+      public_phone: null,
+      verification_status: 'partially_verified',
+    },
+  });
+  const report = [
+    'Organisation Name: Example Malawi',
+    'Queue Record ID: queue-record-123',
+    'Service-Fit Evidence: Web Development is supported by the supplied organisation profile.',
+    'Source URLs: https://example.mw/about',
+    'Public Organisational Contact Evidence: info@example.mw',
+    'Verification Gaps: A public WhatsApp phone number was not supplied.',
+    'Recommendation: INVESTIGATE',
+  ].join('\\n');
+  const handoff = await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'research',
+    sourceDutyId: 'lead-discovery-queue-watcher',
+    request: 'Review this discovery queue record.',
+    contextSummary,
+  });
+  await store.update(handoff.id, {
+    status: 'awaiting_founder',
+    task_id: 'task-false-founder-escalation',
+    result: report,
+    error: 'DECISION: FOUNDER_INPUT_REQUIRED\\nNo employee deliverable was provided for review.',
+    completed_at: null,
+  });
+  const outcomes = await processHandoffs(deps);
+  assert.equal(store.rows.find((row) => row.id === handoff.id)?.status, 'completed');
+  assert.equal(store.rows.find((row) => row.id === handoff.id)?.error, null);
+  assert.deepEqual(taskTransitions, ['ceo_analyzing', 'delegated', 'executing', 'department_review', 'returned_to_ceo', 'completed']);
+  assert.equal(outcomes.find((row) => row.handoffId === handoff.id)?.status, 'completed');
+});
+
 test('quota-paused expired Research handoffs fail safely instead of escalating to Founder', async () => {
   const taskTransitions: string[] = [];
   const { deps, store } = handoffDeps({
