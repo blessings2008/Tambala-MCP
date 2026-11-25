@@ -372,10 +372,6 @@ function normaliseDiscoveryName(value: string): string {
     .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
 }
 
-function salesResultQualifies(result: string, organisationName: string): boolean {
-  return extractDiscoveryRecommendation(result, organisationName) === 'QUALIFY';
-}
-
 const approvedProspectDispatching = new Set<string>();
 
 async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId: string): Promise<boolean> {
