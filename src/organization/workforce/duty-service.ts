@@ -608,7 +608,7 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
       ),
       supabaseSelect<ApprovalRow>(
         'organization_approval_requests',
-        'select=id,action_type,summary,requested_by_role_id,required_authority,status,risk_level,resolution_note,resolved_by_role_id,task_id,content,subject_type,subject_id,created_at,resolved_at&subject_type=eq.lead_discovery_queue&limit=500',
+        'select=id,action_type,summary,requested_by_role_id,required_authority,status,risk_level,resolution_note,resolved_by_role_id,task_id,content,subject_type,subject_id,created_at,resolved_at&subject_type=eq.lead_discovery_queue&order=created_at.desc&limit=500',
       ),
     ]);
 
