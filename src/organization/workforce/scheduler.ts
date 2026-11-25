@@ -40,7 +40,7 @@ export function startDutyScheduler(): void {
       await markDutyCycleCompleted().catch((error) => console.warn('Duty heartbeat completion could not be stored:', error instanceof Error ? error.message : error));
       if (newClaims) console.log('Discovery queue claimed for Research:', newClaims);
       if (recoveredReviews) console.log('Legacy discovery queue rows routed to Research:', recoveredReviews);
-      if (promotionApprovals) console.log('Founder approvals created for qualified prospects:', promotionApprovals);
+      if (promotionApprovals) console.log('Qualified prospects registered in CRM by CEO review:', promotionApprovals);
       if (planStepsQueued) console.log('Adaptive plan steps queued for employees:', planStepsQueued);
       const worked = [...outcomes.filter((o) => o.status !== 'skipped').map((o) => `${o.dutyId}:${o.status}`), ...handoffs.filter((h) => h.status !== 'waiting').map((h) => `handoff-${h.toAgent}:${h.status}`)];
       if (worked.length) console.log('Duty cycle:', JSON.stringify(worked));
