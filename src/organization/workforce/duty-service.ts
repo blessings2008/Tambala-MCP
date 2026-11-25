@@ -608,22 +608,58 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
       ),
       supabaseSelect<ApprovalRow>(
         'organization_approval_requests',
-        'select=id,action_type,summary,requested_by_role_id,required_authority,status,risk_level,resolution_note,resolved_by_role_id,task_id,content,subject_type,subject_id,created_at,resolved_at&subject_type=eq.lead_discovery_queue&limit=500',
+        'select=id,action_type,summary,requested_by_role_id,required_authority,status,risk_level,resolution_note,resolved_by_role_id,task_id,content,subject_type,subject_id,created_at,resolved_at&subject_type=eq.lead_discovery_queue&order=created_at.desc&limit=500',
       ),
     ]);
 
     let created = 0;
     for (const prospect of prospects) {
+      const existingApproval = approvals.find((item) =>
+        item.action_type === 'crm_lead_promotion' && item.subject_id === prospect.id,
+      );
+      const cancelPendingPromotion = async (reason: string) => {
+        if (existingApproval?.status === 'pending') {
+          await supabaseUpdate(
+            'organization_approval_requests',
+            {
+              status: 'cancelled',
+              required_authority: 'ceo',
+              resolved_by_role_id: 'ceo',
+              resolved_at: new Date().toISOString(),
+              resolution_note: `Cancelled by CEO after Research revalidation: ${reason} No CRM promotion or customer contact was authorised.`,
+            },
+            `id=eq.${encodeURIComponent(existingApproval.id)}&status=eq.pending&action_type=eq.crm_lead_promotion`,
+          );
+        }
+        if (existingApproval?.status === 'pending') {
+          await supabaseUpdate(
+            'lead_discovery_queue',
+            {
+              processing_status: 'reviewing',
+              research_notes: `Research outcome: INVESTIGATE\n${reason}\n\nNo CRM promotion or customer contact was authorised.`,
+              updated_at: new Date().toISOString(),
+            },
+            `id=eq.${encodeURIComponent(prospect.id)}`,
+          );
+        }
+      };
+
       const handoff = completedHandoffs.find((item) =>
         item.request.includes(`Queue record ID: ${prospect.id}.`) &&
         extractDiscoveryRecommendation(item.result, prospect.organisation_name) !== null,
       );
-      if (!handoff?.result) continue;
+      if (!handoff?.result) {
+        await cancelPendingPromotion('No completed Research report is available for deterministic validation. The record remains in the research queue.');
+        continue;
+      }
 
       // CEO approval is allowed only after the same strict validator used at handoff time
       // confirms exact identity, record ID, evidence, contact details, gaps and recommendation.
       const validation = validateDiscoveryQueueDeliverable(handoff.context_summary, handoff.result);
-      if (!validation.ok) continue;
+      if (!validation.ok) {
+        await cancelPendingPromotion(`The stored Research report did not pass validation: ${validation.reason}`);
+        continue;
+      }
       const recommendation = extractDiscoveryRecommendation(handoff.result, prospect.organisation_name);
       const route = routeDiscoveryRecommendation(
         recommendation,
@@ -631,11 +667,10 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
         prospect.service_fit.length,
         prospect.public_phone,
       );
-      if (!route) continue;
-
-      const existingApproval = approvals.find((item) =>
-        item.action_type === 'crm_lead_promotion' && item.subject_id === prospect.id,
-      );
+      if (!route) {
+        await cancelPendingPromotion('The completed Research report did not contain a recognised recommendation for this exact organisation.');
+        continue;
+      }
 
       const promotionAuthority = discoveryCrmPromotionAuthority(route, validation.ok);
       if (!promotionAuthority) {
@@ -649,7 +684,7 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
               resolved_at: new Date().toISOString(),
               resolution_note: `Cancelled by CEO because the latest validated Research outcome is ${route.outcome}; no CRM promotion or customer contact is authorised.`,
             },
-            `id=eq.${encodeURIComponent(existingApproval.id)}&status=eq.pending`,
+            `id=eq.${encodeURIComponent(existingApproval.id)}&status=eq.pending&action_type=eq.crm_lead_promotion`,
           );
         }
         const prefix = `Research outcome: ${route.outcome}`;
@@ -667,29 +702,31 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
         continue;
       }
 
-      if (existingApproval) {
-        if (existingApproval.status === 'approved') {
-          await applyDiscoveryCrmApproval(existingApproval, 'approved', existingApproval.resolution_note ?? '');
-        } else if (existingApproval.status === 'pending') {
-          // Migrate only this low-risk internal action to CEO authority after fresh validation.
-          await supabaseUpdate(
-            'organization_approval_requests',
-            { required_authority: 'ceo' },
-            `id=eq.${encodeURIComponent(existingApproval.id)}&status=eq.pending&action_type=eq.crm_lead_promotion`,
-          );
-          await decideApproval({
-            id: existingApproval.id,
-            decision: 'approved',
-            note: 'CEO-approved internal CRM registration after deterministic Research validation. This does not authorise WhatsApp delivery.',
-            deciderRoleId: 'ceo',
-          });
-          created++;
-        } else if (existingApproval.status === 'rejected') {
-          await applyDiscoveryCrmApproval(existingApproval, 'rejected', existingApproval.resolution_note ?? '');
-        }
+      if (existingApproval?.status === 'approved') {
+        await applyDiscoveryCrmApproval(existingApproval, 'approved', existingApproval.resolution_note ?? '');
         continue;
       }
-
+      if (existingApproval?.status === 'pending') {
+        // Migrate only this low-risk internal action to CEO authority after fresh validation.
+        await supabaseUpdate(
+          'organization_approval_requests',
+          { required_authority: 'ceo' },
+          `id=eq.${encodeURIComponent(existingApproval.id)}&status=eq.pending&action_type=eq.crm_lead_promotion`,
+        );
+        await decideApproval({
+          id: existingApproval.id,
+          decision: 'approved',
+          note: 'CEO-approved internal CRM registration after deterministic Research validation. This does not authorise WhatsApp delivery.',
+          deciderRoleId: 'ceo',
+        });
+        created++;
+        continue;
+      }
+      if (existingApproval?.status === 'rejected') {
+        await applyDiscoveryCrmApproval(existingApproval, 'rejected', existingApproval.resolution_note ?? '');
+        continue;
+      }
+      // A previously cancelled request may be recreated only after a fresh, valid QUALIFY report.
       const approvalId = await createApprovalRequest({
         actionType: 'crm_lead_promotion',
         summary: `Add ${prospect.organisation_name} to the CRM as a qualified prospect`,
@@ -710,7 +747,7 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
       });
       created++;
     }
-    if (created) console.log('Discovery CRM promotion approvals created:', created);
+    if (created) console.log('Discovery CRM promotions approved by CEO:', created);
     return created;
   } finally {
     discoveryApprovalDispatchRunning = false;
