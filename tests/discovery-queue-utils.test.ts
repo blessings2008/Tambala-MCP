@@ -37,6 +37,8 @@ test('recognises false missing-deliverable escalations only when an employee res
     'DECISION: FOUNDER_INPUT_REQUIRED — The employee’s completed deliverable has not been provided.',
     'DECISION: FOUNDER_INPUT_REQUIRED — The employee’s output for this record was not included.',
     'DECISION: FOUNDER_INPUT_REQUIRED — The employee’s completed review has not been provided.',
+    'DECISION: FOUNDER_INPUT_REQUIRED — Please provide the employee’s submitted deliverable for queue record 123.',
+    'DECISION: FOUNDER_INPUT_REQUIRED — Please supply the employee’s completed report for review.',
   ];
   for (const error of errors) assert.equal(isFalseMissingDeliverableReview(error, 'Stored employee report'), true);
   assert.equal(isFalseMissingDeliverableReview(errors[0], null), false);
