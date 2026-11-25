@@ -1,5 +1,5 @@
 import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../../lib/supabase.js';
-import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview } from './discovery-queue-utils.js';
+import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview, routeDiscoveryRecommendation } from './discovery-queue-utils.js';
 import { getBusinessSummary, getDetailedCRMContext, getVerifiedCompanyContext } from '../../services/ai/context.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../../services/ai.js';
 import { getOrganizationSnapshot } from '../service.js';
@@ -611,31 +611,25 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
       );
       if (!handoff?.result) continue;
       const recommendation = extractDiscoveryRecommendation(handoff.result, prospect.organisation_name);
-      if (recommendation === 'REJECT') {
-        if (prospect.processing_status !== 'rejected') {
-          const note = `Research outcome: REJECT\n${handoff.result.slice(0, 3200)}`;
-          await supabaseUpdate('lead_discovery_queue', { processing_status: 'rejected', research_notes: note, updated_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(prospect.id)}`);
-        }
-        continue;
-      }
-      if (recommendation === 'INVESTIGATE') {
-        if (!prospect.research_notes?.startsWith('Research outcome: INVESTIGATE')) {
-          const note = `Research outcome: INVESTIGATE\n${handoff.result.slice(0, 3200)}`;
-          await supabaseUpdate('lead_discovery_queue', { processing_status: 'reviewing', research_notes: note, updated_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(prospect.id)}`);
-        }
-        continue;
-      }
-      if (recommendation !== 'QUALIFY') continue;
-
-      const qualificationGaps = [
-        prospect.verification_status !== 'verified' ? 'the record is not fully verified' : '',
-        !prospect.service_fit.length ? 'no Tambala service fit is recorded' : '',
-        !prospect.public_phone ? 'no public WhatsApp phone number is available' : '',
-      ].filter(Boolean);
-      if (qualificationGaps.length) {
-        const note = `Research outcome: INVESTIGATE (qualification gate)\nA QUALIFY recommendation cannot enter WhatsApp outreach because ${qualificationGaps.join('; ')}.\n\n${handoff.result.slice(0, 2800)}`;
-        if (!prospect.research_notes?.startsWith('Research outcome: INVESTIGATE (qualification gate)')) {
-          await supabaseUpdate('lead_discovery_queue', { processing_status: 'reviewing', research_notes: note, updated_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(prospect.id)}`);
+      const route = routeDiscoveryRecommendation(
+        recommendation,
+        prospect.verification_status,
+        prospect.service_fit.length,
+        prospect.public_phone,
+      );
+      if (!route) continue;
+      if (!route.requiresFounderApproval) {
+        const prefix = `Research outcome: ${route.outcome}`;
+        if (
+          prospect.processing_status !== route.processingStatus ||
+          !prospect.research_notes?.startsWith(prefix)
+        ) {
+          const note = `${prefix}\\n${route.reason}\\n\\n${handoff.result.slice(0, 3200)}`;
+          await supabaseUpdate(
+            'lead_discovery_queue',
+            { processing_status: route.processingStatus, research_notes: note, updated_at: new Date().toISOString() },
+            `id=eq.${encodeURIComponent(prospect.id)}`,
+          );
         }
         continue;
       }
