@@ -36,7 +36,7 @@ export class HandoffError extends Error {}
  * Validate the evidence packet and required fields deterministically instead of
  * spending another model call re-reading the same report.
  */
-function validateDiscoveryQueueDeliverable(contextSummary: string | null, deliverable: string): { ok: boolean; reason: string } {
+export function validateDiscoveryQueueDeliverable(contextSummary: string | null, deliverable: string): { ok: boolean; reason: string } {
   if (!contextSummary) return { ok: false, reason: 'The discovery review has no supplied prospect record.' };
   let packet: { prospect?: Record<string, unknown> };
   try {
