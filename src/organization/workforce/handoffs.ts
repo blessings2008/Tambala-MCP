@@ -71,7 +71,7 @@ function validateDiscoveryQueueDeliverable(contextSummary: string | null, delive
   if (hasSuppliedContact && !hasEmail && !hasPhone) return { ok: false, reason: 'The report must reproduce at least one public email or phone number supplied in the prospect record.' };
   if (!hasSuppliedContact && !explicitlyNoContact) return { ok: false, reason: 'The report must explicitly say that no public organisational email or phone is supplied.' };
   if (!/verification gaps/i.test(text)) return { ok: false, reason: 'The report must explicitly list remaining verification gaps, or state that none were identified.' };
-  const recommendation = text.match(/\brecommendation\s*[:\-]\s*(QUALIFY|INVESTIGATE|REJECT)\b/i)?.[1]?.toUpperCase();
+  const recommendation = text.match(/\brecommendation\b[\s*:_-]{0,12}(QUALIFY|INVESTIGATE|REJECT)\b/i)?.[1]?.toUpperCase();
   if (!recommendation) return { ok: false, reason: 'The report must end with one explicit QUALIFY, INVESTIGATE, or REJECT recommendation.' };
   if (recommendation === 'QUALIFY' && (String(prospect.verification_status ?? '').toLowerCase() !== 'verified' || !hasSuppliedContact || (!hasEmail && !hasPhone))) {
     return { ok: false, reason: 'QUALIFY requires a verified prospect record and at least one supplied public organisational email or phone reproduced in the report.' };
