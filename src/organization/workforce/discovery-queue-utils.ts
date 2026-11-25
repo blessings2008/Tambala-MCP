@@ -24,6 +24,17 @@ export interface DiscoveryOutcomeRoute {
   reason: string;
 }
 
+/** Internal CRM promotion is CEO-authorised only after deterministic report validation and a QUALIFY route. */
+export function discoveryCrmPromotionAuthority(
+  route: DiscoveryOutcomeRoute | null,
+  reportValidated: boolean,
+): 'ceo' | null {
+  return reportValidated && route?.outcome === 'QUALIFY' && route.processingStatus === 'qualified'
+    && route.requiresFounderApproval
+    ? 'ceo'
+    : null;
+}
+
 /** Map a reviewed recommendation to the only safe next step in the existing queue schema. */
 export function routeDiscoveryRecommendation(
   recommendation: DiscoveryRecommendation | null,
