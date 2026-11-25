@@ -1,5 +1,5 @@
 import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../../lib/supabase.js';
-import { fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview } from './discovery-queue-utils.js';
+import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview, routeDiscoveryRecommendation } from './discovery-queue-utils.js';
 import { getBusinessSummary, getDetailedCRMContext, getVerifiedCompanyContext } from '../../services/ai/context.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../../services/ai.js';
 import { getOrganizationSnapshot } from '../service.js';
@@ -194,6 +194,7 @@ type DiscoveryQueueRow = {
   processing_status: string;
   first_contact_message: string | null;
   crm_lead_id?: string | null;
+  research_notes?: string | null;
 };
 
 let discoveryQueueDispatchRunning = false;
@@ -369,12 +370,6 @@ let discoveryApprovalDispatchRunning = false;
 function normaliseDiscoveryName(value: string): string {
   return value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
-}
-
-function salesResultQualifies(result: string, organisationName: string): boolean {
-  const name = normaliseDiscoveryName(organisationName);
-  const output = normaliseDiscoveryName(result);
-  return output.includes(name) && /\brecommendation\b[\s\S]{0,240}\bqualif(?:y|ied)\b/i.test(result);
 }
 
 const approvedProspectDispatching = new Set<string>();
@@ -582,7 +577,7 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
     const [prospects, completedHandoffs, approvals] = await Promise.all([
       supabaseSelect<DiscoveryQueueRow>(
         'lead_discovery_queue',
-        'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id&processing_status=in.(reviewing,qualified)&order=created_at.asc&limit=100',
+        'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id,research_notes&processing_status=in.(reviewing,qualified)&order=created_at.asc&limit=100',
       ),
       supabaseSelect<{ id: string; request: string; result: string | null; status: string }>(
         'organization_handoffs',
@@ -596,19 +591,6 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
 
     let created = 0;
     for (const prospect of prospects) {
-      const handoff = completedHandoffs.find((item) =>
-        item.request.includes(`Queue record ID: ${prospect.id}.`) &&
-        typeof item.result === 'string' &&
-        salesResultQualifies(item.result, prospect.organisation_name),
-      );
-      if (!handoff && !approvals.some((item) =>
-        item.action_type === 'crm_lead_promotion' && item.subject_id === prospect.id,
-      )) continue;
-
-      if (prospect.verification_status !== 'verified' || !prospect.service_fit.length || (!prospect.public_email && !prospect.public_phone)) {
-        continue;
-      }
-
       const existingApproval = approvals.find((item) =>
         item.action_type === 'crm_lead_promotion' && item.subject_id === prospect.id,
       );
@@ -619,6 +601,35 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
           }
         } else if (existingApproval.status === 'approved' || existingApproval.status === 'rejected') {
           await applyDiscoveryCrmApproval(existingApproval, existingApproval.status, existingApproval.resolution_note ?? '');
+        }
+        continue;
+      }
+
+      const handoff = completedHandoffs.find((item) =>
+        item.request.includes(`Queue record ID: ${prospect.id}.`) &&
+        extractDiscoveryRecommendation(item.result, prospect.organisation_name) !== null,
+      );
+      if (!handoff?.result) continue;
+      const recommendation = extractDiscoveryRecommendation(handoff.result, prospect.organisation_name);
+      const route = routeDiscoveryRecommendation(
+        recommendation,
+        prospect.verification_status,
+        prospect.service_fit.length,
+        prospect.public_phone,
+      );
+      if (!route) continue;
+      if (!route.requiresFounderApproval) {
+        const prefix = `Research outcome: ${route.outcome}`;
+        if (
+          prospect.processing_status !== route.processingStatus ||
+          !prospect.research_notes?.startsWith(prefix)
+        ) {
+          const note = `${prefix}\n${route.reason}\n\n${handoff.result.slice(0, 3200)}`;
+          await supabaseUpdate(
+            'lead_discovery_queue',
+            { processing_status: route.processingStatus, research_notes: note, updated_at: new Date().toISOString() },
+            `id=eq.${encodeURIComponent(prospect.id)}`,
+          );
         }
         continue;
       }

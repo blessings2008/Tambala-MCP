@@ -9,6 +9,7 @@ import { actionHelp, parseActions, type Action } from './actions.js';
 import { splitBlocks } from './blocks.js';
 import { roleIdFor } from './profiles.js';
 import { isPermanentAgentFailure } from './retry-policy.js';
+import { extractDiscoveryRecommendation } from './discovery-queue-utils.js';
 
 export const MAX_HANDOFFS_PER_DUTY = 2;
 export const MAX_HANDOFF_ATTEMPTS = 5;
@@ -80,10 +81,10 @@ export function validateDiscoveryQueueDeliverable(contextSummary: string | null,
   const gapsEnd = gapsTail.search(/\n\s*\*{0,2}recommendation\b/i);
   const gapsSection = gapsTail.slice(0, gapsEnd < 0 ? undefined : gapsEnd).replace(/[\s*:*-]/g, '');
   if (gapsSection.length < 3) return { ok: false, reason: 'The report must state the remaining verification gaps or explicitly say none were identified.' };
-  const recommendation = text.match(/\brecommendation\b[\s*:_-]{0,12}(QUALIFY|INVESTIGATE|REJECT)\b/i)?.[1]?.toUpperCase();
+  const recommendation = extractDiscoveryRecommendation(text, name);
   if (!recommendation) return { ok: false, reason: 'The report must end with one explicit QUALIFY, INVESTIGATE, or REJECT recommendation.' };
-  if (recommendation === 'QUALIFY' && (String(prospect.verification_status ?? '').toLowerCase() !== 'verified' || !hasSuppliedContact || (!hasEmail && !hasPhone))) {
-    return { ok: false, reason: 'QUALIFY requires a verified prospect record and at least one supplied public organisational email or phone reproduced in the report.' };
+  if (recommendation === 'QUALIFY' && (String(prospect.verification_status ?? '').toLowerCase() !== 'verified' || phones.length === 0 || !hasPhone)) {
+    return { ok: false, reason: 'QUALIFY requires a verified prospect record and at least one supplied public WhatsApp phone number reproduced in the contact-evidence section.' };
   }
   return { ok: true, reason: 'The discovery report identifies the exact record, supported service fit, supplied source evidence, public contact status, verification gaps, and a permitted recommendation.' };
 }
@@ -493,6 +494,20 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       ]);
       const firstContactTarget = autonomousFirstContact ? approvedFirstContactTarget(h.context_summary) : null;
       if (autonomousFirstContact && !firstContactTarget) throw new Error('Approved first-contact is missing its CRM destination or verified organisation name.');
+      const discoveryQueueTask = ['lead-discovery-queue-watcher', 'lead-discovery-queue-research-review'].includes(h.source_duty_id ?? '');
+      const discoveryQueueFormat = discoveryQueueTask
+        ? [
+            'MANDATORY DISCOVERY QUEUE REPORT FORMAT — use these exact headings and keep the Recommendation section last:',
+            'Organisation Name: [exact name from the supplied record]',
+            'Queue Record ID: [exact UUID from the supplied record]',
+            'Service-Fit Evidence: [supported Tambala services and the supplied evidence]',
+            'Source URLs: [at least one exact URL copied verbatim from the supplied record]',
+            'Public Organisational Contact Evidence: [exact public email and/or phone from the supplied record, or explicitly state None supplied]',
+            'Verification Gaps: [specific gaps, or None identified]',
+            'Recommendation: QUALIFY | INVESTIGATE | REJECT',
+            'Use the exact label Recommendation:, not Decision: and not a bare status. QUALIFY only when the record is verified and a supplied public WhatsApp phone number is reproduced exactly. If no valid public phone is supplied, choose INVESTIGATE. Never invent a contact or source.',
+          ].join('\n')
+        : '';
       const prompt = [
         'TASK ROOM ASSIGNMENT', `You are ${recipient}. ${sender} has assigned this work to your room.`, taskRules,
         `ROOM ID: ${h.room_id ?? 'not recorded'}`, `REQUEST: ${h.request}`,
@@ -501,6 +516,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
           ? `MANDATORY FIRST-CONTACT ACTION: send exactly one WhatsApp outreach action to ${firstContactTarget.phone}; use ${firstContactTarget.contact} as the contact label. Do not use another number. A draft-only answer is invalid. Do not claim prior client work, similar customers served, testimonials or results unless approved portfolio evidence supports the exact claim.`
           : '',
         h.context_summary ? `CONTEXT FROM ${sender.toUpperCase()}:\n${h.context_summary}` : '',
+        discoveryQueueFormat,
         actionHelp(agent),
         'SELF-REVIEW BEFORE SUBMISSION: Check the original request, every required deliverable field, factual support in the supplied context, source URLs, arithmetic, consistency, customer-facing wording, and every proposed ACTIONS item. Correct omissions and unsupported claims yourself before submitting. Do not execute actions. Return exactly SELF_REVIEW: PASS as the first line only when the final work passes; if a missing Founder-controlled fact or decision prevents completion, return SELF_REVIEW: BLOCKED as the first line and clearly ask one precise question under Clarification Required. Never mark unverified work as passed.',
         'Keep the final work under 300 words, plain and scannable. Say what you did, what you found, and anything blocked.',

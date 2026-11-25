@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview } from '../src/organization/workforce/discovery-queue-utils.ts';
+import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview, routeDiscoveryRecommendation } from '../src/organization/workforce/discovery-queue-utils.ts';
 
 test('recognises false missing-deliverable escalations only when an employee result exists', () => {
   const errors = [
@@ -12,6 +12,33 @@ test('recognises false missing-deliverable escalations only when an employee res
   for (const error of errors) assert.equal(isFalseMissingDeliverableReview(error, 'Stored employee report'), true);
   assert.equal(isFalseMissingDeliverableReview(errors[0], null), false);
   assert.equal(isFalseMissingDeliverableReview('DECISION: FOUNDER_INPUT_REQUIRED — Please supply an official contact number.', 'Stored employee report'), false);
+});
+
+test('extracts only explicit discovery recommendations for the exact organisation', () => {
+  assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. Recommendation: QUALIFY', 'Alpha Malawi'), 'QUALIFY');
+  assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. **Recommendation:** INVESTIGATE', 'Alpha Malawi'), 'INVESTIGATE');
+  assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. Recommendation: REJECT', 'Alpha Malawi'), 'REJECT');
+  assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. **Decision:** INVESTIGATE', 'Alpha Malawi'), 'INVESTIGATE');
+  assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi.\nQUALIFY\n', 'Alpha Malawi'), 'QUALIFY');
+  assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. Recommendation: QUALIFIED', 'Alpha Malawi'), 'QUALIFY');
+  assert.equal(extractDiscoveryRecommendation('Organisation: Beta Malawi. Recommendation: QUALIFY', 'Alpha Malawi'), null);
+  assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. Recommendation pending.', 'Alpha Malawi'), null);
+});
+
+test('routes Research recommendations without promoting incomplete WhatsApp prospects', () => {
+  assert.deepEqual(routeDiscoveryRecommendation('REJECT', 'verified', 1, '+265999000000'), {
+    outcome: 'REJECT', processingStatus: 'rejected', requiresFounderApproval: false,
+    reason: 'Research rejected this prospect based on the supplied evidence.',
+  });
+  assert.equal(routeDiscoveryRecommendation('INVESTIGATE', 'verified', 1, '+265999000000')?.processingStatus, 'reviewing');
+  const noPhone = routeDiscoveryRecommendation('QUALIFY', 'verified', 1, null);
+  assert.equal(noPhone?.outcome, 'INVESTIGATE');
+  assert.equal(noPhone?.processingStatus, 'reviewing');
+  assert.equal(noPhone?.requiresFounderApproval, false);
+  assert.match(noPhone?.reason ?? '', /WhatsApp phone/i);
+  assert.equal(routeDiscoveryRecommendation('QUALIFY', 'verified', 1, '+265999000000')?.requiresFounderApproval, true);
+  assert.equal(routeDiscoveryRecommendation('QUALIFY', 'verified', 1, '+265123')?.outcome, 'INVESTIGATE');
+  assert.equal(routeDiscoveryRecommendation(null, 'verified', 1, '+265999000000'), null);
 });
 
 test('recognises a record already handed to Research by either workflow', () => {
