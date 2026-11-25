@@ -1,11 +1,11 @@
 import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../../lib/supabase.js';
-import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview, isResearchDailyQuotaExhausted, routeDiscoveryRecommendation } from './discovery-queue-utils.js';
+import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview, isResearchDailyQuotaExhausted, routeDiscoveryRecommendation, discoveryCrmPromotionAuthority } from './discovery-queue-utils.js';
 import { getBusinessSummary, getDetailedCRMContext, getVerifiedCompanyContext } from '../../services/ai/context.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../../services/ai.js';
 import { getOrganizationSnapshot } from '../service.js';
 import { advanceTrackedTask, beginTrackedTask, failTrackedTask, getTrackedTaskStatus } from '../task-tracking.js';
 import { deterministicBriefing } from './briefing.js';
-import { createApprovalRequest, registerApprovalHook, type ApprovalRow } from './approvals-service.js';
+import { createApprovalRequest, decideApproval, registerApprovalHook, type ApprovalRow } from './approvals-service.js';
 import type { AgentName } from '../../services/ai/models.js';
 import { setRuntimeIncidentHandler, type RuntimeIncident } from './incident-events.js';
 import { isNonSecurityWorkflowBlock } from './incident-routing.js';
@@ -558,7 +558,7 @@ async function applyDiscoveryCrmApproval(approval: ApprovalRow, decision: 'appro
     ? prospect.source_urls.filter((value): value is string => typeof value === 'string')
     : [];
   const notes = [
-    'Founder-approved promotion from the verified prospect discovery queue.',
+    'CEO-approved internal CRM promotion after deterministic Research validation; external contact still requires its separate approval.',
     `Discovery queue ID: ${queueId}`,
     `Sector: ${prospect.sector ?? 'Not supplied'}`,
     `Website: ${prospect.website ?? 'Not supplied'}`,
@@ -590,8 +590,8 @@ async function applyDiscoveryCrmApproval(approval: ApprovalRow, decision: 'appro
 registerApprovalHook('lead_discovery_queue', applyDiscoveryCrmApproval);
 
 /**
- * Convert completed Research QUALIFY decisions into Founder approval requests.
- * No CRM row is created until the Founder approves the request.
+ * Convert deterministically validated Research QUALIFY decisions into low-risk CEO approvals.
+ * CRM registration is internal only; customer-facing WhatsApp messages retain their separate Founder approval gate.
  */
 export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
   if (!dbConfigured() || discoveryApprovalDispatchRunning) return 0;
@@ -602,9 +602,9 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
         'lead_discovery_queue',
         'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id,research_notes&processing_status=in.(reviewing,qualified)&order=created_at.asc&limit=100',
       ),
-      supabaseSelect<{ id: string; request: string; result: string | null; status: string }>(
+      supabaseSelect<{ id: string; request: string; result: string | null; context_summary: string | null; status: string }>(
         'organization_handoffs',
-        'select=id,request,result,status&source_duty_id=in.(lead-discovery-queue-watcher,lead-discovery-queue-research-review)&status=eq.completed&order=created_at.desc&limit=300',
+        'select=id,request,result,context_summary,status&source_duty_id=in.(lead-discovery-queue-watcher,lead-discovery-queue-research-review)&status=eq.completed&order=created_at.desc&limit=300',
       ),
       supabaseSelect<ApprovalRow>(
         'organization_approval_requests',
@@ -614,25 +614,16 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
 
     let created = 0;
     for (const prospect of prospects) {
-      const existingApproval = approvals.find((item) =>
-        item.action_type === 'crm_lead_promotion' && item.subject_id === prospect.id,
-      );
-      if (existingApproval) {
-        if (existingApproval.status === 'pending') {
-          if (prospect.processing_status !== 'qualified') {
-            await supabaseUpdate('lead_discovery_queue', { processing_status: 'qualified', updated_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(prospect.id)}`);
-          }
-        } else if (existingApproval.status === 'approved' || existingApproval.status === 'rejected') {
-          await applyDiscoveryCrmApproval(existingApproval, existingApproval.status, existingApproval.resolution_note ?? '');
-        }
-        continue;
-      }
-
       const handoff = completedHandoffs.find((item) =>
         item.request.includes(`Queue record ID: ${prospect.id}.`) &&
         extractDiscoveryRecommendation(item.result, prospect.organisation_name) !== null,
       );
       if (!handoff?.result) continue;
+
+      // CEO approval is allowed only after the same strict validator used at handoff time
+      // confirms exact identity, record ID, evidence, contact details, gaps and recommendation.
+      const validation = validateDiscoveryQueueDeliverable(handoff.context_summary, handoff.result);
+      if (!validation.ok) continue;
       const recommendation = extractDiscoveryRecommendation(handoff.result, prospect.organisation_name);
       const route = routeDiscoveryRecommendation(
         recommendation,
@@ -641,7 +632,26 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
         prospect.public_phone,
       );
       if (!route) continue;
-      if (!route.requiresFounderApproval) {
+
+      const existingApproval = approvals.find((item) =>
+        item.action_type === 'crm_lead_promotion' && item.subject_id === prospect.id,
+      );
+
+      const promotionAuthority = discoveryCrmPromotionAuthority(route, validation.ok);
+      if (!promotionAuthority) {
+        if (existingApproval?.status === 'pending') {
+          await supabaseUpdate(
+            'organization_approval_requests',
+            {
+              status: 'cancelled',
+              required_authority: 'ceo',
+              resolved_by_role_id: 'ceo',
+              resolved_at: new Date().toISOString(),
+              resolution_note: `Cancelled by CEO because the latest validated Research outcome is ${route.outcome}; no CRM promotion or customer contact is authorised.`,
+            },
+            `id=eq.${encodeURIComponent(existingApproval.id)}&status=eq.pending`,
+          );
+        }
         const prefix = `Research outcome: ${route.outcome}`;
         if (
           prospect.processing_status !== route.processingStatus ||
@@ -657,10 +667,34 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
         continue;
       }
 
+      if (existingApproval) {
+        if (existingApproval.status === 'approved') {
+          await applyDiscoveryCrmApproval(existingApproval, 'approved', existingApproval.resolution_note ?? '');
+        } else if (existingApproval.status === 'pending') {
+          // Migrate only this low-risk internal action to CEO authority after fresh validation.
+          await supabaseUpdate(
+            'organization_approval_requests',
+            { required_authority: 'ceo' },
+            `id=eq.${encodeURIComponent(existingApproval.id)}&status=eq.pending&action_type=eq.crm_lead_promotion`,
+          );
+          await decideApproval({
+            id: existingApproval.id,
+            decision: 'approved',
+            note: 'CEO-approved internal CRM registration after deterministic Research validation. This does not authorise WhatsApp delivery.',
+            deciderRoleId: 'ceo',
+          });
+          created++;
+        } else if (existingApproval.status === 'rejected') {
+          await applyDiscoveryCrmApproval(existingApproval, 'rejected', existingApproval.resolution_note ?? '');
+        }
+        continue;
+      }
+
       const approvalId = await createApprovalRequest({
         actionType: 'crm_lead_promotion',
         summary: `Add ${prospect.organisation_name} to the CRM as a qualified prospect`,
         requestedByRoleId: 'ceo',
+        requiredAuthority: promotionAuthority,
         riskLevel: 'low',
         taskId: null,
         content: JSON.stringify({ queueId: prospect.id, organisationName: prospect.organisation_name, website: prospect.website, email: prospect.public_email, phone: prospect.public_phone }),
@@ -668,11 +702,12 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
         subjectId: prospect.id,
       });
       if (!approvalId) continue;
-      await supabaseUpdate(
-        'lead_discovery_queue',
-        { processing_status: 'qualified', updated_at: new Date().toISOString() },
-        `id=eq.${encodeURIComponent(prospect.id)}`,
-      );
+      await decideApproval({
+        id: approvalId,
+        decision: 'approved',
+        note: 'CEO-approved internal CRM registration after deterministic Research validation. This does not authorise WhatsApp delivery.',
+        deciderRoleId: 'ceo',
+      });
       created++;
     }
     if (created) console.log('Discovery CRM promotion approvals created:', created);

@@ -22,13 +22,13 @@ const hooks = new Map<string, ApprovalHook>();
 export function registerApprovalHook(subjectType: string, hook: ApprovalHook): void { hooks.set(subjectType, hook); }
 
 export async function createApprovalRequest(input: {
-  actionType: string; summary: string; requestedByRoleId: string; riskLevel: 'low' | 'medium' | 'high' | 'critical'; taskId: string | null; content: string;
+  actionType: string; summary: string; requestedByRoleId: string; requiredAuthority?: 'founder' | 'ceo'; riskLevel: 'low' | 'medium' | 'high' | 'critical'; taskId: string | null; content: string;
   subjectType?: string; subjectId?: string;
 }): Promise<string | null> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
   const row = await supabaseInsert<{ id: string }>('organization_approval_requests', {
     action_type: input.actionType, summary: input.summary.slice(0, 500), requested_by_role_id: input.requestedByRoleId,
-    required_authority: 'founder', status: 'pending', risk_level: input.riskLevel, task_id: input.taskId, content: input.content,
+    required_authority: input.requiredAuthority ?? 'founder', status: 'pending', risk_level: input.riskLevel, task_id: input.taskId, content: input.content,
     subject_type: input.subjectType ?? null, subject_id: input.subjectId ?? null,
   });
   return row.id;
