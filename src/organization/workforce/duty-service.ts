@@ -623,8 +623,6 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
             'organization_approval_requests',
             {
               status: 'cancelled',
-              resolved_by_role_id: 'ceo',
-              resolved_at: new Date().toISOString(),
               resolution_note: `Cancelled by CEO after Research revalidation: ${reason} No CRM promotion or customer contact was authorised.`,
             },
             `id=eq.${encodeURIComponent(existingApproval.id)}&status=eq.pending&action_type=eq.crm_lead_promotion`,
@@ -679,8 +677,6 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
             {
               status: 'cancelled',
               required_authority: 'ceo',
-              resolved_by_role_id: 'ceo',
-              resolved_at: new Date().toISOString(),
               resolution_note: `Cancelled by CEO because the latest validated Research outcome is ${route.outcome}; no CRM promotion or customer contact is authorised.`,
             },
             `id=eq.${encodeURIComponent(existingApproval.id)}&status=eq.pending&action_type=eq.crm_lead_promotion`,
@@ -712,8 +708,6 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
           'organization_approval_requests',
           {
             status: 'cancelled',
-            resolved_by_role_id: 'ceo',
-            resolved_at: new Date().toISOString(),
             resolution_note: 'Superseded by a separate CEO-authorised internal CRM approval after deterministic Research validation. No customer contact was authorised.',
           },
           `id=eq.${encodeURIComponent(existingApproval.id)}&status=eq.pending&action_type=eq.crm_lead_promotion`,
