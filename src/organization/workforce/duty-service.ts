@@ -623,7 +623,6 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
             'organization_approval_requests',
             {
               status: 'cancelled',
-              required_authority: 'ceo',
               resolved_by_role_id: 'ceo',
               resolved_at: new Date().toISOString(),
               resolution_note: `Cancelled by CEO after Research revalidation: ${reason} No CRM promotion or customer contact was authorised.`,
@@ -707,20 +706,18 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
         continue;
       }
       if (existingApproval?.status === 'pending') {
-        // Migrate only this low-risk internal action to CEO authority after fresh validation.
+        // Approval details are immutable during resolution. Close the Founder request,
+        // then create a separate CEO-authorised record for this validated internal action.
         await supabaseUpdate(
           'organization_approval_requests',
-          { required_authority: 'ceo' },
+          {
+            status: 'cancelled',
+            resolved_by_role_id: 'ceo',
+            resolved_at: new Date().toISOString(),
+            resolution_note: 'Superseded by a separate CEO-authorised internal CRM approval after deterministic Research validation. No customer contact was authorised.',
+          },
           `id=eq.${encodeURIComponent(existingApproval.id)}&status=eq.pending&action_type=eq.crm_lead_promotion`,
         );
-        await decideApproval({
-          id: existingApproval.id,
-          decision: 'approved',
-          note: 'CEO-approved internal CRM registration after deterministic Research validation. This does not authorise WhatsApp delivery.',
-          deciderRoleId: 'ceo',
-        });
-        created++;
-        continue;
       }
       if (existingApproval?.status === 'rejected') {
         await applyDiscoveryCrmApproval(existingApproval, 'rejected', existingApproval.resolution_note ?? '');
