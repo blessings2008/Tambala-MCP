@@ -202,8 +202,8 @@ test('discovery queue reports with missing required evidence are returned for re
 test('preserves queued Research handoffs when the daily free-model quota is exhausted', async () => {
   const { deps, store } = handoffDeps({
     askAgent: async (agent) => agent === 'orchestrator'
-      ? 'DECISION: ACCEPT\\nThe deliverable meets the request.'
-      : 'SELF_REVIEW: PASS\\nHere is the overview.',
+      ? 'DECISION: ACCEPT\nThe deliverable meets the request.'
+      : 'SELF_REVIEW: PASS\nHere is the overview.',
   });
   const failed = await queueHandoff(store, {
     fromRoleId: 'ceo',
