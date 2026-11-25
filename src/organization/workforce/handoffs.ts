@@ -395,7 +395,6 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       roomId: waiting.room_id,
       reason: 'The stored employee report was present and passed deterministic discovery validation. The previous missing-deliverable escalation was incorrect; no customer-facing action was taken.',
       validation: validation.reason,
-      recommendation: extractDiscoveryRecommendation(waiting.result, waiting.result.match(/(?:Organisation Name|Organisation)\s*:\s*([^\r\n]+)/i)?.[1]?.trim() ?? ''),
       automaticRecovery: true,
     };
     const transitions: OrganizationTaskTransition[] = [
