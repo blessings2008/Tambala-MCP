@@ -631,15 +631,17 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
             `id=eq.${encodeURIComponent(existingApproval.id)}&status=eq.pending&action_type=eq.crm_lead_promotion`,
           );
         }
-        await supabaseUpdate(
-          'lead_discovery_queue',
-          {
-            processing_status: 'reviewing',
-            research_notes: `Research outcome: INVESTIGATE\n${reason}\n\nNo CRM promotion or customer contact was authorised.`,
-            updated_at: new Date().toISOString(),
-          },
-          `id=eq.${encodeURIComponent(prospect.id)}`,
-        );
+        if (existingApproval?.status === 'pending') {
+          await supabaseUpdate(
+            'lead_discovery_queue',
+            {
+              processing_status: 'reviewing',
+              research_notes: `Research outcome: INVESTIGATE\n${reason}\n\nNo CRM promotion or customer contact was authorised.`,
+              updated_at: new Date().toISOString(),
+            },
+            `id=eq.${encodeURIComponent(prospect.id)}`,
+          );
+        }
       };
 
       const handoff = completedHandoffs.find((item) =>
