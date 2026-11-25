@@ -618,12 +618,12 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         `REJECTED OR UNPARSED ACTIONS: ${JSON.stringify(acted.rejected).slice(0, 500)}`,
         'Check the deliverable and proposed actions independently. Do not execute or authorize any action that exceeds the employee role, the original request, or the existing Founder approval and safety policy.',
         reviewRule,
-      ].join('\\n\\n');
+      ].join('\n\n');
       const discoveryReview = ['lead-discovery-queue-watcher', 'lead-discovery-queue-research-review'].includes(h.source_duty_id ?? '')
         ? validateDiscoveryQueueDeliverable(h.context_summary, result)
         : null;
       const review = discoveryReview
-        ? `DECISION: ${discoveryReview.ok ? 'ACCEPT' : 'REVISION_REQUIRED'}\\n${discoveryReview.reason}`
+        ? `DECISION: ${discoveryReview.ok ? 'ACCEPT' : 'REVISION_REQUIRED'}\n${discoveryReview.reason}`
         : (await deps.askAgent('orchestrator', reviewPrompt, {})).trim();
       const decision = review.match(/^\s*(?:\*\*)?DECISION:\s*(ACCEPT|REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)\b/im)?.[1];
       if (decision !== 'ACCEPT') {
