@@ -315,7 +315,13 @@ export async function dispatchReviewingDiscoveryQueue(maxCount = 5): Promise<num
     const retryFailedBefore = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const previousForSuppression = previous.filter((item) => {
       if (!['failed', 'awaiting_founder'].includes(item.status)) return true;
-      if (!/DECISION:\s*(?:REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)/i.test(item.error ?? '')) return true;
+      const error = item.error ?? '';
+      if (
+        item.status === 'awaiting_founder' &&
+        item.result?.trim() &&
+        /(?:no employee deliverable (?:was )?(?:provided|included)|employee['’]s (?:completed )?deliverable.{0,100}(?:not|never) provided|submitted report.{0,80}(?:not|never) provided|employee['’]s deliverable.{0,100}not included)/i.test(error)
+      ) return false;
+      if (!/DECISION:\s*(?:REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)/i.test(error)) return true;
       if (!item.context_summary || !item.result) return true;
       // Re-dispatch only when the old CEO rejection contradicts a complete report.
       // Genuine missing evidence and non-review failures remain safely blocked.
