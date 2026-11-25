@@ -30,6 +30,55 @@ export interface Handoff {
 
 export class HandoffError extends Error {}
 
+/**
+ * Research-queue reviews have a fixed, machine-checkable contract. The CEO model
+ * previously rejected complete reports while claiming the deliverable was absent.
+ * Validate the evidence packet and required fields deterministically instead of
+ * spending another model call re-reading the same report.
+ */
+function validateDiscoveryQueueDeliverable(contextSummary: string | null, deliverable: string): { ok: boolean; reason: string } {
+  if (!contextSummary) return { ok: false, reason: 'The discovery review has no supplied prospect record.' };
+  let packet: { prospect?: Record<string, unknown> };
+  try {
+    const source = contextSummary.split(/\n\nCEO REVIEW FEEDBACK:/i)[0];
+    packet = JSON.parse(source) as { prospect?: Record<string, unknown> };
+  } catch {
+    return { ok: false, reason: 'The supplied prospect context is not a readable discovery-queue record.' };
+  }
+  const prospect = packet.prospect;
+  if (!prospect || typeof prospect !== 'object') return { ok: false, reason: 'The supplied prospect record is missing.' };
+  const name = typeof prospect.organisation_name === 'string' ? prospect.organisation_name.trim() : '';
+  const recordId = typeof prospect.id === 'string' ? prospect.id.trim() : '';
+  const text = deliverable.trim();
+  const normalized = (value: string) => value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  if (!name || !normalized(text).includes(normalized(name))) return { ok: false, reason: 'The report must identify the exact organisation name from the supplied record.' };
+  if (!recordId || !text.toLowerCase().includes(recordId.toLowerCase())) return { ok: false, reason: 'The report must include the exact lead_discovery_queue record ID.' };
+  if (!/service[- ]fit evidence|supported service fit/i.test(text)) return { ok: false, reason: 'The report must include a service-fit evidence section.' };
+  const fits = Array.isArray(prospect.service_fit) ? prospect.service_fit.filter((v): v is string => typeof v === 'string') : [];
+  if (fits.length && !fits.some((fit) => normalized(text).includes(normalized(fit)))) return { ok: false, reason: 'The report must name at least one service fit recorded in the supplied prospect record.' };
+  const sources = Array.isArray(prospect.source_urls) ? prospect.source_urls.filter((v): v is string => typeof v === 'string' && /^https?:\/\//i.test(v)) : [];
+  if (!sources.length || !sources.some((url) => text.includes(url))) return { ok: false, reason: 'The report must cite at least one source URL supplied with the prospect record.' };
+  if (!/public organisational contact evidence|public organizational contact evidence/i.test(text)) return { ok: false, reason: 'The report must explicitly state the public organisational contact evidence.' };
+  const emails = typeof prospect.public_email === 'string' ? prospect.public_email.split(/[;,]/).map((v) => v.trim()).filter(Boolean) : [];
+  const phones = typeof prospect.public_phone === 'string' ? prospect.public_phone.split(/[;,/]/).map((v) => v.trim()).filter(Boolean) : [];
+  const hasEmail = emails.some((email) => text.toLowerCase().includes(email.toLowerCase()));
+  const hasPhone = phones.some((phone) => {
+    const digits = phone.replace(/\D/g, '');
+    return digits.length >= 8 && text.replace(/\D/g, '').includes(digits);
+  });
+  const hasSuppliedContact = emails.length > 0 || phones.length > 0;
+  const explicitlyNoContact = /\bnone\b|no (?:verified )?(?:public )?(?:organisational )?(?:email|phone|contact)|not available|not supplied|not verified/i.test(text);
+  if (hasSuppliedContact && !hasEmail && !hasPhone) return { ok: false, reason: 'The report must reproduce at least one public email or phone number supplied in the prospect record.' };
+  if (!hasSuppliedContact && !explicitlyNoContact) return { ok: false, reason: 'The report must explicitly say that no public organisational email or phone is supplied.' };
+  if (!/verification gaps/i.test(text)) return { ok: false, reason: 'The report must explicitly list remaining verification gaps, or state that none were identified.' };
+  const recommendation = text.match(/\brecommendation\s*[:\-]\s*(QUALIFY|INVESTIGATE|REJECT)\b/i)?.[1]?.toUpperCase();
+  if (!recommendation) return { ok: false, reason: 'The report must end with one explicit QUALIFY, INVESTIGATE, or REJECT recommendation.' };
+  if (recommendation === 'QUALIFY' && (String(prospect.verification_status ?? '').toLowerCase() !== 'verified' || !hasSuppliedContact || (!hasEmail && !hasPhone))) {
+    return { ok: false, reason: 'QUALIFY requires a verified prospect record and at least one supplied public organisational email or phone reproduced in the report.' };
+  }
+  return { ok: true, reason: 'The discovery report identifies the exact record, supported service fit, supplied source evidence, public contact status, verification gaps, and a permitted recommendation.' };
+}
+
 /** Detect explicit requests for human clarification; questions alone are not enough. */
 export function isFounderClarificationRequest(value: string): boolean {
   const text = value.trim();
@@ -559,7 +608,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'completed', taskId, roomId: h.room_id ?? undefined });
         continue;
       }
-      const review = (await deps.askAgent('orchestrator', [
+      const reviewPrompt = [
         'CEO REVIEW — you own acceptance of this delegated work.',
         'Review only whether the employee completed the exact request. Use the request and deliverable below; do not add facts or assume missing work was done.',
         'Return exactly one first-line decision: DECISION: ACCEPT, DECISION: REVISION_REQUIRED, or DECISION: FOUNDER_INPUT_REQUIRED. Follow it with a short reason.',
@@ -569,7 +618,13 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         `REJECTED OR UNPARSED ACTIONS: ${JSON.stringify(acted.rejected).slice(0, 500)}`,
         'Check the deliverable and proposed actions independently. Do not execute or authorize any action that exceeds the employee role, the original request, or the existing Founder approval and safety policy.',
         reviewRule,
-      ].join('\n\n'), {})).trim();
+      ].join('\\n\\n');
+      const discoveryReview = ['lead-discovery-queue-watcher', 'lead-discovery-queue-research-review'].includes(h.source_duty_id ?? '')
+        ? validateDiscoveryQueueDeliverable(h.context_summary, result)
+        : null;
+      const review = discoveryReview
+        ? `DECISION: ${discoveryReview.ok ? 'ACCEPT' : 'REVISION_REQUIRED'}\\n${discoveryReview.reason}`
+        : (await deps.askAgent('orchestrator', reviewPrompt, {})).trim();
       const decision = review.match(/^\s*(?:\*\*)?DECISION:\s*(ACCEPT|REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)\b/im)?.[1];
       if (decision !== 'ACCEPT') {
         const reason = review.slice(0, 1500) || 'CEO review did not return a recognized decision.';
