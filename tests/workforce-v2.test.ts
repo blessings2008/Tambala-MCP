@@ -199,6 +199,39 @@ test('discovery queue reports with missing required evidence are returned for re
   assert.match(store.rows[0].error ?? '', /service-fit evidence|record ID/i);
 });
 
+test('preserves queued Research handoffs when the daily free-model quota is exhausted', async () => {
+  const { deps, store } = handoffDeps({
+    askAgent: async (agent) => agent === 'orchestrator'
+      ? 'DECISION: ACCEPT\\nThe deliverable meets the request.'
+      : 'SELF_REVIEW: PASS\\nHere is the overview.',
+  });
+  const failed = await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'research',
+    request: 'Previous Research request that exhausted the provider daily free quota.',
+  });
+  await store.update(failed.id, {
+    status: 'failed',
+    error: 'HTTP 429: free-models-per-day quota exceeded',
+    completed_at: '2026-11-09T06:00:00.000Z',
+  });
+  const queuedResearch = await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'research',
+    request: 'Research the next prospect from the verified discovery queue.',
+  });
+  const queuedOutreach = await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'outreach',
+    request: 'Prepare a routine internal outreach strategy report for the team.',
+  });
+  const outcomes = await processHandoffs(deps);
+  assert.equal(store.rows.find((row) => row.id === queuedResearch.id)?.status, 'queued');
+  assert.equal(store.rows.find((row) => row.id === queuedOutreach.id)?.status, 'completed');
+  assert.equal(outcomes.find((row) => row.handoffId === queuedResearch.id)?.status, 'waiting');
+  assert.equal(outcomes.find((row) => row.handoffId === queuedOutreach.id)?.status, 'completed');
+});
+
 test('the Founder assigns work and the employee completes it', async () => {
   const { deps, store, asked } = handoffDeps();
   const h = await queueHandoff(store, { fromRoleId: 'founder', toAgent: 'marketing', request: 'Draft a one-page overview of our web services' });
