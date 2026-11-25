@@ -108,10 +108,10 @@ test('discovery queue reports are accepted by a deterministic evidence check, no
     '**Public Organisational Contact Evidence:** None. No public organisational email or phone is supplied in the record.',
     '**Verification Gaps:** No public organisational contact is verified; confirm an official contact before qualification.',
     '**Recommendation:** INVESTIGATE',
-  ].join('\\n');
+  ].join('\n');
   const { deps, store } = handoffDeps({
     askAgent: async (agent) => {
-      if (agent === 'orchestrator') { orchestratorCalled = true; return 'DECISION: FOUNDER_INPUT_REQUIRED\\nThe deliverable was not supplied.'; }
+      if (agent === 'orchestrator') { orchestratorCalled = true; return 'DECISION: FOUNDER_INPUT_REQUIRED\nThe deliverable was not supplied.'; }
       return report;
     },
   });
@@ -143,8 +143,8 @@ test('discovery queue reports with missing required evidence are returned for re
   });
   const { deps, store } = handoffDeps({
     askAgent: async (agent) => {
-      if (agent === 'orchestrator') { orchestratorCalled = true; return 'DECISION: ACCEPT\\nLooks good.'; }
-      return 'SELF_REVIEW: PASS\\nOrganisation: Example Malawi Limited. Recommendation: QUALIFY.';
+      if (agent === 'orchestrator') { orchestratorCalled = true; return 'DECISION: ACCEPT\nLooks good.'; }
+      return 'SELF_REVIEW: PASS\nOrganisation: Example Malawi Limited. Recommendation: QUALIFY.';
     },
   });
   await queueHandoff(store, {
