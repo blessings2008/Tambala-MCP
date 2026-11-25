@@ -506,7 +506,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
             'Verification Gaps: [specific gaps, or None identified]',
             'Recommendation: QUALIFY | INVESTIGATE | REJECT',
             'Use the exact label Recommendation:, not Decision: and not a bare status. QUALIFY only when the record is verified and a supplied public WhatsApp phone number is reproduced exactly. If no valid public phone is supplied, choose INVESTIGATE. Never invent a contact or source.',
-          ].join('\\n')
+          ].join('\n')
         : '';
       const prompt = [
         'TASK ROOM ASSIGNMENT', `You are ${recipient}. ${sender} has assigned this work to your room.`, taskRules,
