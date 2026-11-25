@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview } from '../src/organization/workforce/discovery-queue-utils.ts';
+import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview, routeDiscoveryRecommendation } from '../src/organization/workforce/discovery-queue-utils.ts';
 
 test('recognises false missing-deliverable escalations only when an employee result exists', () => {
   const errors = [
