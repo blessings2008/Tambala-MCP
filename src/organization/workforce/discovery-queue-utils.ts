@@ -2,6 +2,43 @@ export interface DiscoveryQueueHandoffMarker { request: string; status?: string;
 
 export type DiscoveryRecommendation = 'QUALIFY' | 'INVESTIGATE' | 'REJECT';
 
+export interface DiscoveryOutcomeRoute {
+  outcome: 'QUALIFY' | 'INVESTIGATE' | 'REJECT';
+  processingStatus: 'qualified' | 'reviewing' | 'rejected';
+  requiresFounderApproval: boolean;
+  reason: string;
+}
+
+/** Map a reviewed recommendation to the only safe next step in the existing queue schema. */
+export function routeDiscoveryRecommendation(
+  recommendation: DiscoveryRecommendation | null,
+  verificationStatus: string,
+  serviceFitCount: number,
+  publicPhone: string | null | undefined,
+): DiscoveryOutcomeRoute | null {
+  if (!recommendation) return null;
+  if (recommendation === 'REJECT') {
+    return { outcome: 'REJECT', processingStatus: 'rejected', requiresFounderApproval: false, reason: 'Research rejected this prospect based on the supplied evidence.' };
+  }
+  if (recommendation === 'INVESTIGATE') {
+    return { outcome: 'INVESTIGATE', processingStatus: 'reviewing', requiresFounderApproval: false, reason: 'Research identified evidence gaps. Do not promote or contact this prospect until those gaps are resolved.' };
+  }
+  const gaps = [
+    verificationStatus !== 'verified' ? 'the prospect record is not fully verified' : '',
+    serviceFitCount <= 0 ? 'no Tambala service fit is recorded' : '',
+    !publicPhone?.trim() ? 'no public WhatsApp phone number is available' : '',
+  ].filter(Boolean);
+  if (gaps.length) {
+    return {
+      outcome: 'INVESTIGATE',
+      processingStatus: 'reviewing',
+      requiresFounderApproval: false,
+      reason: `The QUALIFY recommendation cannot enter WhatsApp outreach because ${gaps.join('; ')}.`,
+    };
+  }
+  return { outcome: 'QUALIFY', processingStatus: 'qualified', requiresFounderApproval: true, reason: '' };
+}
+
 function normaliseDiscoveryText(value: string): string {
   return value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
