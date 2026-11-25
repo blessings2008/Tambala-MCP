@@ -1,5 +1,5 @@
 import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../../lib/supabase.js';
-import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview, isResearchDailyQuotaExhausted, routeDiscoveryRecommendation } from './discovery-queue-utils.js';
+import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview, isResearchDailyQuotaExhausted, routeDiscoveryRecommendation, discoveryCrmPromotionAuthority } from './discovery-queue-utils.js';
 import { getBusinessSummary, getDetailedCRMContext, getVerifiedCompanyContext } from '../../services/ai/context.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../../services/ai.js';
 import { getOrganizationSnapshot } from '../service.js';
@@ -637,7 +637,8 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
         item.action_type === 'crm_lead_promotion' && item.subject_id === prospect.id,
       );
 
-      if (!route.requiresFounderApproval) {
+      const promotionAuthority = discoveryCrmPromotionAuthority(route, validation.ok);
+      if (!promotionAuthority) {
         if (existingApproval?.status === 'pending') {
           await supabaseUpdate(
             'organization_approval_requests',
@@ -693,7 +694,7 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
         actionType: 'crm_lead_promotion',
         summary: `Add ${prospect.organisation_name} to the CRM as a qualified prospect`,
         requestedByRoleId: 'ceo',
-        requiredAuthority: 'ceo',
+        requiredAuthority: promotionAuthority,
         riskLevel: 'low',
         taskId: null,
         content: JSON.stringify({ queueId: prospect.id, organisationName: prospect.organisation_name, website: prospect.website, email: prospect.public_email, phone: prospect.public_phone }),
