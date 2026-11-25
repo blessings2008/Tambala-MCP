@@ -9,7 +9,7 @@ import { actionHelp, parseActions, type Action } from './actions.js';
 import { splitBlocks } from './blocks.js';
 import { roleIdFor } from './profiles.js';
 import { isPermanentAgentFailure } from './retry-policy.js';
-import { extractDiscoveryRecommendation, isResearchDailyQuotaExhausted } from './discovery-queue-utils.js';
+import { extractDiscoveryRecommendation, isFalseMissingDeliverableReview, isResearchDailyQuotaExhausted } from './discovery-queue-utils.js';
 
 export const MAX_HANDOFFS_PER_DUTY = 2;
 export const MAX_HANDOFF_ATTEMPTS = 5;
@@ -374,6 +374,60 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
   const outcomes: HandoffOutcome[] = [];
   const recent = await deps.store.recent(new Date(deps.now().getTime() - 7 * 24 * 60 * 60 * 1000).toISOString());
   let researchQuotaExhausted = isResearchDailyQuotaExhausted(recent, deps.now());
+  // Earlier CEO reviews sometimes claimed a discovery report was missing even though
+  // the employee result was stored. Reconcile only reports that pass the same deterministic
+  // evidence validator used for new discovery handoffs; incomplete reports remain paused.
+  for (const waiting of recent) {
+    if (
+      waiting.status !== 'awaiting_founder' ||
+      !['lead-discovery-queue-watcher', 'lead-discovery-queue-research-review'].includes(waiting.source_duty_id ?? '') ||
+      !isFalseMissingDeliverableReview(waiting.error, waiting.result) ||
+      !waiting.result?.trim() ||
+      !waiting.task_id
+    ) continue;
+    const validation = validateDiscoveryQueueDeliverable(waiting.context_summary, waiting.result);
+    if (!validation.ok) continue;
+    const currentStatus = await deps.tasks.getStatus(waiting.task_id);
+    if (currentStatus !== 'awaiting_founder') continue;
+    const recoveredAt = deps.now().toISOString();
+    const recoveryResult = {
+      handoffId: waiting.id,
+      roomId: waiting.room_id,
+      reason: 'The stored employee report was present and passed deterministic discovery validation. The previous missing-deliverable escalation was incorrect; no customer-facing action was taken.',
+      validation: validation.reason,
+      recommendation: extractDiscoveryRecommendation(waiting.result, waiting.result.match(/(?:Organisation Name|Organisation)\s*:\s*([^\r\n]+)/i)?.[1]?.trim() ?? ''),
+      automaticRecovery: true,
+    };
+    const transitions: OrganizationTaskTransition[] = [
+      { status: 'ceo_analyzing', stage: 'ceo', eventType: 'false_missing_discovery_deliverable_reconciled', roleId: 'ceo', result: recoveryResult },
+      { status: 'delegated', stage: 'department', eventType: 'stored_discovery_report_revalidated', roleId: 'ceo', result: recoveryResult },
+      { status: 'executing', stage: 'department', eventType: 'deterministic_discovery_review_started', roleId: 'ceo', result: recoveryResult },
+      { status: 'department_review', stage: 'review', eventType: 'deterministic_discovery_review_passed', roleId: waiting.to_role_id, result: recoveryResult },
+      { status: 'returned_to_ceo', stage: 'review', eventType: 'department_work_returned', roleId: waiting.to_role_id, result: recoveryResult },
+      { status: 'completed', stage: 'complete', eventType: 'handoff_completed', roleId: 'ceo', completedAt: recoveredAt, result: recoveryResult },
+    ];
+    if (!transitions.every((transition, index) =>
+      isAllowedOrganizationTaskTransition(
+        index === 0 ? currentStatus : transitions[index - 1].status,
+        transition.status,
+      ),
+    )) continue;
+    await deps.tasks.advance(waiting.task_id, transitions);
+    await deps.store.update(waiting.id, { status: 'completed', error: null, completed_at: recoveredAt });
+    if (waiting.room_id) {
+      await deps.store.updateRoom(waiting.room_id, { status: 'archived', deliverable: waiting.result.slice(0, 8000), blocker: null, closed_at: recoveredAt });
+      await deps.store.roomEvent(waiting.room_id, 'false_missing_discovery_deliverable_recovered', 'ceo', recoveryResult);
+      await deps.store.roomEvent(waiting.room_id, 'room_archived', 'ceo', { retained: true, automaticRecovery: true });
+    }
+    outcomes.push({
+      handoffId: waiting.id,
+      toAgent: waiting.to_agent,
+      status: 'completed',
+      reason: 'Stored discovery report passed deterministic validation; the false Founder escalation was reconciled without a new AI call.',
+      taskId: waiting.task_id,
+      roomId: waiting.room_id ?? undefined,
+    });
+  }
   const expiredBefore = new Date(deps.now().getTime() - HANDOFF_LEASE_TIMEOUT_MS).toISOString();
   const expired = await deps.store.expiredRunning(expiredBefore, limit);
   for (const stale of expired) {
