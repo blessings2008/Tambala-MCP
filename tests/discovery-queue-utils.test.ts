@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview, isResearchDailyQuotaExhausted, routeDiscoveryRecommendation } from '../src/organization/workforce/discovery-queue-utils.ts';
+import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview, isResearchDailyQuotaExhausted, routeDiscoveryRecommendation, discoveryCrmPromotionAuthority } from '../src/organization/workforce/discovery-queue-utils.ts';
 
 test('pauses Research after a recent OpenRouter free daily quota failure only', () => {
   const now = new Date('2026-11-25T12:00:00.000Z');
@@ -54,6 +54,15 @@ test('extracts only explicit discovery recommendations for the exact organisatio
   assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. Recommendation: QUALIFIED', 'Alpha Malawi'), 'QUALIFY');
   assert.equal(extractDiscoveryRecommendation('Organisation: Beta Malawi. Recommendation: QUALIFY', 'Alpha Malawi'), null);
   assert.equal(extractDiscoveryRecommendation('Organisation: Alpha Malawi. Recommendation pending.', 'Alpha Malawi'), null);
+});
+
+test('CEO authority is limited to validated QUALIFY CRM promotions', () => {
+  const qualify = routeDiscoveryRecommendation('QUALIFY', 'verified', 2, '+265999000000');
+  const investigate = routeDiscoveryRecommendation('INVESTIGATE', 'verified', 2, '+265999000000');
+  assert.equal(discoveryCrmPromotionAuthority(qualify, true), 'ceo');
+  assert.equal(discoveryCrmPromotionAuthority(qualify, false), null);
+  assert.equal(discoveryCrmPromotionAuthority(investigate, true), null);
+  assert.equal(discoveryCrmPromotionAuthority(null, true), null);
 });
 
 test('routes Research recommendations without promoting incomplete WhatsApp prospects', () => {
