@@ -48,9 +48,12 @@ function normaliseDiscoveryText(value: string): string {
 export function extractDiscoveryRecommendation(result: string | null | undefined, organisationName: string): DiscoveryRecommendation | null {
   if (!result?.trim() || !organisationName.trim()) return null;
   if (!normaliseDiscoveryText(result).includes(normaliseDiscoveryText(organisationName))) return null;
-  const recommendation = result.match(/\brecommendation\b[\s*:_-]{0,12}(QUALIFY|INVESTIGATE|REJECT)\b/i)?.[1]?.toUpperCase();
-  return recommendation === 'QUALIFY' || recommendation === 'INVESTIGATE' || recommendation === 'REJECT'
-    ? recommendation
+  const recommendation = result.match(/\b(?:recommendation|decision)\b[\s*:_-]{0,12}(QUALIFY|QUALIFIED|INVESTIGATE|REJECT)\b/i)?.[1]
+    ?? result.match(/^\s*(QUALIFY|QUALIFIED|INVESTIGATE|REJECT)\s*$/im)?.[1];
+  const normalized = recommendation?.toUpperCase();
+  if (normalized === 'QUALIFIED') return 'QUALIFY';
+  return normalized === 'QUALIFY' || normalized === 'INVESTIGATE' || normalized === 'REJECT'
+    ? normalized
     : null;
 }
 
