@@ -9,6 +9,7 @@ import { actionHelp, parseActions, type Action } from './actions.js';
 import { splitBlocks } from './blocks.js';
 import { roleIdFor } from './profiles.js';
 import { isPermanentAgentFailure } from './retry-policy.js';
+import { extractDiscoveryRecommendation } from './discovery-queue-utils.js';
 
 export const MAX_HANDOFFS_PER_DUTY = 2;
 export const MAX_HANDOFF_ATTEMPTS = 5;
@@ -80,7 +81,7 @@ export function validateDiscoveryQueueDeliverable(contextSummary: string | null,
   const gapsEnd = gapsTail.search(/\n\s*\*{0,2}recommendation\b/i);
   const gapsSection = gapsTail.slice(0, gapsEnd < 0 ? undefined : gapsEnd).replace(/[\s*:*-]/g, '');
   if (gapsSection.length < 3) return { ok: false, reason: 'The report must state the remaining verification gaps or explicitly say none were identified.' };
-  const recommendation = text.match(/\brecommendation\b[\s*:_-]{0,12}(QUALIFY|INVESTIGATE|REJECT)\b/i)?.[1]?.toUpperCase();
+  const recommendation = extractDiscoveryRecommendation(text, name);
   if (!recommendation) return { ok: false, reason: 'The report must end with one explicit QUALIFY, INVESTIGATE, or REJECT recommendation.' };
   if (recommendation === 'QUALIFY' && (String(prospect.verification_status ?? '').toLowerCase() !== 'verified' || phones.length === 0 || !hasPhone)) {
     return { ok: false, reason: 'QUALIFY requires a verified prospect record and at least one supplied public WhatsApp phone number reproduced in the contact-evidence section.' };
