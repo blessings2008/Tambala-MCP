@@ -1,5 +1,20 @@
 export interface DiscoveryQueueHandoffMarker { request: string; status?: string; created_at?: string; completed_at?: string | null }
 
+/** Persistent circuit-breaker predicate for the Research provider's daily free-model quota. */
+export function isResearchDailyQuotaExhausted(
+  handoffs: Array<{ to_agent?: string; status?: string; error?: string | null; created_at?: string | null }>,
+  now: Date = new Date(),
+  cooldownMs = 24 * 60 * 60 * 1000,
+): boolean {
+  const cutoff = now.getTime() - cooldownMs;
+  return handoffs.some((handoff) => {
+    if (handoff.to_agent !== 'research' || handoff.status !== 'failed') return false;
+    if (!/free-models-per-day/i.test(handoff.error ?? '')) return false;
+    const createdAt = Date.parse(handoff.created_at ?? '');
+    return Number.isFinite(createdAt) && createdAt >= cutoff;
+  });
+}
+
 export type DiscoveryRecommendation = 'QUALIFY' | 'INVESTIGATE' | 'REJECT';
 
 export interface DiscoveryOutcomeRoute {
