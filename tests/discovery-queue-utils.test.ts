@@ -34,6 +34,7 @@ test('routes Research recommendations without promoting incomplete WhatsApp pros
   assert.equal(noPhone?.requiresFounderApproval, false);
   assert.match(noPhone?.reason ?? '', /WhatsApp phone/i);
   assert.equal(routeDiscoveryRecommendation('QUALIFY', 'verified', 1, '+265999000000')?.requiresFounderApproval, true);
+  assert.equal(routeDiscoveryRecommendation('QUALIFY', 'verified', 1, '+265123')?.outcome, 'INVESTIGATE');
   assert.equal(routeDiscoveryRecommendation(null, 'verified', 1, '+265999000000'), null);
 });
 
