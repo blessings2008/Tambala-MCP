@@ -138,6 +138,7 @@ export interface HandoffStore {
   quarantineExpired(id: string, beforeIso: string, reason: string): Promise<boolean>;
   update(id: string, patch: Partial<Handoff>): Promise<void>;
   recent(sinceIso: string): Promise<Handoff[]>;
+  awaitingFounderDiscoverySince(sinceIso: string, limit: number): Promise<Handoff[]>;
   get(id: string): Promise<Handoff | null>;
   getByRoomId(roomId: string): Promise<Handoff | null>;
   getByDispatchKey(dispatchKey: string): Promise<Handoff | null>;
@@ -164,6 +165,7 @@ export class SupabaseHandoffStore implements HandoffStore {
   }
   async update(id: string, patch: Partial<Handoff>) { await supabaseUpdate('organization_handoffs', patch as Record<string, unknown>, `id=eq.${encodeURIComponent(id)}`); }
   recent(sinceIso: string) { return supabaseSelect<Handoff>('organization_handoffs', `select=*&created_at=gte.${encodeURIComponent(sinceIso)}&order=created_at.desc&limit=100`); }
+  awaitingFounderDiscoverySince(sinceIso: string, limit: number) { return supabaseSelect<Handoff>('organization_handoffs', `select=*&status=eq.awaiting_founder&source_duty_id=in.(lead-discovery-queue-watcher,lead-discovery-queue-research-review)&created_at=gte.${encodeURIComponent(sinceIso)}&order=created_at.desc&limit=${Math.min(500, Math.max(1, Math.floor(limit)))}`); }
   async get(id: string) { return (await supabaseSelect<Handoff>('organization_handoffs', `select=*&id=eq.${encodeURIComponent(id)}&limit=1`))[0] ?? null; }
   async getByRoomId(roomId: string) { return (await supabaseSelect<Handoff>('organization_handoffs', `select=*&room_id=eq.${encodeURIComponent(roomId)}&limit=1`))[0] ?? null; }
   async getByDispatchKey(dispatchKey: string) { return (await supabaseSelect<Handoff>('organization_handoffs', `select=*&dispatch_key=eq.${encodeURIComponent(dispatchKey)}&limit=1`))[0] ?? null; }
@@ -189,6 +191,7 @@ export class InMemoryHandoffStore implements HandoffStore {
   async quarantineExpired(id: string, beforeIso: string, reason: string) { const r = this.rows.find((x) => x.id === id); if (!r || r.status !== 'running' || !r.heartbeat_at || r.heartbeat_at >= beforeIso) return false; r.status = 'awaiting_founder'; r.error = reason; r.completed_at = null; return true; }
   async update(id: string, patch: Partial<Handoff>) { const r = this.rows.find((x) => x.id === id); if (r) Object.assign(r, patch); }
   async recent(sinceIso: string) { return this.rows.filter((r) => r.created_at >= sinceIso).reverse(); }
+  async awaitingFounderDiscoverySince(sinceIso: string, limit: number) { return this.rows.filter((r) => r.status === 'awaiting_founder' && ['lead-discovery-queue-watcher', 'lead-discovery-queue-research-review'].includes(r.source_duty_id ?? '') && r.created_at >= sinceIso).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, Math.min(500, Math.max(1, Math.floor(limit)))); }
   async get(id: string) { return this.rows.find((r) => r.id === id) ?? null; }
   async getByRoomId(roomId: string) { return this.rows.find((r) => r.room_id === roomId) ?? null; }
   async getByDispatchKey(dispatchKey: string) { return this.rows.find((r) => r.dispatch_key === dispatchKey) ?? null; }
@@ -372,12 +375,16 @@ function confirmsPendingApprovalAction(value: string): boolean {
 /** Each delegation runs in an isolated, durable room. A room closes only after its deliverable is accepted. */
 export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<HandoffOutcome[]> {
   const outcomes: HandoffOutcome[] = [];
-  const recent = await deps.store.recent(new Date(deps.now().getTime() - 7 * 24 * 60 * 60 * 1000).toISOString());
+  const since = new Date(deps.now().getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const [recent, founderDiscoveryReviews] = await Promise.all([
+    deps.store.recent(since),
+    deps.store.awaitingFounderDiscoverySince(since, 250),
+  ]);
   let researchQuotaExhausted = isResearchDailyQuotaExhausted(recent, deps.now());
   // Earlier CEO reviews sometimes claimed a discovery report was missing even though
   // the employee result was stored. Reconcile only reports that pass the same deterministic
   // evidence validator used for new discovery handoffs; incomplete reports remain paused.
-  for (const waiting of recent) {
+  for (const waiting of founderDiscoveryReviews) {
     if (
       waiting.status !== 'awaiting_founder' ||
       !['lead-discovery-queue-watcher', 'lead-discovery-queue-research-review'].includes(waiting.source_duty_id ?? '') ||
