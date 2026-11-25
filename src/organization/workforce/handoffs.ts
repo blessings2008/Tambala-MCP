@@ -372,9 +372,41 @@ function confirmsPendingApprovalAction(value: string): boolean {
 /** Each delegation runs in an isolated, durable room. A room closes only after its deliverable is accepted. */
 export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<HandoffOutcome[]> {
   const outcomes: HandoffOutcome[] = [];
+  const recent = await deps.store.recent(new Date(deps.now().getTime() - 7 * 24 * 60 * 60 * 1000).toISOString());
+  let researchQuotaExhausted = isResearchDailyQuotaExhausted(recent, deps.now());
   const expiredBefore = new Date(deps.now().getTime() - HANDOFF_LEASE_TIMEOUT_MS).toISOString();
   const expired = await deps.store.expiredRunning(expiredBefore, limit);
   for (const stale of expired) {
+    if (stale.to_agent === 'research' && researchQuotaExhausted) {
+      const reason = 'Research is paused because the OpenRouter free-model daily quota was exhausted. This handoff is preserved for automatic retry after the cooldown; Founder input is not required.';
+      const quotaError = 'free-models-per-day quota exhausted; Research handoff preserved for automatic retry after cooldown.';
+      await deps.store.update(stale.id, {
+        status: 'failed',
+        error: quotaError,
+        completed_at: deps.now().toISOString(),
+        claimed_at: null,
+        heartbeat_at: null,
+      });
+      if (stale.task_id) {
+        try {
+          await deps.tasks.advance(stale.task_id, [{
+            status: 'failed',
+            stage: 'department',
+            eventType: 'research_provider_quota_paused',
+            roleId: stale.to_role_id,
+            result: { handoffId: stale.id, roomId: stale.room_id, reason, automaticRetryAfterCooldown: true },
+          }]);
+        } catch (error) {
+          console.error('Could not mark quota-paused Research task failed:', error instanceof Error ? error.message : error);
+        }
+      }
+      if (stale.room_id) {
+        await deps.store.updateRoom(stale.room_id, { status: 'active', blocker: reason, closed_at: null });
+        await deps.store.roomEvent(stale.room_id, 'research_provider_quota_paused', stale.to_role_id, { reason, automaticRetryAfterCooldown: true });
+      }
+      outcomes.push({ handoffId: stale.id, toAgent: stale.to_agent, status: 'waiting', reason, taskId: stale.task_id ?? undefined, roomId: stale.room_id ?? undefined });
+      continue;
+    }
     const reason = 'The handoff worker stopped reporting heartbeats. This work has been paused for Founder review; verify any external side effects before resuming.';
     if (!(await deps.store.quarantineExpired(stale.id, expiredBefore, reason))) continue;
     if (stale.task_id) {
@@ -396,8 +428,6 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
     }
     outcomes.push({ handoffId: stale.id, toAgent: stale.to_agent, status: 'waiting', reason, taskId: stale.task_id ?? undefined, roomId: stale.room_id ?? undefined });
   }
-  const recent = await deps.store.recent(new Date(deps.now().getTime() - 7 * 24 * 60 * 60 * 1000).toISOString());
-  let researchQuotaExhausted = isResearchDailyQuotaExhausted(recent, deps.now());
   for (const waiting of recent) {
     // Earlier deployments quarantined stale handoffs even when the task state transition
     // was rejected. Reconcile that parent task now, without re-queuing the handoff or

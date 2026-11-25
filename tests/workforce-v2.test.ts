@@ -199,6 +199,43 @@ test('discovery queue reports with missing required evidence are returned for re
   assert.match(store.rows[0].error ?? '', /service-fit evidence|record ID/i);
 });
 
+test('quota-paused expired Research handoffs fail safely instead of escalating to Founder', async () => {
+  const taskTransitions: string[] = [];
+  const { deps, store } = handoffDeps({
+    tasks: {
+      begin: async () => ({ taskId: 'unused-task' }),
+      advance: async (_taskId, updates) => { taskTransitions.push(updates[0].status); },
+      fail: async () => {},
+    },
+  });
+  const quotaFailure = await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'research',
+    request: 'Research request that exhausted the daily free quota.',
+    now: at('2026-11-09T06:45:00.000Z'),
+  });
+  await store.update(quotaFailure.id, {
+    status: 'failed',
+    error: 'HTTP 429: free-models-per-day quota exceeded',
+    completed_at: '2026-11-09T06:50:00.000Z',
+  });
+  const stale = await queueHandoff(store, {
+    fromRoleId: 'ceo',
+    toAgent: 'research',
+    request: 'Research handoff whose worker lease expired during quota cooldown.',
+    now: at('2026-11-09T05:00:00.000Z'),
+  });
+  await store.update(stale.id, { task_id: 'stale-research-task' });
+  await store.claim(stale.id, '2026-11-09T05:10:00.000Z');
+  await store.heartbeat(stale.id, '2026-11-09T05:10:00.000Z');
+  const outcomes = await processHandoffs(deps);
+  assert.equal(store.rows.find((row) => row.id === stale.id)?.status, 'failed');
+  assert.match(store.rows.find((row) => row.id === stale.id)?.error ?? '', /free-models-per-day/i);
+  assert.ok(taskTransitions.includes('failed'));
+  assert.ok(!taskTransitions.includes('awaiting_founder'));
+  assert.equal(outcomes.find((row) => row.handoffId === stale.id)?.status, 'waiting');
+});
+
 test('preserves queued Research handoffs when the daily free-model quota is exhausted', async () => {
   const { deps, store } = handoffDeps({
     askAgent: async (agent) => agent === 'orchestrator'
