@@ -1,5 +1,5 @@
 import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../../lib/supabase.js';
-import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview, routeDiscoveryRecommendation } from './discovery-queue-utils.js';
+import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview, isResearchDailyQuotaExhausted, routeDiscoveryRecommendation } from './discovery-queue-utils.js';
 import { getBusinessSummary, getDetailedCRMContext, getVerifiedCompanyContext } from '../../services/ai/context.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../../services/ai.js';
 import { getOrganizationSnapshot } from '../service.js';
@@ -198,6 +198,21 @@ type DiscoveryQueueRow = {
 };
 
 let discoveryQueueDispatchRunning = false;
+async function researchQuotaCoolingDown(): Promise<boolean> {
+  if (!dbConfigured()) return false;
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const failures = await supabaseSelect<{ to_agent: string; status: string; error: string | null; created_at: string }>(
+      'organization_handoffs',
+      `select=to_agent,status,error,created_at&to_agent=eq.research&status=eq.failed&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=50`,
+    );
+    return isResearchDailyQuotaExhausted(failures);
+  } catch (error) {
+    console.error('Research quota circuit-breaker check failed; pausing discovery dispatch safely:', error instanceof Error ? error.message : error);
+    return true;
+  }
+}
+
 
 /**
  * Claim newly researched prospects and create one durable Research review room per record.
@@ -207,6 +222,10 @@ let discoveryQueueDispatchRunning = false;
  */
 export async function dispatchNewDiscoveryQueue(maxCount = 5): Promise<number> {
   if (!dbConfigured() || discoveryQueueDispatchRunning || maxCount <= 0) return 0;
+  if (await researchQuotaCoolingDown()) {
+    console.warn('Discovery queue dispatch paused: Research free-model daily quota exhausted; preserving queued prospects without paid fallback.');
+    return 0;
+  }
   discoveryQueueDispatchRunning = true;
   let claimed: DiscoveryQueueRow[] = [];
   try {
@@ -299,6 +318,10 @@ export async function dispatchNewDiscoveryQueue(maxCount = 5): Promise<number> {
  */
 export async function dispatchReviewingDiscoveryQueue(maxCount = 5): Promise<number> {
   if (!dbConfigured() || maxCount <= 0) return 0;
+  if (await researchQuotaCoolingDown()) {
+    console.warn('Discovery recovery paused: Research free-model daily quota exhausted; existing queue records are preserved.');
+    return 0;
+  }
   const [pending, previous] = await Promise.all([
     fetchAllPages((offset, limit) => supabaseSelect<DiscoveryQueueRow>(
       'lead_discovery_queue',

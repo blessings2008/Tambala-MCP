@@ -9,7 +9,7 @@ import { actionHelp, parseActions, type Action } from './actions.js';
 import { splitBlocks } from './blocks.js';
 import { roleIdFor } from './profiles.js';
 import { isPermanentAgentFailure } from './retry-policy.js';
-import { extractDiscoveryRecommendation } from './discovery-queue-utils.js';
+import { extractDiscoveryRecommendation, isResearchDailyQuotaExhausted } from './discovery-queue-utils.js';
 
 export const MAX_HANDOFFS_PER_DUTY = 2;
 export const MAX_HANDOFF_ATTEMPTS = 5;
@@ -397,6 +397,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
     outcomes.push({ handoffId: stale.id, toAgent: stale.to_agent, status: 'waiting', reason, taskId: stale.task_id ?? undefined, roomId: stale.room_id ?? undefined });
   }
   const recent = await deps.store.recent(new Date(deps.now().getTime() - 7 * 24 * 60 * 60 * 1000).toISOString());
+  let researchQuotaExhausted = isResearchDailyQuotaExhausted(recent, deps.now());
   for (const waiting of recent) {
     // Earlier deployments quarantined stale handoffs even when the task state transition
     // was rejected. Reconcile that parent task now, without re-queuing the handoff or
@@ -448,6 +449,10 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
   }
   for (const h of await deps.store.queued(limit)) {
     const agent = h.to_agent as AgentName;
+    if (agent === 'research' && researchQuotaExhausted) {
+      outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason: 'Research is paused because the free provider daily quota was exhausted. The queued handoff is preserved for retry after the cooldown.', taskId: h.task_id ?? undefined, roomId: h.room_id ?? undefined });
+      continue;
+    }
     const blocked = await deps.agentUnavailableReason(agent);
     if (blocked) {
       const waiting = `Waiting: ${blocked}`;
@@ -715,6 +720,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'completed', taskId, roomId: h.room_id ?? undefined });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Handoff failed.';
+      if (agent === 'research' && /free-models-per-day/i.test(message)) researchQuotaExhausted = true;
       // An uncertain outbox result must never be replayed automatically: the message may
       // already have been accepted by WhatsApp. Missing CRM destinations also need Founder
       // correction, not another identical attempt.
