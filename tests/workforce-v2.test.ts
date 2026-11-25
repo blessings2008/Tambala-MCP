@@ -199,6 +199,27 @@ test('discovery queue reports with missing required evidence are returned for re
   assert.match(store.rows[0].error ?? '', /service-fit evidence|record ID/i);
 });
 
+test('InMemory handoff store returns pending discovery Founder reviews beyond the generic recent window', async () => {
+  const store = new InMemoryHandoffStore();
+  for (let index = 0; index < 125; index++) {
+    const handoff = await queueHandoff(store, {
+      fromRoleId: 'ceo',
+      toAgent: 'research',
+      sourceDutyId: 'lead-discovery-queue-watcher',
+      request: `Review pending discovery record number ${index}.`,
+      now: at('2026-11-09T06:00:00.000Z'),
+    });
+    await store.update(handoff.id, {
+      status: 'awaiting_founder',
+      error: 'DECISION: FOUNDER_INPUT_REQUIRED — No employee deliverable was provided.',
+      result: 'Stored report awaiting deterministic review.',
+    });
+  }
+  const pending = await store.awaitingFounderDiscoverySince('2026-11-09T00:00:00.000Z', 250);
+  assert.equal(pending.length, 125);
+  assert.ok(pending.every((row) => row.status === 'awaiting_founder' && row.source_duty_id === 'lead-discovery-queue-watcher'));
+});
+
 test('reconciles false Founder escalations when the stored discovery report passes deterministic review', async () => {
   const taskTransitions: string[] = [];
   const { deps, store } = handoffDeps({
