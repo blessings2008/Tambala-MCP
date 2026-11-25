@@ -1,5 +1,5 @@
 import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../../lib/supabase.js';
-import { fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview } from './discovery-queue-utils.js';
+import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview } from './discovery-queue-utils.js';
 import { getBusinessSummary, getDetailedCRMContext, getVerifiedCompanyContext } from '../../services/ai/context.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../../services/ai.js';
 import { getOrganizationSnapshot } from '../service.js';
@@ -194,6 +194,7 @@ type DiscoveryQueueRow = {
   processing_status: string;
   first_contact_message: string | null;
   crm_lead_id?: string | null;
+  research_notes?: string | null;
 };
 
 let discoveryQueueDispatchRunning = false;
@@ -372,9 +373,7 @@ function normaliseDiscoveryName(value: string): string {
 }
 
 function salesResultQualifies(result: string, organisationName: string): boolean {
-  const name = normaliseDiscoveryName(organisationName);
-  const output = normaliseDiscoveryName(result);
-  return output.includes(name) && /\brecommendation\b[\s\S]{0,240}\bqualif(?:y|ied)\b/i.test(result);
+  return extractDiscoveryRecommendation(result, organisationName) === 'QUALIFY';
 }
 
 const approvedProspectDispatching = new Set<string>();
@@ -582,7 +581,7 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
     const [prospects, completedHandoffs, approvals] = await Promise.all([
       supabaseSelect<DiscoveryQueueRow>(
         'lead_discovery_queue',
-        'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id&processing_status=in.(reviewing,qualified)&order=created_at.asc&limit=100',
+        'select=id,organisation_name,website,sector,service_fit,reason_for_fit,decision_maker_name,decision_maker_title,public_email,public_phone,source_urls,research_date,verification_status,processing_status,first_contact_message,crm_lead_id,research_notes&processing_status=in.(reviewing,qualified)&order=created_at.asc&limit=100',
       ),
       supabaseSelect<{ id: string; request: string; result: string | null; status: string }>(
         'organization_handoffs',
@@ -596,19 +595,6 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
 
     let created = 0;
     for (const prospect of prospects) {
-      const handoff = completedHandoffs.find((item) =>
-        item.request.includes(`Queue record ID: ${prospect.id}.`) &&
-        typeof item.result === 'string' &&
-        salesResultQualifies(item.result, prospect.organisation_name),
-      );
-      if (!handoff && !approvals.some((item) =>
-        item.action_type === 'crm_lead_promotion' && item.subject_id === prospect.id,
-      )) continue;
-
-      if (prospect.verification_status !== 'verified' || !prospect.service_fit.length || (!prospect.public_email && !prospect.public_phone)) {
-        continue;
-      }
-
       const existingApproval = approvals.find((item) =>
         item.action_type === 'crm_lead_promotion' && item.subject_id === prospect.id,
       );
@@ -619,6 +605,41 @@ export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
           }
         } else if (existingApproval.status === 'approved' || existingApproval.status === 'rejected') {
           await applyDiscoveryCrmApproval(existingApproval, existingApproval.status, existingApproval.resolution_note ?? '');
+        }
+        continue;
+      }
+
+      const handoff = completedHandoffs.find((item) =>
+        item.request.includes(`Queue record ID: ${prospect.id}.`) &&
+        extractDiscoveryRecommendation(item.result, prospect.organisation_name) !== null,
+      );
+      if (!handoff?.result) continue;
+      const recommendation = extractDiscoveryRecommendation(handoff.result, prospect.organisation_name);
+      if (recommendation === 'REJECT') {
+        if (prospect.processing_status !== 'rejected') {
+          const note = `Research outcome: REJECT\\n${handoff.result.slice(0, 3200)}`;
+          await supabaseUpdate('lead_discovery_queue', { processing_status: 'rejected', research_notes: note, updated_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(prospect.id)}`);
+        }
+        continue;
+      }
+      if (recommendation === 'INVESTIGATE') {
+        if (!prospect.research_notes?.startsWith('Research outcome: INVESTIGATE')) {
+          const note = `Research outcome: INVESTIGATE\\n${handoff.result.slice(0, 3200)}`;
+          await supabaseUpdate('lead_discovery_queue', { processing_status: 'reviewing', research_notes: note, updated_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(prospect.id)}`);
+        }
+        continue;
+      }
+      if (recommendation !== 'QUALIFY') continue;
+
+      const qualificationGaps = [
+        prospect.verification_status !== 'verified' ? 'the record is not fully verified' : '',
+        !prospect.service_fit.length ? 'no Tambala service fit is recorded' : '',
+        !prospect.public_phone ? 'no public WhatsApp phone number is available' : '',
+      ].filter(Boolean);
+      if (qualificationGaps.length) {
+        const note = `Research outcome: INVESTIGATE (qualification gate)\\nA QUALIFY recommendation cannot enter WhatsApp outreach because ${qualificationGaps.join('; ')}.\\n\\n${handoff.result.slice(0, 2800)}`;
+        if (!prospect.research_notes?.startsWith('Research outcome: INVESTIGATE (qualification gate)')) {
+          await supabaseUpdate('lead_discovery_queue', { processing_status: 'reviewing', research_notes: note, updated_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(prospect.id)}`);
         }
         continue;
       }
