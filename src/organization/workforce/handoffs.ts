@@ -108,7 +108,7 @@ export function validateDiscoveryQueueDeliverable(contextSummary: string | null,
   }
   const recommendation = extractDiscoveryRecommendation(text, name);
   if (recommendation === 'QUALIFY') {
-    const directNeedSection = text.match(/direct need evidence([\\s\\S]*?)(?:verification gaps|recommendation)/i)?.[1] ?? '';
+    const directNeedSection = text.match(/direct need evidence([\s\S]*?)(?:verification gaps|recommendation)/i)?.[1] ?? '';
     if (directNeedSection.trim().length < 25 || !sources.some((url) => directNeedSection.includes(url))) {
       return { ok: false, reason: 'QUALIFY requires a Direct Need Evidence section with a concrete fact and its exact official source URL. Without that, recommend INVESTIGATE.' };
     }
