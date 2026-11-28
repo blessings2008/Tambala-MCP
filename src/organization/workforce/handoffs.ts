@@ -31,6 +31,15 @@ export interface Handoff {
 
 export class HandoffError extends Error {}
 
+/** Only these Research queue reviews are strictly read-only and safe to retry after a worker restart. */
+export function isReadOnlyResearchQueueHandoff(handoff: Pick<Handoff, 'to_agent' | 'source_duty_id' | 'context_summary' | 'request'>): boolean {
+  return handoff.to_agent === 'research'
+    && ['lead-discovery-queue-watcher', 'lead-discovery-queue-research-review'].includes(handoff.source_duty_id ?? '')
+    && Boolean(handoff.context_summary?.includes('public.lead_discovery_queue'))
+    && /do not contact/i.test(handoff.request)
+    && !/ACTIONS:\\s*\\r?\\n/i.test(handoff.request);
+}
+
 /** Read-only AI & Automation incident reports can be accepted by a deterministic contract. */
 function hasAutomationIncidentReport(value: string): boolean {
   const text = value.trim();
@@ -475,6 +484,24 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         await deps.store.roomEvent(stale.room_id, 'research_provider_quota_paused', stale.to_role_id, { reason, automaticRetryAfterCooldown: true });
       }
       outcomes.push({ handoffId: stale.id, toAgent: stale.to_agent, status: 'failed', reason, taskId: stale.task_id ?? undefined, roomId: stale.room_id ?? undefined });
+      continue;
+    }
+    if (isReadOnlyResearchQueueHandoff(stale) && stale.attempts < MAX_HANDOFF_ATTEMPTS) {
+      const reason = 'Read-only Research queue review was interrupted by a worker restart. No customer contact or external side effect is permitted; automatically re-queueing the review.';
+      await deps.store.update(stale.id, {
+        status: 'queued',
+        error: null,
+        completed_at: null,
+        claimed_at: null,
+        heartbeat_at: null,
+      });
+      if (stale.room_id) {
+        await deps.store.updateRoom(stale.room_id, { status: 'active', blocker: null, closed_at: null });
+        await deps.store.roomEvent(stale.room_id, 'read_only_research_auto_requeued', 'ceo', {
+          reason, previousAttempt: stale.attempts, maxAttempts: MAX_HANDOFF_ATTEMPTS,
+        });
+      }
+      outcomes.push({ handoffId: stale.id, toAgent: stale.to_agent, status: 'queued', reason, taskId: stale.task_id ?? undefined, roomId: stale.room_id ?? undefined });
       continue;
     }
     const reason = 'The handoff worker lease expired. The task is marked failed and will not be retried automatically because external side effects may be uncertain. The CEO must verify the recorded outcome before issuing any new attempt; no Founder input is required.';
