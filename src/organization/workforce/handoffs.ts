@@ -37,7 +37,7 @@ export function isReadOnlyResearchQueueHandoff(handoff: Pick<Handoff, 'to_agent'
     && ['lead-discovery-queue-watcher', 'lead-discovery-queue-research-review'].includes(handoff.source_duty_id ?? '')
     && Boolean(handoff.context_summary?.includes('public.lead_discovery_queue'))
     && /do not contact/i.test(handoff.request)
-    && !/ACTIONS:\\s*\\r?\\n/i.test(handoff.request);
+    && !/ACTIONS:\s*\r?\n/i.test(handoff.request);
 }
 
 /** Read-only AI & Automation incident reports can be accepted by a deterministic contract. */
