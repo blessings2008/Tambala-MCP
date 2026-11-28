@@ -1,5 +1,5 @@
 import { supabaseInsert, supabaseSelect, supabaseUpdate } from '../../lib/supabase.js';
-import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isFalseMissingDeliverableReview, isResearchDailyQuotaExhausted, routeDiscoveryRecommendation, discoveryCrmPromotionAuthority } from './discovery-queue-utils.js';
+import { extractDiscoveryRecommendation, fetchAllPages, hasDiscoveryQueueHandoff, isResearchDailyQuotaExhausted, routeDiscoveryRecommendation, discoveryCrmPromotionAuthority } from './discovery-queue-utils.js';
 import { getBusinessSummary, getDetailedCRMContext, getVerifiedCompanyContext } from '../../services/ai/context.js';
 import { askTambalaAI, askTambalaAIWithWebResearch, getAgentOperationalInfo } from '../../services/ai.js';
 import { getOrganizationSnapshot } from '../service.js';
@@ -338,9 +338,11 @@ export async function dispatchReviewingDiscoveryQueue(maxCount = 5): Promise<num
     const marker = 'Queue record ID: ' + prospect.id + '.';
     const retryFailedBefore = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const previousForSuppression = previous.filter((item) => {
-      if (!['failed', 'awaiting_founder'].includes(item.status)) return true;
+      // Legacy Founder-waiting reviews are not a valid terminal state after CEO autonomy was enabled.
+      // Re-dispatch them through the current CEO-led review path instead of stranding the queue forever.
+      if (item.status === 'awaiting_founder') return false;
+      if (item.status !== 'failed') return true;
       const error = item.error ?? '';
-      if (item.status === 'awaiting_founder' && isFalseMissingDeliverableReview(error, item.result)) return false;
       if (!/DECISION:\s*(?:REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)/i.test(error)) return true;
       if (!item.context_summary || !item.result) return true;
       // Re-dispatch only when the old CEO rejection contradicts a complete report.
