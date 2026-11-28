@@ -342,6 +342,30 @@ test('discovery validation accepts Unicode hyphens and requires contact evidence
   ).replace('- **INVESTIGATE**: Further confirmation is required.', '- **QUALIFY**: The need is directly supported.');
   assert.equal(validateDiscoveryQueueDeliverable(context, qualifyWithNeed).ok, true);
   assert.equal(validateDiscoveryQueueDeliverable(context, report.replace('info@example.mw', '')).ok, false);
+  const sourcedContext = JSON.stringify({ prospect: {
+    id: 'queue-789', organisation_name: 'AMG Global - Malawi', service_fit: ['Web Development', 'Software Development'],
+    published_services: ['Audit Services', 'Tax Services', 'Advisory Services', 'Forensic Services'],
+    source_urls: ['https://www.amgglobal.co.mw/services/', 'https://www.amgglobal.co.mw/contact/'],
+    public_email: 'info@amgglobal.co.mw', public_phone: '+265 1 873 349',
+  } });
+  const groundedReport = [
+    'Organisation Name: AMG Global - Malawi',
+    'Queue Record ID: queue-789',
+    'Published Services Evidence:',
+    '- Audit Services, Tax Services, Advisory Services and Forensic Services are listed: https://www.amgglobal.co.mw/services/',
+    'Potential Tambala Fit:',
+    '- A secure client-document portal could be a potential Software Development opportunity, not a confirmed need.',
+    'Service-Fit Evidence:',
+    '- Potential Web Development and Software Development fit based on its public service lines.',
+    'Public Organisational Contact Evidence:',
+    '- info@amgglobal.co.mw; +265 1 873 349; https://www.amgglobal.co.mw/contact/',
+    'Verification Gaps:',
+    '- No public evidence of an active digital project.',
+    'Recommendation: INVESTIGATE',
+  ].join('\\n');
+  assert.equal(validateDiscoveryQueueDeliverable(sourcedContext, groundedReport).ok, true);
+  const falsePublishedClaim = groundedReport.replace('Audit Services, Tax Services, Advisory Services and Forensic Services', 'Web Development, Software Development, Digital Product Development');
+  assert.equal(validateDiscoveryQueueDeliverable(sourcedContext, falsePublishedClaim).ok, false);
   const relaxedContext = JSON.stringify({ prospect: {
     id: 'queue-456', organisation_name: 'AMG Global - Malawi', service_fit: ['Web Development'],
     source_urls: ['https://www.amgglobal.co.mw/contact/'], public_email: 'rharawa@amgglobal.co.mw',
