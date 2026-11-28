@@ -424,12 +424,12 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
   );
   const lead = leads[0];
   if (!lead || String(lead.status ?? '').toLowerCase() !== 'new') return false;
-  const rawPhone = [lead.whatsapp, lead.phone].find((value) => typeof value === 'string' && value.trim()) as string | undefined;
-  if (!rawPhone) return false;
-  // A CRM phone field can contain several branches or switchboard numbers. Never
-  // concatenate them or silently choose the first; only dispatch a single, normalised
-  // destination that exactly matches one number in the verified public record.
-  const phone = normalizePhoneFromLabel(rawPhone);
+  // This workflow is WhatsApp-only. A general phone number is not enough:
+  // require a separately recorded CRM WhatsApp destination and verify it against
+  // one unambiguous public number. Multi-number source fields stay safely on hold.
+  const rawWhatsApp = typeof lead.whatsapp === 'string' ? lead.whatsapp.trim() : '';
+  if (!rawWhatsApp) return false;
+  const phone = normalizePhoneFromLabel(rawWhatsApp);
   const publishedPhone = normalizePhoneFromLabel(prospect.public_phone);
   if (!phone || !publishedPhone || phone !== publishedPhone) return false;
 
