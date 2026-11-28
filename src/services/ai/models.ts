@@ -10,6 +10,7 @@ export const AGENT_DEFAULT_MODELS = {
   finance: 'openai/gpt-oss-20b',
   payments: 'openai/gpt-oss-20b',
   engineering: 'openai/gpt-oss-20b',
+  automation: 'openai/gpt-oss-20b',
   strategy: 'openai/gpt-oss-20b',
   product: 'openai/gpt-oss-20b',
   security: 'openai/gpt-oss-20b',
@@ -115,6 +116,16 @@ export const AGENT_DIRECTORY = {
     manages: ['Engineering and automation work assigned by the CEO'],
     roleId: null,
     roleStatus: 'planned',
+  },
+  automation: {
+    title: 'Head of AI & Automation',
+    responsibility: 'Monitor agent workflows, automation reliability, task routing, model readiness and recurring operational failures; recommend safe improvements without making unapproved production changes',
+    unitId: 'ai-automation',
+    unitName: 'AI & Automation',
+    reportsTo: 'Director — Technology & Innovation',
+    manages: ['Agent workflow and automation reliability work assigned by the CEO'],
+    roleId: null,
+    roleStatus: 'active',
   },
   strategy: {
     title: 'Head of Strategy & Corporate Planning',
@@ -244,7 +255,9 @@ export function getAgentRuntimeConfig(agent: AgentName): AgentRuntimeConfig {
     // Accept either a raw provider key or a pasted Bearer value; the SDK adds the header scheme.
     return trimmed.replace(/^Bearer\s+/i, '').trim() || undefined;
   };
-  const dedicatedKey = normalizeCredential(process.env[dedicatedKeyName]);
+  const fallbackKeyName = agent === 'automation' ? 'TAMBALA_ENGINEERING_API_KEY' : undefined;
+  const dedicatedKey = normalizeCredential(process.env[dedicatedKeyName])
+    ?? (fallbackKeyName ? normalizeCredential(process.env[fallbackKeyName]) : undefined);
   const sharedGroqEnabled = process.env.TAMBALA_ALLOW_SHARED_GROQ_KEY === 'true';
   const sharedGroqKey = sharedGroqEnabled
     ? normalizeCredential(process.env.GROQ_API_KEY) ?? normalizeCredential(process.env.TAMBALA_ORCHESTRATOR_API_KEY)
@@ -257,7 +270,7 @@ export function getAgentRuntimeConfig(agent: AgentName): AgentRuntimeConfig {
   const apiKeySource = useOpenRouter
     ? 'OPENROUTER_API_KEY'
     : dedicatedKey
-      ? dedicatedKeyName
+      ? (process.env[dedicatedKeyName]?.trim() ? dedicatedKeyName : fallbackKeyName ?? dedicatedKeyName)
       : agent === 'orchestrator' && process.env.GROQ_API_KEY
         ? 'GROQ_API_KEY (orchestrator fallback)'
         : sharedGroqKey
@@ -292,12 +305,13 @@ export function getAgentRuntimeInfo(agent: AgentName) {
     ? (agent === 'research' ? 'openrouter' : 'groq')
     : process.env[`TAMBALA_${upper}_PROVIDER`]?.toLowerCase();
   const useOpenRouter = requestedProvider === 'openrouter';
+  const fallbackKeyName = agent === 'automation' ? 'TAMBALA_ENGINEERING_API_KEY' : undefined;
   const legacyOrchestratorKey = agent === 'orchestrator' && Boolean(process.env.GROQ_API_KEY?.trim());
   const sharedGroqEnabled = process.env.TAMBALA_ALLOW_SHARED_GROQ_KEY === 'true';
   const sharedGroqConfigured = sharedGroqEnabled && Boolean(process.env.GROQ_API_KEY?.trim() || process.env.TAMBALA_ORCHESTRATOR_API_KEY?.trim());
   const apiKeyConfigured = useOpenRouter
     ? Boolean(process.env.OPENROUTER_API_KEY?.trim())
-    : Boolean(process.env[dedicatedKeyName]?.trim() || legacyOrchestratorKey || sharedGroqConfigured);
+    : Boolean(process.env[dedicatedKeyName]?.trim() || (fallbackKeyName && process.env[fallbackKeyName]?.trim()) || legacyOrchestratorKey || sharedGroqConfigured);
   const provider = useOpenRouter ? 'openrouter' : requestedProvider === 'groq' || !requestedProvider ? 'groq' : 'custom';
   const configuredBaseURL = process.env[`TAMBALA_${upper}_BASE_URL`]?.trim();
   const baseURL = useOpenRouter
@@ -314,7 +328,7 @@ export function getAgentRuntimeInfo(agent: AgentName) {
     provider,
     baseURL,
     model,
-    apiKeyEnv: useOpenRouter ? 'OPENROUTER_API_KEY' : process.env[dedicatedKeyName] ? dedicatedKeyName : legacyOrchestratorKey ? 'GROQ_API_KEY' : sharedGroqConfigured ? 'Shared Groq credential (explicitly enabled)' : dedicatedKeyName,
+    apiKeyEnv: useOpenRouter ? 'OPENROUTER_API_KEY' : process.env[dedicatedKeyName] ? dedicatedKeyName : (fallbackKeyName && process.env[fallbackKeyName]?.trim()) ? fallbackKeyName : legacyOrchestratorKey ? 'GROQ_API_KEY' : sharedGroqConfigured ? 'Shared Groq credential (explicitly enabled)' : dedicatedKeyName,
     apiKeyConfigured,
     ready: apiKeyConfigured && Boolean(baseURL) && Boolean(model),
   };
