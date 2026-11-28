@@ -108,7 +108,15 @@ export async function buildDashboard() {
     }),
     section(() => db<Row>('organization_tasks', 'select=id,objective,status,current_stage,assigned_department_id,assigned_role_id,error_message,created_at,updated_at,completed_at&order=created_at.desc&limit=100')),
     section(async () => { const [taskEvents, dutyRuns] = await Promise.all([db<Row>('organization_task_events', 'select=id,task_id,event_type,stage,actor_role_id,department_id,created_at&order=created_at.desc&limit=40'), db<Row>('organization_duty_runs', 'select=id,duty_id,role_id,status,attempts,summary,error,started_at,completed_at&order=started_at.desc&limit=40')]); return mergeRecentActivity(taskEvents, dutyRuns); }),
-    section(() => db<Row>('organization_approval_requests', 'select=id,action_type,summary,requested_by_role_id,required_authority,status,risk_level,task_id,content,created_at,resolved_at,resolved_by_role_id,resolution_note&order=created_at.desc&limit=60')),
+    section(async () => {
+      const columns = 'select=id,action_type,summary,requested_by_role_id,required_authority,status,risk_level,task_id,content,created_at,resolved_at,resolved_by_role_id,resolution_note';
+      const [pendingRows, historyRows] = await Promise.all([
+        db<Row>('organization_approval_requests', `${columns}&status=eq.pending&order=created_at.desc&limit=500`),
+        db<Row>('organization_approval_requests', `${columns}&status=neq.pending&order=created_at.desc&limit=20`),
+      ]);
+      return [...pendingRows, ...historyRows]
+        .sort((a, b) => Date.parse(String(b.created_at ?? '')) - Date.parse(String(a.created_at ?? '')));
+    }),
     section(() => db<Row>('organization_decisions', 'select=id,title,status,required_authority,proposed_by_role_id,created_at,decided_at&order=created_at.desc&limit=15')),
     section(() => db<Row>('organization_audit_events', 'select=id,actor_role_id,action,target_type,target_id,outcome,reason,created_at&order=created_at.desc&limit=40')),
     section(async () => (await db<Row>('organization_actor_bindings', 'select=principal_id,role_id,active,note,created_at&active=eq.true&order=created_at.desc&limit=50'))
