@@ -51,6 +51,7 @@ const organizationRoleByAgent: Record<AgentName, string> = {
   finance: 'director-finance-accounting',
   payments: 'leader-fintech-ventures',
   engineering: 'director-technology-engineering',
+  automation: 'director-ai-automation',
   strategy: 'director-strategy-planning',
   product: 'director-product-innovation',
   security: 'director-cybersecurity-it',
