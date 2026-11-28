@@ -679,24 +679,32 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
           ].join('\n')
         : '';
       const prompt = [
-        'TASK ROOM ASSIGNMENT', `You are ${recipient}. ${sender} has assigned this work to your room.`, taskRules,
-        `ROOM ID: ${h.room_id ?? 'not recorded'}`, `REQUEST: ${h.request}`,
-        previousError ? `PREVIOUS ATTEMPT FEEDBACK: ${previousError}` : '',
-        autonomousFirstContact && firstContactTarget
-          ? `MANDATORY FIRST-CONTACT ACTION: send exactly one WhatsApp outreach action to ${firstContactTarget.phone}; use ${firstContactTarget.contact} as the contact label. Do not use another number. A draft-only answer is invalid. Do not claim prior client work, similar customers served, testimonials or results unless approved portfolio evidence supports the exact claim.`
-          : '',
-        h.context_summary ? `CONTEXT FROM ${sender.toUpperCase()}:\n${h.context_summary}` : '',
+        'TASK ROOM ASSIGNMENT',
+        `You are ${recipient}. ${sender} has assigned this work to your room.`,
+        taskRules,
+        // Put strict, machine-validated formats before context and generic instructions.
+        // The provider prompt is bounded; late instructions were being truncated on smaller free models.
         discoveryQueueFormat,
         automationIncident ? [
           'READ-ONLY INCIDENT DIAGNOSTIC: Do not use tools, actions, or ACTIONS blocks. Do not change configuration, credentials, models, permissions, or production state.',
           'Use only the incident metadata and available records in the context. Separate observed facts from hypotheses. Never ask the Founder for logs or clarification.',
           'Return exactly these headings, each on its own line: Severity:, Evidence:, Diagnosis:, Confidence:, Safe next step:, Action taken:. State explicitly that no change was made unless a change is independently verified.',
           'The first line must be exactly SELF_REVIEW: PASS. This is a diagnostic report, not a request for permission.',
-        ].join('\n') : '',
-        actionHelp(agent),
+        ].join('\\n') : '',
+        `ROOM ID: ${h.room_id ?? 'not recorded'}`,
+        `REQUEST: ${h.request}`,
+        previousError ? `PREVIOUS ATTEMPT FEEDBACK: ${previousError}` : '',
+        autonomousFirstContact && firstContactTarget
+          ? `MANDATORY FIRST-CONTACT ACTION: send exactly one WhatsApp outreach action to ${firstContactTarget.phone}; use ${firstContactTarget.contact} as the contact label. Do not use another number. A draft-only answer is invalid. Do not claim prior client work, similar customers served, testimonials or results unless approved portfolio evidence supports the exact claim.`
+          : '',
+        h.context_summary ? `CONTEXT FROM ${sender.toUpperCase()}:\\n${h.context_summary}` : '',
+        discoveryQueueTask || automationIncident ? '' : actionHelp(agent),
+        discoveryQueueTask
+          ? 'Do not use a table. Do not replace the required headings with synonyms. Copy the organisation name and queue UUID exactly. Keep published services separate from potential Tambala services.'
+          : '',
         'SELF-REVIEW BEFORE SUBMISSION: Check the original request, every required deliverable field, factual support in the supplied context, source URLs, arithmetic, consistency, customer-facing wording, and every proposed ACTIONS item. Correct omissions and unsupported claims yourself before submitting. Do not execute actions. Return exactly SELF_REVIEW: PASS as the first line only when the final work passes; if a missing Founder-controlled fact or decision prevents completion, return SELF_REVIEW: BLOCKED as the first line and clearly ask one precise question under Clarification Required. Never mark unverified work as passed.',
         'Keep the final work under 300 words, plain and scannable. Say what you did, what you found, and anything blocked.',
-      ].filter(Boolean).join('\n\n');
+      ].filter(Boolean).join('\\n\\n');
       const contextPacket = await deps.buildContext();
       if (h.room_id) await deps.store.updateRoom(h.room_id, { context_packet: { context_summary: h.context_summary, source_duty_id: h.source_duty_id, organization_context: contextPacket } });
       let acted: ReturnType<typeof parseActions>;
