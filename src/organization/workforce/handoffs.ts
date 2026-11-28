@@ -276,7 +276,7 @@ export interface HandoffDeps {
   agentUnavailableReason(agent: AgentName): Promise<string | null>;
   senderLabel(roleId: string): Promise<string>;
   recipientLabel(agent: AgentName): Promise<string>;
-  actions: { run(ctx: { agent: AgentName; roleId: string; taskId: string; founderApprovedFirstContact?: boolean }, actions: Action[], rejected: string[]): Promise<string> };
+  actions: { run(ctx: { agent: AgentName; roleId: string; taskId: string; qualifiedProspectFirstContact?: boolean }, actions: Action[], rejected: string[]): Promise<string> };
   sign(input: { roleId: string; kind: 'handoff_result'; subjectId: string; content: string }): Promise<{ block: string }>;
   buildContext(): Promise<Record<string, unknown>>;
   askAgent(agent: AgentName, prompt: string, context: Record<string, unknown>): Promise<string>;
@@ -369,9 +369,6 @@ function confirmsQueuedOrSentAction(value: string): boolean {
   return /^\s*Actions:\s*\r?\n\s*✔\s*whatsapp:\s*[^\r\n]*\b(?:queued|sent)\b/i.test(value);
 }
 
-function confirmsPendingApprovalAction(value: string): boolean {
-  return /^\s*Actions:\s*\r?\n\s*✔\s*whatsapp:\s*[^\r\n]*\bawaiting standing autonomous-send policy\b/i.test(value);
-}
 /** Each delegation runs in an isolated, durable room. A room closes only after its deliverable is accepted. */
 export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<HandoffOutcome[]> {
   const outcomes: HandoffOutcome[] = [];
@@ -656,7 +653,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       // This deterministic, CEO-authorised first-contact path enters the
       // autonomous WhatsApp outbox. All other actions wait for CEO acceptance below.
       if (autonomousFirstContact) {
-        actionsText = await deps.actions.run({ agent, roleId: h.to_role_id, taskId, founderApprovedFirstContact: true }, acted.actions, acted.rejected);
+        actionsText = await deps.actions.run({ agent, roleId: h.to_role_id, taskId, qualifiedProspectFirstContact: true }, acted.actions, acted.rejected);
         if (leaseLost) {
           outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason: 'The worker lease was lost during action execution; verify side effects before resuming.', taskId, roomId: h.room_id ?? undefined });
           continue;
@@ -674,7 +671,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'failed', reason, taskId, roomId: h.room_id ?? undefined });
         continue;
       }
-      if (autonomousFirstContact && !confirmsQueuedOrSentAction(actionsText) && !confirmsPendingApprovalAction(actionsText)) {
+      if (autonomousFirstContact && !confirmsQueuedOrSentAction(actionsText)) {
         throw new Error('The WhatsApp action did not confirm a queued or sent result; no first-contact message is recorded as complete.');
       }
       const stamp = await deps.sign({ roleId: h.to_role_id, kind: 'handoff_result', subjectId: h.id, content: result });
@@ -726,7 +723,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         await deps.tasks.advance(taskId, [
           { status: awaitingFounder ? 'awaiting_founder' : 'needs_more_work', stage: awaitingFounder ? 'founder' : 'ceo', eventType: decision === 'REVISION_REQUIRED' ? 'ceo_revision_requested' : 'ceo_safe_hold', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, review: reason } },
         ]);
-        const revisionExhausted = !awaitingFounder && attempt >= MAX_HANDOFF_ATTEMPTS;
+        const revisionExhausted = decision === 'SAFE_HOLD' || attempt >= MAX_HANDOFF_ATTEMPTS;
         const contextSummary = [h.context_summary, `CEO REVIEW FEEDBACK: ${reason}`].filter(Boolean).join('\n\n').slice(0, 3000);
         if (revisionExhausted) {
           await deps.tasks.fail(taskId, `Maximum of ${MAX_HANDOFF_ATTEMPTS} attempts reached: ${reason}`, agent);
