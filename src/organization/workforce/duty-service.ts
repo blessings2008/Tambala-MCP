@@ -439,7 +439,7 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
     : [];
   const contextSummary = JSON.stringify({
     source: 'public.lead_discovery_queue + public.leads',
-    instruction: 'Founder-approved, evidence-qualified prospect. Use only the supplied facts; do not repeat research.',
+    instruction: 'CEO-qualified, evidence-backed prospect. Use only the supplied facts; do not repeat research.',
     prospect: {
       queue_id: prospect.id,
       organisation_name: prospect.organisation_name,
@@ -463,9 +463,9 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
     toAgent: 'outreach',
     sourceDutyId: 'approved-prospect-first-contact',
     request: [
-      `Founder-approved first-contact for ${prospect.organisation_name}.`,
+      `CEO-authorised autonomous first-contact for ${prospect.organisation_name}.`,
       'Use only the attached verified evidence and Tambala service context; do not research again or invent a person or need.',
-      'The Founder authorises one autonomous WhatsApp introduction. If no verified person name is supplied, greet the organisation by its exact name followed by team. Never use placeholders.',
+      'The organisation standing policy authorises one autonomous WhatsApp introduction after deterministic CRM and WhatsApp verification. If no verified person name is supplied, greet the organisation by its exact name followed by team. Never use placeholders.',
       `Send only to the supplied CRM number (${phone}) if the shared outbox confirms it is a CRM lead and WhatsApp-registered. Do not try another number or channel; respect opt-outs and sending limits.`,
       'Finish with ACTIONS: on its own line followed by exactly one valid JSON whatsapp action with purpose=outreach, the supplied number, the verified person or organisation name as contact, and the final message text. A draft alone is incomplete.',
       `CRM lead ID: ${leadId}.`,
@@ -575,7 +575,7 @@ async function applyDiscoveryCrmApproval(approval: ApprovalRow, decision: 'appro
     business_name: prospect.organisation_name,
     email: prospect.public_email,
     phone: primaryPhone,
-    source: 'Tambala Research (Founder-approved)',
+    source: 'Tambala Research (CEO-qualified)',
     status: 'new',
     notes,
   });
@@ -591,7 +591,7 @@ registerApprovalHook('lead_discovery_queue', applyDiscoveryCrmApproval);
 
 /**
  * Convert deterministically validated Research QUALIFY decisions into low-risk CEO approvals.
- * CRM registration is internal only; customer-facing WhatsApp messages retain their separate Founder approval gate.
+ * CRM registration and verified first-contact dispatch are autonomous under the organisation's standing policy.
  */
 export async function dispatchQualifiedDiscoveryApprovals(): Promise<number> {
   if (!dbConfigured() || discoveryApprovalDispatchRunning) return 0;
@@ -1013,6 +1013,8 @@ export async function runDutiesOnce(opts: { dutyId?: string; force?: boolean; ha
       const recovered = await dispatchReviewingDiscoveryQueue(5);
       await dispatchNewDiscoveryQueue(Math.max(0, 5 - recovered));
     }
+    try { await dispatchQualifiedDiscoveryApprovals(); }
+    catch (error) { console.error('Qualified discovery approvals could not be processed:', error instanceof Error ? error.message : error); }
     try { await dispatchPromotedProspectsToSales(); }
     catch (error) { console.error('Promoted-prospect dispatch failed; existing handoffs will still be processed:', error); }
     const handoffs = await processHandoffs(productionHandoffDeps());
