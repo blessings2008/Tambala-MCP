@@ -4,7 +4,7 @@ import { itemInputSchema, partySchema, DOC_KINDS } from '../../documents/model.j
 
 /**
  * Real-world actions an employee can request at the end of their work. They are validated strictly and checked against
- * the employee's permissions. Every customer-facing WhatsApp message is held for Founder approval. No employee trust score or CRM status bypasses this approval gate.
+ * the employee's permissions. Routine customer communication is autonomous under deterministic outbox safeguards; no trust score bypasses those safeguards.
  */
 const phone = z.string().trim().min(8).max(30);
 const msg = z.string().trim().min(2).max(1500);
@@ -174,13 +174,13 @@ export function parseActions(body: string): ParsedActions {
 export function actionHelp(agent: string): string {
   const allowed = allowedActionTypes(agent);
   const lines = [
-    'You can request real actions by ending your answer with a heading line ACTIONS: followed by one JSON object per line; fenced JSON and a JSON array are also accepted. Every customer-facing message, including first-contact outreach, follow-ups, replies and invoice reminders, remains subject to Founder approval.',
+    'You can request real actions by ending your answer with a heading line ACTIONS: followed by one JSON object per line; fenced JSON and a JSON array are also accepted. Routine customer-facing messages may be sent autonomously when the outbox validates the recipient, message and delivery policy.',
     'Use only phone numbers, names, prices and links that appear in the supplied data. Never invent them. If something you need is missing, say so in your answer instead of guessing.',
-    'Never send unresolved placeholders such as [Name], [Company], {{name}} or the literal word Name as a recipient. If no verified person name is supplied, address the organisation by its exact verified business name followed by team. For customer outreach, finish with ACTIONS: on its own line and one valid WhatsApp JSON action; the message will wait in the Founder approval inbox.',
+    'Never send unresolved placeholders such as [Name], [Company], {{name}} or the literal word Name as a recipient. If no verified person name is supplied, address the organisation by its exact verified business name followed by team. For customer outreach, finish with ACTIONS: on its own line and one valid WhatsApp JSON action; the outbox verifies the CRM lead and WhatsApp number before sending.',
     'Do not claim Tambala has served similar businesses, delivered past results, has testimonials, or guarantees outcomes unless the exact claim is supported by approved portfolio evidence in the supplied context.',
   ];
   if (allowed.includes('notify_founder')) lines.push('- Message the Founder: {"type":"notify_founder","text":"..."}  (only when he genuinely needs to know or decide something).');
-  if (allowed.includes('whatsapp')) lines.push('- WhatsApp a customer: {"type":"whatsapp","to":"+265...","purpose":"outreach|followup","text":"..."}  (short, polite, specific; no pressure; include contact only when a real name is verified).');
+  if (allowed.includes('whatsapp')) lines.push('- WhatsApp a customer: {"type":"whatsapp","to":"+265...","purpose":"outreach|followup","text":"..."}  (short, polite, specific; no pressure; first-contact numbers must match a verified CRM lead and WhatsApp registration).');
   if (allowed.includes('document')) lines.push('- Prepare a PDF: {"type":"document","kind":"quotation|invoice|letter|receipt","client":{"name":"...","phone":"..."},"items":[{"sku":"PRICE-LIST-SKU","quantity":1}],"subject":"...","notes":"...","sendTo":"+265...","message":"covering note"}  (items come from the price list by sku; a custom line needs {"description","quantity","unitPrice"} and is flagged for review; letters use "body" instead of items).');
   if (allowed.includes('invoice_link')) lines.push('- Create a payment link: {"type":"invoice_link","client":{"name":"...","phone":"..."},"description":"...","amount":0,"withPdf":true,"sendTo":"+265...","message":"..."}  (amount in MWK, from verified records only).');
   return lines.join('\n');
