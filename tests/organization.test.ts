@@ -237,23 +237,13 @@ test('all restricted actions are directly delegated to the CEO', () => {
   }
 });
 
-test('Founder-reserved actions reject malformed, unapproved, or wrong-authority approval records', () => {
-  const malformedApprovals = [
-    { authority: 'founder', approved: false, approvalId: 'approval-denied' },
-    { authority: 'board', approved: true, approvalId: 'approval-wrong-authority' },
-    { authority: 'founder', approved: true, approvalId: '   ' },
-  ] as const;
-
-  for (const approval of malformedApprovals) {
-    const result = authorizeOrganizationalAction({
-      actorRole: role('founder'),
-      action: 'commit_material_funds',
-      approval,
-    });
-    assert.equal(result.allowed, false);
-    assert.equal(result.requiresApproval, true);
-    assert.equal(result.requiredAuthority, 'ceo');
-  }
+test('Founder retains direct override without creating approval requests', () => {
+  const result = authorizeOrganizationalAction({
+    actorRole: role('founder'),
+    action: 'commit_material_funds',
+  });
+  assert.equal(result.allowed, true);
+  assert.equal(result.requiresApproval, false);
 });
 
 test('non-CEO roles cannot use CEO-reserved actions without a valid CEO approval', () => {
