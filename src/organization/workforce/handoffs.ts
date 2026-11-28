@@ -37,8 +37,8 @@ function hasAutomationIncidentReport(value: string): boolean {
   // Accept the model's existing structured formats as well as the preferred headings.
   // The execution path separately forbids actions, so a report can never claim an
   // unverified production change or perform one.
-  const hasEvidence = /(?:^|\\n)\\s*(?:\\*\\*)?(?:FACTS|EVIDENCE|OBSERVED FACTS)(?:\\*\\*)?/im.test(text);
-  const hasDiagnosis = /(?:^|\\n)\\s*(?:\\*\\*)?(?:DIAGNOSIS|HYPOTHESES|ROOT CAUSE)(?:\\*\\*)?/im.test(text);
+  const hasEvidence = /(?:^|\n)\s*(?:\*\*)?(?:FACTS|EVIDENCE|OBSERVED FACTS)(?:\s*\([^)]*\))?(?:\*\*)?/im.test(text);
+  const hasDiagnosis = /(?:^|\n)\s*(?:\*\*)?(?:DIAGNOSIS|HYPOTHESES|ROOT CAUSE)(?:\*\*)?/im.test(text);
   const hasNextStep = /(?:RECOMMENDED|SAFE NEXT STEP|NEXT STEP|RECOMMENDATION)/i.test(text);
   return text.length >= 180 && hasEvidence && hasDiagnosis && hasNextStep
     && !/DECISION:\\s*FOUNDER_INPUT_REQUIRED|Clarification Required/i.test(text);
@@ -67,7 +67,7 @@ export function validateDiscoveryQueueDeliverable(contextSummary: string | null,
   const normalized = (value: string) => value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
   if (!name || !normalized(text).includes(normalized(name))) return { ok: false, reason: 'The report must identify the exact organisation name from the supplied record.' };
   if (!recordId || !text.toLowerCase().includes(recordId.toLowerCase())) return { ok: false, reason: 'The report must include the exact lead_discovery_queue record ID.' };
-  if (!/service[- ]fit evidence|supported service fit/i.test(text)) return { ok: false, reason: 'The report must include a service-fit evidence section.' };
+  if (!/service[\\u2010-\\u2015\\u2212 -]+fit evidence|supported service fit/i.test(text)) return { ok: false, reason: 'The report must include a service-fit evidence section.' };
   const fits = Array.isArray(prospect.service_fit) ? prospect.service_fit.filter((v): v is string => typeof v === 'string') : [];
   if (fits.length && !fits.some((fit) => normalized(text).includes(normalized(fit)))) return { ok: false, reason: 'The report must name at least one service fit recorded in the supplied prospect record.' };
   const sources = Array.isArray(prospect.source_urls) ? prospect.source_urls.filter((v): v is string => typeof v === 'string' && /^https?:\/\//i.test(v)) : [];
