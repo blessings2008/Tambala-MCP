@@ -11,6 +11,7 @@ const DEFAULT_LIMITS: Record<AgentName, { requestsPerMinute: number; concurrency
   finance: { requestsPerMinute: 8, concurrency: 2 },
   payments: { requestsPerMinute: 8, concurrency: 2 },
   engineering: { requestsPerMinute: 8, concurrency: 2 },
+  automation: { requestsPerMinute: 6, concurrency: 1 },
   strategy: { requestsPerMinute: 6, concurrency: 1 },
   product: { requestsPerMinute: 8, concurrency: 2 },
   security: { requestsPerMinute: 4, concurrency: 1 },
