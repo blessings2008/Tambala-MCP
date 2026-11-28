@@ -77,6 +77,31 @@ export function validateDiscoveryQueueDeliverable(contextSummary: string | null,
   if (!/service[-‐‑‒–—− ]+fit evidence|supported service fit/i.test(text)) return { ok: false, reason: 'The report must include a service-fit evidence section.' };
   const fits = Array.isArray(prospect.service_fit) ? prospect.service_fit.filter((v): v is string => typeof v === 'string') : [];
   if (fits.length && !fits.some((fit) => normalized(text).includes(normalized(fit)))) return { ok: false, reason: 'The report must name at least one service fit recorded in the supplied prospect record.' };
+  const publishedServices = Array.isArray(prospect.published_services) ? prospect.published_services.filter((v): v is string => typeof v === 'string') : [];
+  if (publishedServices.length) {
+    const publishedHeading = text.match(/published services evidence/i);
+    const potentialHeading = text.match(/potential tambala fit/i);
+    if (!publishedHeading || publishedHeading.index === undefined || !potentialHeading || potentialHeading.index === undefined) {
+      return { ok: false, reason: 'The report must separate Published Services Evidence from Potential Tambala Fit.' };
+    }
+    const publishedSection = text.slice(publishedHeading.index + publishedHeading[0].length, potentialHeading.index);
+    const potentialTail = text.slice(potentialHeading.index + potentialHeading[0].length);
+    const potentialEnd = potentialTail.search(/\n\s*\*{0,2}(?:direct need evidence|public organisational contact evidence|remaining verification gaps|recommendation)\b/i);
+    const potentialSection = potentialTail.slice(0, potentialEnd < 0 ? undefined : potentialEnd);
+    if (!publishedServices.some((service) => normalized(publishedSection).includes(normalized(service)))) {
+      return { ok: false, reason: 'Published Services Evidence must include services actually listed in the supplied official-source facts.' };
+    }
+    const unsupportedPublishedClaims = fits.filter((fit) =>
+      normalized(publishedSection).includes(normalized(fit)) &&
+      !publishedServices.some((service) => normalized(service).includes(normalized(fit)),
+    );
+    if (unsupportedPublishedClaims.length) {
+      return { ok: false, reason: 'A proposed Tambala service was incorrectly presented as a service the prospect publishes. Keep published services and potential Tambala fit separate.' };
+    }
+    if (fits.length && !fits.some((fit) => normalized(potentialSection).includes(normalized(fit)))) {
+      return { ok: false, reason: 'Potential Tambala Fit must explain at least one proposed Tambala service separately from the prospect’s published services.' };
+    }
+  }
   const sources = Array.isArray(prospect.source_urls) ? prospect.source_urls.filter((v): v is string => typeof v === 'string' && /^https?:\/\//i.test(v)) : [];
   if (!sources.length || !sources.some((url) => text.includes(url))) return { ok: false, reason: 'The report must cite at least one source URL supplied with the prospect record.' };
   const contactHeading = text.match(/public organisational contact evidence|public organizational contact evidence/i);
@@ -105,13 +130,6 @@ export function validateDiscoveryQueueDeliverable(contextSummary: string | null,
   if (!(fullNameMatch && recordIdMatch) && !(fullNameMatch && contactIdentityMatch)
     && !(recordIdMatch && contactIdentityMatch) && !(coreNameMatch && contactIdentityMatch)) {
     return { ok: false, reason: 'The report must identify the organisation by its supplied name or queue ID, or by its core name together with an exact supplied public contact and its source.' };
-  }
-  const recommendation = extractDiscoveryRecommendation(text, name);
-  if (recommendation === 'QUALIFY') {
-    const directNeedSection = text.match(/direct need evidence([\s\S]*?)(?:verification gaps|recommendation)/i)?.[1] ?? '';
-    if (directNeedSection.trim().length < 25 || !sources.some((url) => directNeedSection.includes(url))) {
-      return { ok: false, reason: 'QUALIFY requires a Direct Need Evidence section with a concrete fact and its exact official source URL. Without that, recommend INVESTIGATE.' };
-    }
   }
   const gapsHeading = text.match(/verification gaps/i);
   if (!gapsHeading || gapsHeading.index === undefined) return { ok: false, reason: 'The report must explicitly list remaining verification gaps, or state that none were identified.' };
@@ -650,8 +668,9 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
             'The first two lines are mandatory and must appear first, with no preamble. Copy both values verbatim from prospect.organisation_name and prospect.id in the supplied context. A report without these two lines is invalid:',
             'Organisation Name: [exact name from the supplied record]',
             'Queue Record ID: [exact UUID from the supplied record]',
-            'Service-Fit Evidence: distinguish the prospect’s published services from possible Tambala fit. The service_fit field is a proposed Tambala offer, not evidence that the prospect offers or needs it.',
-            'Direct Need Evidence: include a concrete current need only when an official source explicitly supports it, with the exact source URL. If none is found, say so and recommend INVESTIGATE.',
+            'Published Services Evidence: list only services the prospect’s official sources actually state. Never copy the service_fit array into this section.',
+            'Service-Fit Evidence: explain the potential Tambala fit separately. The service_fit field is a proposed Tambala offer, not evidence that the prospect offers it or has an active need.',
+            'Direct Need Evidence: if a current need is explicitly supported by an official source, state it with the exact URL; otherwise say no direct public need evidence was found.',
             'Source URLs: [at least one exact URL copied verbatim from the supplied record]',
             'Public Organisational Contact Evidence: [exact public email and/or phone from the supplied record, or explicitly state None supplied]',
             'Verification Gaps: [specific gaps, or None identified]',
