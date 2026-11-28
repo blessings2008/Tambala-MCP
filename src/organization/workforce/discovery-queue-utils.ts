@@ -30,7 +30,7 @@ export function discoveryCrmPromotionAuthority(
   reportValidated: boolean,
 ): 'ceo' | null {
   return reportValidated && route?.outcome === 'QUALIFY' && route.processingStatus === 'qualified'
-    && route.requiresFounderApproval
+    && !route.requiresFounderApproval
     ? 'ceo'
     : null;
 }
@@ -62,7 +62,7 @@ export function routeDiscoveryRecommendation(
       reason: `The QUALIFY recommendation cannot enter WhatsApp outreach because ${gaps.join('; ')}.`,
     };
   }
-  return { outcome: 'QUALIFY', processingStatus: 'qualified', requiresFounderApproval: true, reason: '' };
+  return { outcome: 'QUALIFY', processingStatus: 'qualified', requiresFounderApproval: false, reason: '' };
 }
 
 function normaliseDiscoveryText(value: string): string {
