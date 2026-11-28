@@ -5,6 +5,7 @@ import { validateOrganization } from '../src/organization/validate.js';
 import { authorizeOrganizationalAction } from '../src/organization/policy.js';
 import { getOrganizationSummary } from '../src/organization/service.js';
 import { getRequestPrincipal, runWithRequestPrincipal } from '../src/organization/request-context.js';
+import { isAllowedOrganizationTaskTransition } from '../src/organization/task-transition-rules.js';
 
 const role = (id: string) => {
   const found = initialOrganization.roles.find((candidate) => candidate.id === id);
@@ -286,3 +287,8 @@ test('every department has an accountable lead connected to its reporting struct
   }
 });
 
+
+
+test('a retried department task may return to CEO analysis', () => {
+  assert.equal(isAllowedOrganizationTaskTransition('executing', 'ceo_analyzing'), true);
+});
