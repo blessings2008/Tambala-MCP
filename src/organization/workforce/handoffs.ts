@@ -31,6 +31,14 @@ export interface Handoff {
 
 export class HandoffError extends Error {}
 
+/** Read-only AI & Automation incident reports can be accepted by a deterministic contract. */
+function hasAutomationIncidentReport(value: string): boolean {
+  const text = value.trim();
+  const required = [/^Severity:\s*\S/im, /^Evidence:\s*\S/im, /^Diagnosis:\s*\S/im, /^Confidence:\s*\S/im, /^Safe next step:\s*\S/im, /^Action taken:\s*\S/im];
+  return text.length >= 180 && required.every((pattern) => pattern.test(text))
+    && !/DECISION:\s*FOUNDER_INPUT_REQUIRED|Clarification Required/i.test(text);
+}
+
 /**
  * Research-queue reviews have a fixed, machine-checkable contract. The CEO model
  * previously rejected complete reports while claiming the deliverable was absent.
@@ -587,6 +595,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       const firstContactTarget = autonomousFirstContact ? approvedFirstContactTarget(h.context_summary) : null;
       if (autonomousFirstContact && !firstContactTarget) throw new Error('Approved first-contact is missing its CRM destination or verified organisation name.');
       const discoveryQueueTask = ['lead-discovery-queue-watcher', 'lead-discovery-queue-research-review'].includes(h.source_duty_id ?? '');
+      const automationIncident = agent === 'automation' && /^AUTOMATIC AI & AUTOMATION INCIDENT/i.test(h.request);
       const discoveryQueueFormat = discoveryQueueTask
         ? [
             'MANDATORY DISCOVERY QUEUE REPORT FORMAT — use these exact headings and keep the Recommendation section last:',
@@ -609,6 +618,12 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
           : '',
         h.context_summary ? `CONTEXT FROM ${sender.toUpperCase()}:\n${h.context_summary}` : '',
         discoveryQueueFormat,
+        automationIncident ? [
+          'READ-ONLY INCIDENT DIAGNOSTIC: Do not use tools, actions, or ACTIONS blocks. Do not change configuration, credentials, models, permissions, or production state.',
+          'Use only the incident metadata and available records in the context. Separate observed facts from hypotheses. Never ask the Founder for logs or clarification.',
+          'Return exactly these headings, each on its own line: Severity:, Evidence:, Diagnosis:, Confidence:, Safe next step:, Action taken:. State explicitly that no change was made unless a change is independently verified.',
+          'The first line must be exactly SELF_REVIEW: PASS. This is a diagnostic report, not a request for permission.',
+        ].join('\\n') : '',
         actionHelp(agent),
         'SELF-REVIEW BEFORE SUBMISSION: Check the original request, every required deliverable field, factual support in the supplied context, source URLs, arithmetic, consistency, customer-facing wording, and every proposed ACTIONS item. Correct omissions and unsupported claims yourself before submitting. Do not execute actions. Return exactly SELF_REVIEW: PASS as the first line only when the final work passes; if a missing Founder-controlled fact or decision prevents completion, return SELF_REVIEW: BLOCKED as the first line and clearly ask one precise question under Clarification Required. Never mark unverified work as passed.',
         'Keep the final work under 300 words, plain and scannable. Say what you did, what you found, and anything blocked.',
@@ -636,7 +651,10 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         const selfReviewedBody = raw.replace(/^\s*SELF_REVIEW:\s*(?:PASS|BLOCKED)\s*(?:\r?\n|$)/i, '').trim();
         acted = parseActions(selfReviewedBody);
         result = acted.clean.trim();
-        if (selfReview?.[1]?.toUpperCase() !== 'PASS' && !isFounderClarificationRequest(result)) {
+        if (automationIncident) {
+          if (acted.actions.length || acted.rejected.length) throw new Error('AI & Automation incident reviews are read-only; no actions are permitted.');
+          if (result.length < 120) throw new Error('AI & Automation returned no usable incident diagnosis.');
+        } else if (selfReview?.[1]?.toUpperCase() !== 'PASS' && !isFounderClarificationRequest(result)) {
           throw new Error(selfReview?.[1]?.toUpperCase() === 'BLOCKED'
             ? `Employee self-review blocked the deliverable: ${result.slice(0, 400)}`
             : 'Employee omitted the required SELF_REVIEW: PASS check; no actions were executed.');
@@ -715,7 +733,11 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         : null;
       const review = discoveryReview
         ? `DECISION: ${discoveryReview.ok ? 'ACCEPT' : 'REVISION_REQUIRED'}\n${discoveryReview.reason}`
-        : (await deps.askAgent('orchestrator', reviewPrompt, {})).trim();
+        : automationIncident
+          ? hasAutomationIncidentReport(result)
+            ? 'DECISION: ACCEPT\nRead-only incident report passed the required diagnostic headings and content checks. No actions were permitted or executed.'
+            : 'DECISION: REVISION_REQUIRED\nThe diagnostic report must include Severity, Evidence, Diagnosis, Confidence, Safe next step, and Action taken. No production changes or actions are permitted.'
+          : (await deps.askAgent('orchestrator', reviewPrompt, {})).trim();
       const decision = review.match(/^\s*(?:\*\*)?DECISION:\s*(ACCEPT|REVISION_REQUIRED|SAFE_HOLD)\b/im)?.[1];
       if (decision !== 'ACCEPT') {
         const reason = review.slice(0, 1500) || 'CEO review did not return a recognized decision.';
