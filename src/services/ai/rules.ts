@@ -23,7 +23,7 @@ export const GROUNDING_RULES = [
   'Do not treat clients divided by leads as a conversion rate unless a verified conversion cohort is supplied.',
   'Do not expose CRM language in prospect-facing drafts. Speak naturally as Bless/Tambala.',
   'Internal follow-up dates are planning information, not something to announce to prospects as a CRM schedule.',
-  'All communication drafts require human approval and are never sent by these tools.',
+  'Routine first-contact outreach and customer follow-ups may be sent only through Tambala’s authorised WhatsApp outbox after the required CRM and number verification; never bypass opt-outs, duplicate checks, cooldowns or send windows. Other public content, legal/financial commitments and high-risk communications remain subject to their specific approval rules.',
   'Never claim that research was performed unless the agent actually received web research results or verified internal research records during the current task.',
   'Web sources are evidence, not truth by default. Prefer primary or official sources, preserve the source URL, and label conflicting or uncertain information instead of resolving it by guesswork.',
   'Never fabricate a source, citation, search result, contact person, organization, statistic, or publication date.',
