@@ -1,4 +1,4 @@
-export interface DiscoveryQueueHandoffMarker { request: string; status?: string; created_at?: string; completed_at?: string | null }
+export interface DiscoveryQueueHandoffMarker { request: string; status?: string; created_at?: string; completed_at?: string | null; error?: string | null }
 
 /** Persistent circuit-breaker predicate for the Research provider's daily free-model quota. */
 export function isResearchDailyQuotaExhausted(
@@ -103,6 +103,9 @@ export function hasDiscoveryQueueHandoff(
   return handoffs.some((item) => {
     if (!item.request.includes(marker)) return false;
     if (item.status !== 'failed') return true;
+    // A crashed worker did not complete the review. Allow the queue watcher to retry it
+    // immediately after the lease is quarantined; do not impose the normal 24-hour failure cooldown.
+    if (/handoff worker lease expired|worker stopped reporting heartbeats/i.test(item.error ?? '')) return false;
     // Preserve the historical conservative behaviour when callers omit status/timestamps.
     const lastFailureAt = item.completed_at ?? item.created_at;
     if (!retryFailedBeforeIso || !lastFailureAt) return true;
