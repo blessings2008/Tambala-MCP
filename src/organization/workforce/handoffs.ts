@@ -160,7 +160,7 @@ export class SupabaseHandoffStore implements HandoffStore {
   }
   expiredRunning(beforeIso: string, limit: number) { return supabaseSelect<Handoff>('organization_handoffs', `select=*&status=eq.running&heartbeat_at=lt.${encodeURIComponent(beforeIso)}&order=heartbeat_at.asc&limit=${limit}`); }
   async quarantineExpired(id: string, beforeIso: string, reason: string) {
-    try { await supabaseUpdate('organization_handoffs', { status: 'awaiting_founder', error: reason, completed_at: null }, `id=eq.${encodeURIComponent(id)}&status=eq.running&heartbeat_at=lt.${encodeURIComponent(beforeIso)}`); return true; }
+    try { await supabaseUpdate('organization_handoffs', { status: 'failed', error: reason, completed_at: new Date().toISOString() }, `id=eq.${encodeURIComponent(id)}&status=eq.running&heartbeat_at=lt.${encodeURIComponent(beforeIso)}`); return true; }
     catch (error) { if (error instanceof Error && /returned no record/.test(error.message)) return false; throw error; }
   }
   async update(id: string, patch: Partial<Handoff>) { await supabaseUpdate('organization_handoffs', patch as Record<string, unknown>, `id=eq.${encodeURIComponent(id)}`); }
@@ -188,7 +188,7 @@ export class InMemoryHandoffStore implements HandoffStore {
   async claim(id: string, claimedAt = new Date().toISOString()) { const r = this.rows.find((x) => x.id === id); if (!r || r.status !== 'queued') return false; r.status = 'running'; r.claimed_at = claimedAt; r.heartbeat_at = claimedAt; return true; }
   async heartbeat(id: string, heartbeatAt: string) { const r = this.rows.find((x) => x.id === id); if (!r || r.status !== 'running') return false; r.heartbeat_at = heartbeatAt; return true; }
   async expiredRunning(beforeIso: string, limit: number) { return this.rows.filter((r) => r.status === 'running' && Boolean(r.heartbeat_at) && r.heartbeat_at! < beforeIso).sort((a, b) => (a.heartbeat_at ?? '').localeCompare(b.heartbeat_at ?? '')).slice(0, limit); }
-  async quarantineExpired(id: string, beforeIso: string, reason: string) { const r = this.rows.find((x) => x.id === id); if (!r || r.status !== 'running' || !r.heartbeat_at || r.heartbeat_at >= beforeIso) return false; r.status = 'awaiting_founder'; r.error = reason; r.completed_at = null; return true; }
+  async quarantineExpired(id: string, beforeIso: string, reason: string) { const r = this.rows.find((x) => x.id === id); if (!r || r.status !== 'running' || !r.heartbeat_at || r.heartbeat_at >= beforeIso) return false; r.status = 'failed'; r.error = reason; r.completed_at = new Date().toISOString(); return true; }
   async update(id: string, patch: Partial<Handoff>) { const r = this.rows.find((x) => x.id === id); if (r) Object.assign(r, patch); }
   async recent(sinceIso: string) { return this.rows.filter((r) => r.created_at >= sinceIso).reverse(); }
   async awaitingFounderDiscoverySince(sinceIso: string, limit: number) { return this.rows.filter((r) => r.status === 'awaiting_founder' && ['lead-discovery-queue-watcher', 'lead-discovery-queue-research-review'].includes(r.source_duty_id ?? '') && r.created_at >= sinceIso).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, Math.min(500, Math.max(1, Math.floor(limit)))); }
@@ -461,17 +461,17 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         await deps.store.updateRoom(stale.room_id, { status: 'active', blocker: reason, closed_at: null });
         await deps.store.roomEvent(stale.room_id, 'research_provider_quota_paused', stale.to_role_id, { reason, automaticRetryAfterCooldown: true });
       }
-      outcomes.push({ handoffId: stale.id, toAgent: stale.to_agent, status: 'waiting', reason, taskId: stale.task_id ?? undefined, roomId: stale.room_id ?? undefined });
+      outcomes.push({ handoffId: stale.id, toAgent: stale.to_agent, status: 'failed', reason, taskId: stale.task_id ?? undefined, roomId: stale.room_id ?? undefined });
       continue;
     }
-    const reason = 'The handoff worker stopped reporting heartbeats. This work has been paused for Founder review; verify any external side effects before resuming.';
+    const reason = 'The handoff worker lease expired. The task is marked failed and will not be retried automatically because external side effects may be uncertain. The CEO must verify the recorded outcome before issuing any new attempt; no Founder input is required.';
     if (!(await deps.store.quarantineExpired(stale.id, expiredBefore, reason))) continue;
     if (stale.task_id) {
       try {
         await deps.tasks.advance(stale.task_id, [{
-          status: 'awaiting_founder',
-          stage: 'founder',
-          eventType: 'handoff_worker_lease_expired',
+          status: 'failed',
+          stage: 'complete',
+          eventType: 'handoff_worker_lease_expired_safe_hold',
           roleId: 'ceo',
           result: { handoffId: stale.id, roomId: stale.room_id, reason, automaticRetry: false },
         }]);
@@ -480,7 +480,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       }
     }
     if (stale.room_id) {
-      await deps.store.updateRoom(stale.room_id, { status: 'awaiting_founder', blocker: reason, closed_at: null });
+      await deps.store.updateRoom(stale.room_id, { status: 'failed', blocker: reason, closed_at: deps.now().toISOString() });
       await deps.store.roomEvent(stale.room_id, 'worker_lease_expired', 'ceo', { reason, automaticRetry: false });
     }
     outcomes.push({ handoffId: stale.id, toAgent: stale.to_agent, status: 'waiting', reason, taskId: stale.task_id ?? undefined, roomId: stale.room_id ?? undefined });
@@ -492,18 +492,18 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
     if (
       waiting.status === 'awaiting_founder' &&
       waiting.task_id &&
-      waiting.error?.includes('worker stopped reporting heartbeats')
+      waiting.error?.includes('handoff worker lease expired')
     ) {
       const currentStatus = await deps.tasks.getStatus(waiting.task_id);
       if (
         currentStatus &&
-        currentStatus !== 'awaiting_founder' &&
-        isAllowedOrganizationTaskTransition(currentStatus, 'awaiting_founder')
+        currentStatus !== 'failed' &&
+        isAllowedOrganizationTaskTransition(currentStatus, 'failed')
       ) {
         await deps.tasks.advance(waiting.task_id, [{
-          status: 'awaiting_founder',
-          stage: 'founder',
-          eventType: 'handoff_worker_lease_expired_reconciled',
+          status: 'failed',
+          stage: 'complete',
+          eventType: 'handoff_worker_lease_expired_reconciled_to_failed',
           roleId: 'ceo',
           result: {
             handoffId: waiting.id,
@@ -514,7 +514,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
           },
         }]);
         if (waiting.room_id) {
-          await deps.store.roomEvent(waiting.room_id, 'parent_task_reconciled_to_founder_review', 'ceo', {
+          await deps.store.roomEvent(waiting.room_id, 'parent_task_reconciled_to_safe_failure', 'ceo', {
             taskId: waiting.task_id,
             fromStatus: currentStatus,
             automaticRetry: false,
@@ -793,21 +793,21 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       );
       if (founderActionCheck) {
         const reason = /missing its CRM destination/i.test(message)
-          ? 'Founder input required: CRM destination or verified organisation name is missing; do not send.'
+          ? 'No message was queued: the CRM destination or verified organisation name is missing. This is a data-quality block; no Founder action is required. Retry only after the CRM record is corrected and requalified.'
           : /verified WhatsApp number/i.test(message)
-            ? 'Founder input required: the CRM number is not verified as WhatsApp-registered. Correct the CRM number or verify its WhatsApp registration; no message was queued.'
+            ? 'No message was queued: the CRM number is not verified as WhatsApp-registered. No Founder action is required; retry only after the CRM number is verified.'
             : /verification service is unavailable/i.test(message)
-              ? 'Founder input required: the CRM/WhatsApp verification service is unavailable. No message was queued; retry after service is restored.'
-              : 'Founder input required: the outbox did not confirm queued/sent. Verify delivery before any retry to prevent duplicate outreach.';
+              ? 'No message was queued: the CRM/WhatsApp verification service is unavailable. No Founder action is required; retry after the service is restored.'
+              : 'The outbox did not confirm queued or sent. Delivery is uncertain, so this attempt is failed and must not be retried until the outbox is reconciled.';
         await deps.tasks.advance(taskId, [
-          { status: 'awaiting_founder', stage: 'founder', eventType: 'handoff_waiting_for_founder', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, reason, noRetryUntilFounderVerifies: true } },
+          { status: 'failed', stage: 'complete', eventType: 'first_contact_blocked_without_delivery', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, reason, messageQueued: false, automaticRetry: false } },
         ]);
-        await deps.store.update(h.id, { status: 'awaiting_founder', error: reason, completed_at: null });
+        await deps.store.update(h.id, { status: 'failed', error: reason, completed_at: deps.now().toISOString() });
         if (h.room_id) {
-          await deps.store.updateRoom(h.room_id, { status: 'awaiting_founder', blocker: reason, closed_at: null });
-          await deps.store.roomEvent(h.room_id, 'first_contact_waiting_for_founder', 'ceo', { reason, attempt, noRetryUntilFounderVerifies: true });
+          await deps.store.updateRoom(h.room_id, { status: 'failed', blocker: reason, closed_at: deps.now().toISOString() });
+          await deps.store.roomEvent(h.room_id, 'first_contact_blocked_without_delivery', 'ceo', { reason, attempt, automaticRetry: false });
         }
-        outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason, taskId, roomId: h.room_id ?? undefined });
+        outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'failed', reason, taskId, roomId: h.room_id ?? undefined });
         continue;
       }
       const final = attempt >= MAX_HANDOFF_ATTEMPTS || isPermanentAgentFailure(message);
