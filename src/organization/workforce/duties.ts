@@ -59,7 +59,7 @@ export const STANDING_DUTIES: readonly StandingDuty[] = [
   },
   {
     id: 'customer-followups', agent: 'followup', title: 'Daily customer follow-ups',
-    cadence: { kind: 'weekdays' }, time: '09:00', contexts: ['crm', 'crm_detail', 'company'],
+    cadence: { kind: 'weekdays' }, time: '09:00', contexts: ['crm_detail'],
     job: 'Find leads and clients whose next follow-up is due or overdue, and open client tasks. Send a short, natural check-in WhatsApp message (whatsapp action) for each due contact who has a verified number in the records, using only supplied facts. Routine follow-ups are CEO-authorised and do not wait for Founder approval. Respect opt-outs, duplicate detection, cooldowns and send windows; never bypass the outbox.',
     deliverable: 'Who was due and why, the outbox result for each eligible contact (queued, provider-confirmed sent, failed or blocked), and any contacts safely held. Say clearly if nobody is due.',
   },
