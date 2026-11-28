@@ -563,8 +563,8 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         )
       : RULES;
     const reviewRule = autonomousFirstContact
-      ? 'For this Founder-approved first-contact only, accept when the action result confirms the message was placed in the Founder approval inbox, queued, or sent after CRM and WhatsApp verification. Report the exact state. A pending-approval message is not delivered; never claim sent unless the action result confirms sent.'
-      : 'Accept when the requested work is complete against the supplied evidence, including a clear account of limitations and unavailable sources. Do not demand provider logs, account metrics, credentials or actions that the employee cannot access. For customer-facing message actions, ACCEPT only authorizes preparing the message in the Founder approval inbox; it never authorizes delivery. Do not return SAFE_HOLD solely because a separate Founder approval is required for sending. Never approve payments, permission changes, security-sensitive changes or other Founder-reserved decisions. If missing Founder-controlled access, data or a decision prevents completion, return FOUNDER_INPUT_REQUIRED and ask one precise question. Return REVISION_REQUIRED only when the employee omitted work or made an unsupported claim that can be corrected from the supplied context.';
+      ? 'For this CEO-authorised first-contact only, accept when the action result confirms the message was queued or sent after CRM and WhatsApp verification. Report the exact state. A queued message is not delivered; never claim sent unless the action result confirms sent.'
+      : 'Accept when the requested work is complete against the supplied evidence, including a clear account of limitations and unavailable sources. Do not demand provider logs, account metrics, credentials or actions that the employee cannot access. Routine customer communication is autonomous under the standing outbox safeguards. Never approve unsafe payments, permission changes, security-sensitive changes or actions outside delegated authority. Make reasonable reversible decisions from supplied context; if no safe route exists, return SAFE_HOLD without requesting Founder input. Return REVISION_REQUIRED only when the employee omitted work or made an unsupported claim that can be corrected from the supplied context.';
     const taskId = h.task_id ?? (await deps.tasks.begin(`[Room ${h.room_id ?? h.id}] [Handoff from ${sender}] ${h.request.slice(0, 160)}`)).taskId;
     let leaseLost = false;
     const heartbeatTimer = setInterval(() => {
@@ -621,7 +621,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       let acted: ReturnType<typeof parseActions>;
       let result: string;
       if (autonomousFirstContact && firstContactTarget) {
-        // Founder-approved prospect records already contain verified contact and service-fit data.
+        // CEO-qualified prospect records already contain verified contact and service-fit data.
         // Build the one permitted first-contact action deterministically instead of asking an LLM
         // to re-confirm WhatsApp registration or permission. The shared outbox still performs
         // CRM, WhatsApp-registration, opt-out, cooldown and daily-limit checks before sending.
@@ -653,8 +653,8 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         continue;
       }
       let actionsText = '';
-      // This deterministic, CEO-authorised first-contact path still enters the
-      // Founder approval inbox. All other actions wait for CEO acceptance below.
+      // This deterministic, CEO-authorised first-contact path enters the
+      // autonomous WhatsApp outbox. All other actions wait for CEO acceptance below.
       if (autonomousFirstContact) {
         actionsText = await deps.actions.run({ agent, roleId: h.to_role_id, taskId, founderApprovedFirstContact: true }, acted.actions, acted.rejected);
         if (leaseLost) {
@@ -705,7 +705,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       const reviewPrompt = [
         'CEO REVIEW — you own acceptance of this delegated work.',
         'Review only whether the employee completed the exact request. Use the request and deliverable below; do not add facts or assume missing work was done.',
-        'Return exactly one first-line decision: DECISION: ACCEPT, DECISION: REVISION_REQUIRED, or DECISION: FOUNDER_INPUT_REQUIRED. Follow it with a short reason.',
+        'Return exactly one first-line decision: DECISION: ACCEPT, DECISION: REVISION_REQUIRED, or DECISION: SAFE_HOLD. Follow it with a short reason. Never request Founder input; use reasonable reversible assumptions or SAFE_HOLD.',
         `ORIGINAL REQUEST: ${h.request}`,
         `EMPLOYEE SELF-REVIEWED DELIVERABLE: ${stamped.slice(0, 3500)}`,
         `PROPOSED ACTIONS — NOT YET EXECUTED: ${JSON.stringify(acted.actions).slice(0, 1800)}`,
@@ -719,12 +719,12 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       const review = discoveryReview
         ? `DECISION: ${discoveryReview.ok ? 'ACCEPT' : 'REVISION_REQUIRED'}\n${discoveryReview.reason}`
         : (await deps.askAgent('orchestrator', reviewPrompt, {})).trim();
-      const decision = review.match(/^\s*(?:\*\*)?DECISION:\s*(ACCEPT|REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)\b/im)?.[1];
+      const decision = review.match(/^\s*(?:\*\*)?DECISION:\s*(ACCEPT|REVISION_REQUIRED|SAFE_HOLD)\b/im)?.[1];
       if (decision !== 'ACCEPT') {
         const reason = review.slice(0, 1500) || 'CEO review did not return a recognized decision.';
         const awaitingFounder = false;
         await deps.tasks.advance(taskId, [
-          { status: awaitingFounder ? 'awaiting_founder' : 'needs_more_work', stage: awaitingFounder ? 'founder' : 'ceo', eventType: decision === 'REVISION_REQUIRED' ? 'ceo_revision_requested' : 'ceo_review_waiting_for_founder', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, review: reason } },
+          { status: awaitingFounder ? 'awaiting_founder' : 'needs_more_work', stage: awaitingFounder ? 'founder' : 'ceo', eventType: decision === 'REVISION_REQUIRED' ? 'ceo_revision_requested' : 'ceo_safe_hold', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, review: reason } },
         ]);
         const revisionExhausted = !awaitingFounder && attempt >= MAX_HANDOFF_ATTEMPTS;
         const contextSummary = [h.context_summary, `CEO REVIEW FEEDBACK: ${reason}`].filter(Boolean).join('\n\n').slice(0, 3000);
@@ -741,7 +741,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         await deps.store.update(h.id, { status: awaitingFounder ? 'awaiting_founder' : 'queued', context_summary: contextSummary, result: stamped.slice(0, 8000), error: reason, completed_at: null });
         if (h.room_id) {
           await deps.store.updateRoom(h.room_id, { status: awaitingFounder ? 'awaiting_founder' : 'revision_requested', deliverable: stamped.slice(0, 8000), blocker: reason });
-          await deps.store.roomEvent(h.room_id, awaitingFounder ? 'ceo_review_needs_founder' : 'ceo_revision_requested', 'ceo', { review: reason, attempt, maxAttempts: MAX_HANDOFF_ATTEMPTS });
+          await deps.store.roomEvent(h.room_id, awaitingFounder ? 'ceo_safe_hold' : 'ceo_revision_requested', 'ceo', { review: reason, attempt, maxAttempts: MAX_HANDOFF_ATTEMPTS });
         }
         outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: awaitingFounder ? 'waiting' : 'retry', reason, taskId, roomId: h.room_id ?? undefined });
         continue;
