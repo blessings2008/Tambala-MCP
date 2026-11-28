@@ -36,7 +36,7 @@ export interface QueueInput {
   /** Founder-originated messages are tagged for audit; customer messages use the autonomous policy. */
   founderApproved?: boolean;
   /** Server-only provenance from the qualified-prospect handoff; verification still runs before autonomous delivery. */
-  founderApprovedFirstContact?: boolean;
+  qualifiedProspectFirstContact?: boolean;
 }
 export interface QueueResult { id: string; status: MessageRow['status']; reason?: string; approvalId?: string | null }
 
@@ -75,7 +75,7 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
   if (outreachCopy) {
     // Every first-contact message must match a real CRM lead and a WhatsApp-registered number.
     // The server-only flag additionally proves that the request came from the qualified-prospect workflow.
-    if (input.founderApprovedFirstContact &&
+    if (input.qualifiedProspectFirstContact &&
       (input.agent !== 'outreach' || input.roleId !== 'director-sales-business-development' || !input.taskId)) {
       throw new OutboxError('Autonomous first-contact verification is restricted to the qualified Outreach workflow.');
     }
