@@ -74,8 +74,6 @@ export function validateDiscoveryQueueDeliverable(contextSummary: string | null,
   const recordId = typeof prospect.id === 'string' ? prospect.id.trim() : '';
   const text = deliverable.trim();
   const normalized = (value: string) => value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
-  if (!name || !normalized(text).includes(normalized(name))) return { ok: false, reason: 'The report must identify the exact organisation name from the supplied record.' };
-  if (!recordId || !text.toLowerCase().includes(recordId.toLowerCase())) return { ok: false, reason: 'The report must include the exact lead_discovery_queue record ID.' };
   if (!/service[-‐‑‒–—− ]+fit evidence|supported service fit/i.test(text)) return { ok: false, reason: 'The report must include a service-fit evidence section.' };
   const fits = Array.isArray(prospect.service_fit) ? prospect.service_fit.filter((v): v is string => typeof v === 'string') : [];
   if (fits.length && !fits.some((fit) => normalized(text).includes(normalized(fit)))) return { ok: false, reason: 'The report must name at least one service fit recorded in the supplied prospect record.' };
@@ -97,6 +95,17 @@ export function validateDiscoveryQueueDeliverable(contextSummary: string | null,
   const explicitlyNoContact = /\bnone\b|no (?:verified )?(?:public )?(?:organisational )?(?:email|phone|contact)|not available|not supplied|not verified/i.test(contactSection);
   if (hasSuppliedContact && !hasEmail && !hasPhone) return { ok: false, reason: 'The report must reproduce at least one public email or phone number supplied in the prospect record under its contact-evidence section.' };
   if (!hasSuppliedContact && !explicitlyNoContact) return { ok: false, reason: 'The report must explicitly say in its contact-evidence section that no public organisational email or phone is supplied.' };
+  const fullNameMatch = Boolean(name) && normalized(text).includes(normalized(name));
+  const nameParts = normalized(name).split(' ').filter(Boolean);
+  const coreName = nameParts.slice(0, Math.min(2, nameParts.length)).join(' ');
+  const coreNameMatch = coreName.length >= 5 && normalized(text).includes(coreName);
+  const recordIdMatch = Boolean(recordId) && text.toLowerCase().includes(recordId.toLowerCase());
+  const contactSourceMatch = sources.some((url) => contactSection.includes(url));
+  const contactIdentityMatch = (hasEmail || hasPhone) && contactSourceMatch;
+  if (!(fullNameMatch && recordIdMatch) && !(fullNameMatch && contactIdentityMatch)
+    && !(recordIdMatch && contactIdentityMatch) && !(coreNameMatch && contactIdentityMatch)) {
+    return { ok: false, reason: 'The report must identify the organisation by its supplied name or queue ID, or by its core name together with an exact supplied public contact and its source.' };
+  }
   const gapsHeading = text.match(/verification gaps/i);
   if (!gapsHeading || gapsHeading.index === undefined) return { ok: false, reason: 'The report must explicitly list remaining verification gaps, or state that none were identified.' };
   const gapsTail = text.slice(gapsHeading.index + gapsHeading[0].length);
