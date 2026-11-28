@@ -623,7 +623,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
           'Use only the incident metadata and available records in the context. Separate observed facts from hypotheses. Never ask the Founder for logs or clarification.',
           'Return exactly these headings, each on its own line: Severity:, Evidence:, Diagnosis:, Confidence:, Safe next step:, Action taken:. State explicitly that no change was made unless a change is independently verified.',
           'The first line must be exactly SELF_REVIEW: PASS. This is a diagnostic report, not a request for permission.',
-        ].join('\\n') : '',
+        ].join('\n') : '',
         actionHelp(agent),
         'SELF-REVIEW BEFORE SUBMISSION: Check the original request, every required deliverable field, factual support in the supplied context, source URLs, arithmetic, consistency, customer-facing wording, and every proposed ACTIONS item. Correct omissions and unsupported claims yourself before submitting. Do not execute actions. Return exactly SELF_REVIEW: PASS as the first line only when the final work passes; if a missing Founder-controlled fact or decision prevents completion, return SELF_REVIEW: BLOCKED as the first line and clearly ask one precise question under Clarification Required. Never mark unverified work as passed.',
         'Keep the final work under 300 words, plain and scannable. Say what you did, what you found, and anything blocked.',
