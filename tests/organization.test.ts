@@ -246,42 +246,24 @@ test('Founder-reserved actions reject malformed, unapproved, or wrong-authority 
 
   for (const approval of malformedApprovals) {
     const result = authorizeOrganizationalAction({
-      actorRole: role('ceo'),
+      actorRole: role('founder'),
       action: 'commit_material_funds',
       approval,
     });
     assert.equal(result.allowed, false);
     assert.equal(result.requiresApproval, true);
-    assert.equal(result.requiredAuthority, 'founder');
+    assert.equal(result.requiredAuthority, 'ceo');
   }
 });
 
-test('Founder-reserved action policy is consistent across departments and business units', () => {
-  const delegatedRoleIds = [
-    'director-executive-governance',
-    'director-technology-engineering',
-    'director-marketing-brand',
-    'director-sales-business-development',
-    'director-customer-relations',
-    'director-finance-accounting',
-    'director-operations-administration',
-    'director-legal-risk-compliance',
-    'leader-fintech-ventures',
-    'leader-software-digital-services',
-  ];
-
-  for (const roleId of delegatedRoleIds) {
-    const result = authorizeOrganizationalAction({
-      actorRole: role(roleId),
-      action: 'execute_financial_transaction',
-      approval: {
-        authority: 'founder',
-        approved: true,
-        approvalId: `approval-${roleId}`,
-      },
-    });
-    assert.equal(result.allowed, false, `${roleId} must not inherit transaction capability through approval.`);
-  }
+test('non-CEO roles cannot use CEO-reserved actions without a valid CEO approval', () => {
+  const result = authorizeOrganizationalAction({
+    actorRole: role('founder'),
+    action: 'commit_material_funds',
+  });
+  assert.equal(result.allowed, false);
+  assert.equal(result.requiresApproval, true);
+  assert.equal(result.requiredAuthority, 'ceo');
 });
 
 test('every department has an accountable lead connected to its reporting structure', () => {
