@@ -6,7 +6,7 @@ import { authorizeOrganizationalAction } from '../src/organization/policy.js';
 import { getOrganizationSummary } from '../src/organization/service.js';
 import { getRequestPrincipal, runWithRequestPrincipal } from '../src/organization/request-context.js';
 import { isAllowedOrganizationTaskTransition } from '../src/organization/task-transition-rules.js';
-import { HANDOFF_HEARTBEAT_INTERVAL_MS, HANDOFF_LEASE_TIMEOUT_MS, isReadOnlyResearchQueueHandoff } from '../src/organization/workforce/handoffs.js';
+import { HANDOFF_HEARTBEAT_INTERVAL_MS, HANDOFF_LEASE_TIMEOUT_MS, isReadOnlyResearchQueueHandoff, validateDiscoveryQueueDeliverable } from '../src/organization/workforce/handoffs.js';
 
 const role = (id: string) => {
   const found = initialOrganization.roles.find((candidate) => candidate.id === id);
@@ -312,4 +312,26 @@ test('only read-only discovery queue Research handoffs auto-retry after lease ex
   assert.equal(isReadOnlyResearchQueueHandoff(safe), true);
   assert.equal(isReadOnlyResearchQueueHandoff({ ...safe, to_agent: 'outreach' }), false);
   assert.equal(isReadOnlyResearchQueueHandoff({ ...safe, request: 'Send a WhatsApp message to the prospect.' }), false);
+});
+
+
+test('discovery validation accepts Unicode hyphens and requires contact evidence', () => {
+  const context = JSON.stringify({ prospect: {
+    id: 'queue-123', organisation_name: 'Example Malawi', service_fit: ['Web Development'],
+    source_urls: ['https://example.mw/services'], public_email: 'info@example.mw',
+    public_phone: '+265 991 000 000', verification_status: 'verified',
+  } });
+  const report = [
+    'Organisation Name: Example Malawi',
+    'Queue Record ID: queue-123',
+    'Service‑Fit Evidence:',
+    '- Web Development is supported by https://example.mw/services',
+    'Public Organisational Contact Evidence:',
+    '- Email: info@example.mw (https://example.mw/services)',
+    'Remaining Verification Gaps:',
+    '- Current project budget is not publicly confirmed.',
+    'Recommendation: INVESTIGATE',
+  ].join('\\n');
+  assert.equal(validateDiscoveryQueueDeliverable(context, report).ok, true);
+  assert.equal(validateDiscoveryQueueDeliverable(context, report.replace('info@example.mw', '')) .ok, false);
 });
