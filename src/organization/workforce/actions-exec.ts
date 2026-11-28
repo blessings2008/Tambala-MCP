@@ -15,7 +15,7 @@ export interface ActionExecDeps {
   createInvoice: (input: { roleId: string; clientName: string; clientPhone?: string; clientEmail?: string; description: string; amount: number }) => Promise<{ invoice: InvoiceRow; created: boolean }>;
 }
 
-export interface ActionContext { agent: string; roleId: string; taskId: string | null }
+export interface ActionContext { agent: string; roleId: string; taskId: string | null; qualifiedProspectFirstContact?: boolean }
 
 const fail = (type: string, detail: string): ActionResult => ({ type, ok: false, detail });
 
@@ -37,8 +37,8 @@ export async function executeActions(deps: ActionExecDeps, ctx: ActionContext, a
         results.push((await toFounder(action.text)) ? { type: 'notify_founder', ok: true, detail: 'Message to the Founder queued.' } : fail('notify_founder', 'The Founder WhatsApp number is not configured (TAMBALA_FOUNDER_WHATSAPP).'));
 
       } else if (action.type === 'whatsapp') {
-        const r = await queueMessage(deps.outbox, { ...base, to: action.to, text: action.text, purpose: action.purpose, contactLabel: action.contact ?? null });
-        results.push(r.status === 'blocked' ? fail('whatsapp', `Not sent to ${maskNumber(action.to)}: ${r.reason}`) : { type: 'whatsapp', ok: true, detail: `Message to ${action.contact ?? maskNumber(action.to)} is waiting for the Founder's approval.` });
+        const r = await queueMessage(deps.outbox, { ...base, to: action.to, text: action.text, purpose: action.purpose, contactLabel: action.contact ?? null, qualifiedProspectFirstContact: ctx.qualifiedProspectFirstContact === true && action.purpose === 'outreach' });
+        results.push(r.status === 'blocked' ? fail('whatsapp', `Not sent to ${maskNumber(action.to)}: ${r.reason}`) : { type: 'whatsapp', ok: true, detail: `Message to ${action.contact ?? maskNumber(action.to)} was queued for autonomous sending; delivery is not confirmed yet.` });
 
       } else if (action.type === 'document') {
         const doc = await deps.createDocument({ kind: action.kind, client: action.client, items: action.items, subject: action.subject, body: action.body, notes: action.notes, terms: action.terms, validityDays: action.validityDays }, ctx.roleId);
@@ -46,7 +46,7 @@ export async function executeActions(deps: ActionExecDeps, ctx: ActionContext, a
         const review = await toFounder(`${doc.number} prepared for ${action.client.name} (${formatMoney(doc.total_minor)})${flag}. PDF attached for your review.`, doc.id);
         if (action.sendTo) {
           const r = await queueMessage(deps.outbox, { ...base, to: action.sendTo, purpose: 'document', documentId: doc.id, contactLabel: action.client.name, text: action.message ?? `Hello ${action.client.name}, please find your ${action.kind} ${doc.number} attached. Tambala Technologies.` });
-          results.push(r.status === 'blocked' ? fail('document', `${doc.number} created, but not sent: ${r.reason}`) : { type: 'document', ok: true, detail: `${doc.number} created. Sending to ${action.client.name} awaits the Founder's approval.${flag}` });
+          results.push(r.status === 'blocked' ? fail('document', `${doc.number} created, but not sent: ${r.reason}`) : { type: 'document', ok: true, detail: `${doc.number} created. Sending to ${action.client.name} is queued automatically.${flag}` });
         } else results.push({ type: 'document', ok: true, detail: `${doc.number} created${review ? ' and sent to the Founder' : ' (Founder WhatsApp number not configured, so find it in Documents)'}.${flag}` });
 
       } else if (action.type === 'invoice_link') {
@@ -61,7 +61,7 @@ export async function executeActions(deps: ActionExecDeps, ctx: ActionContext, a
         const note = created ? '' : ' (this invoice already existed today, so no duplicate was made)';
         if (action.sendTo) {
           const r = await queueMessage(deps.outbox, { ...base, to: action.sendTo, purpose: 'invoice', documentId, contactLabel: action.client.name, text });
-          results.push(r.status === 'blocked' ? fail('invoice_link', `Link created, not sent: ${r.reason}`) : { type: 'invoice_link', ok: true, detail: `Payment link created. Sending to ${action.client.name} awaits the Founder's approval.${note}` });
+          results.push(r.status === 'blocked' ? fail('invoice_link', `Link created, not sent: ${r.reason}`) : { type: 'invoice_link', ok: true, detail: `Payment link created. Sending to ${action.client.name} is queued automatically.${note}` });
         } else {
           await toFounder(`Payment link for ${action.client.name} (${formatMoney(invoice.amount_minor)}): ${invoice.link}`, documentId);
           results.push({ type: 'invoice_link', ok: true, detail: `Payment link created and sent to the Founder.${note}` });

@@ -31,6 +31,8 @@ test('cadence: weekday duties skip weekends, weekly duties fire on their day, pe
   const sat = localTime(at('2026-11-07T08:00:00Z'));
   const mon = localTime(at('2026-11-09T08:00:00Z'));
   assert.equal(runsToday({ kind: 'weekdays' }, sat), false);
+  assert.equal(runsToday({ kind: 'daily' }, sat), true);
+  assert.equal(periodKey({ kind: 'daily' }, sat), '2026-11-07');
   assert.equal(runsToday({ kind: 'weekdays' }, mon), true);
   assert.equal(runsToday({ kind: 'weekly', day: 1 }, mon), true);
   assert.equal(runsToday({ kind: 'weekly', day: 5 }, mon), false);
@@ -101,13 +103,12 @@ test('a duty is not run before its time or on the wrong day', async () => {
   assert.equal((await runDuty(notFriday.deps, duty('weekly-priorities-review'))).status, 'not_due');
 });
 
-test('outreach drafts are parked for Founder approval, never sent', async () => {
+test('sales pipeline duty completes under autonomous first-contact guardrails', async () => {
   const { deps, calls } = fakeDeps({ now: '2026-11-09T07:00:00Z' });
   const out = await runDuty(deps, duty('sales-pipeline-review'));
-  assert.equal(out.status, 'awaiting_approval');
-  assert.equal(calls.approvals.length, 1);
-  assert.match(JSON.stringify(calls.approvals[0]), /prepared_outreach/);
-  assert.match(buildDutyPrompt(duty('sales-pipeline-review'), localTime(at('2026-11-09T07:00:00Z'))), /never claim it was sent/);
+  assert.equal(out.status, 'completed');
+  assert.equal(calls.approvals.length, 0);
+  assert.match(buildDutyPrompt(duty('sales-pipeline-review'), localTime(at('2026-11-09T07:00:00Z'))), /never claim a message was sent unless the outbox confirms it/i);
 });
 
 test('an unavailable employee records a skip once, then works when available', async () => {
@@ -130,6 +131,22 @@ test('failures are recorded, retried up to three attempts, then left alone', asy
   assert.equal(store.rows[0].status, 'failed');
   assert.equal(store.rows[0].attempts, 3);
   assert.equal(calls.failed.length, 3);
+});
+
+test('daily lead discovery retries a failed research run up to five attempts', async () => {
+  let attempts = 0;
+  const { deps, store } = fakeDeps({ now: '2026-11-09T04:00:00Z', ask: async () => { attempts += 1; throw new Error('research timeout'); } });
+  for (let i = 0; i < 7; i += 1) await runDuty(deps, duty('daily-lead-discovery'));
+  assert.equal(attempts, 5);
+  assert.equal(store.rows[0].attempts, 5);
+  assert.equal(store.rows[0].status, 'failed');
+});
+
+test('daily prospect research runs on weekends at 06:00 Malawi time', () => {
+  const sat = localTime(at('2026-11-07T04:00:00Z'));
+  assert.equal(sat.minutes, 360);
+  assert.equal(runsToday(duty('daily-lead-discovery').cadence, sat), true);
+  assert.equal(timeReached(duty('daily-lead-discovery').time, sat), true);
 });
 
 test('two workers cannot claim the same duty and period', async () => {
@@ -183,9 +200,11 @@ test('approval decisions are validated before touching the database', async () =
 test('new tools are registered; deciding approvals is Founder-only', () => {
   const names: string[] = [];
   registerAllTools({ registerTool: (n: string) => { names.push(n); } } as never);
-  for (const n of ['get_workforce_status', 'run_due_organization_duties', 'get_daily_briefing', 'decide_organization_approval']) assert.ok(names.includes(n), n);
+  for (const n of ['get_workforce_status', 'run_due_organization_duties', 'get_daily_briefing', 'decide_organization_approval', 'submit_prospect_for_review', 'list_prospect_discovery_queue', 'update_prospect_review_status']) assert.ok(names.includes(n), n);
   assert.ok(SENSITIVE_TOOLS.has('decide_organization_approval'));
   assert.ok(STANDARD_WRITE_TOOLS.has('run_due_organization_duties'));
+  assert.ok(STANDARD_WRITE_TOOLS.has('submit_prospect_for_review'));
+  assert.ok(STANDARD_WRITE_TOOLS.has('update_prospect_review_status'));
 });
 
 test('the activation script puts every duty owner to work', async () => {

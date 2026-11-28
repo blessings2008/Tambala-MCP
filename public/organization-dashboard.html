@@ -27,6 +27,12 @@ details.emp{border:1px solid var(--line);background:#121e31;border-radius:10px;p
 .sigrow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #223149}.sigrow:last-child{border-bottom:0}.sigrow .sc{flex:1;min-width:0}.sigrow .sc b{display:block;font-size:10px}.sigrow .sc small{color:var(--muted);font-size:9px}.fp{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:var(--soft)}
 .verdict{border-radius:10px;padding:14px;margin-top:12px;border:1px solid var(--line)}.verdict.ok{border-color:#2e6b45;background:#12261c}.verdict.bad{border-color:#6b2e36;background:#2a1a1d}.verdict h3{margin:0 0 6px;font-size:13px}.verdict .meta{font-size:10px;color:var(--soft);line-height:1.7}
 .form{border:1px solid var(--line);background:#0e1626;border-radius:10px;padding:12px;margin:8px 0}.form label{display:block;font-size:9px;color:var(--muted);margin:8px 0 3px;text-transform:uppercase;letter-spacing:.06em}.form input[type=text],.form input[type=time],.form select,.form textarea{width:100%;padding:8px;border-radius:7px;border:1px solid var(--line);background:var(--surface2);color:var(--text);font-size:10px;font-family:inherit}.form textarea{min-height:70px;resize:vertical}.form .chk{display:flex;gap:6px;align-items:center;font-size:10px;color:var(--soft);margin:6px 12px 0 0;text-transform:none;letter-spacing:0}.form .chk input{width:auto}.chks{display:flex;flex-wrap:wrap}
+
+/* Metrics and department office upgrade */
+.metric-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 15px}.metric-tile{border:1px solid var(--line);background:linear-gradient(145deg,#17263b,#111b2c);border-radius:11px;padding:13px;min-width:0}.metric-tile small{display:block;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em}.metric-tile strong{display:block;font-size:23px;letter-spacing:-.7px;margin:5px 0 2px}.metric-tile span{font-size:9px;color:#9eafc5}.dept{cursor:pointer;transition:transform .16s,border-color .16s,background .16s;position:relative}.dept:hover,.dept:focus-visible{transform:translateY(-2px);border-color:#8ebaff;background:#172840;outline:none}.dept-open{display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:9px;border-top:1px solid #2a3b54;color:var(--lime);font-size:9px;font-weight:800;letter-spacing:.04em}.office-back{border:1px solid var(--line);background:#152238;color:var(--soft);border-radius:8px;padding:8px 11px;font-size:10px}.office-team{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.office-person{border:1px solid #2b3b55;background:#121f33;border-radius:10px;padding:12px;min-width:0}.office-person b{font-size:10px}.office-person small{display:block;color:var(--muted);font-size:9px;margin:4px 0 8px}.office-person textarea{width:100%;min-height:54px;background:#0e192a;color:var(--text);border:1px solid #34465f;border-radius:7px;padding:8px;font:inherit;font-size:10px;resize:vertical}.office-bars{display:grid;gap:11px}.office-bar{display:grid;grid-template-columns:minmax(90px,1fr) 2fr 34px;gap:9px;align-items:center;font-size:9px;color:var(--soft)}.office-bar .bar{margin:0;height:7px}.office-bar .bar i{width:var(--pct)}.office-section{margin-top:14px}.office-task{padding:10px 0;border-bottom:1px solid #223149}.office-task b{font-size:10px;display:block}.office-task small{color:var(--muted);font-size:9px}.office-empty{padding:14px;color:var(--muted);font-size:10px;border:1px dashed #34465f;border-radius:9px}@media(max-width:900px){.metric-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:700px){.office-team{grid-template-columns:1fr}.metric-tile strong{font-size:20px}}
+
+/* Control Centre information architecture and workspace polish */
+:root{--lime:#b8ed72;--blue:#8ebaff;--line:#2b3b54}.sidebar{padding:22px 15px;background:linear-gradient(180deg,#0e192b,#0b1423)}.brand{padding-bottom:20px}.workspace{margin-bottom:14px}.nav-label{padding-top:17px;color:#8092ad}.nav{min-height:39px;padding:9px 11px;font-weight:600}.nav.active{background:linear-gradient(100deg,#20334b,#17273b);border-color:#3a506d;box-shadow:inset 3px 0 var(--lime)}.topbar{padding:0 34px;background:rgba(10,17,29,.9)}.content{padding:30px 34px 54px}.page-head{margin-bottom:25px}.page-head h1{font-size:27px;letter-spacing:-.9px}.card{border-radius:15px;box-shadow:0 8px 28px #00000012;padding:18px}.stats{gap:14px}.stat-value{font-size:28px}.section-head{margin-bottom:16px}.section-head h2{font-size:14px}.list-row{padding:13px 2px}.list-copy b{font-size:11px}.list-copy small{font-size:10px}.badge{font-size:9px;padding:4px 7px}.dept{border-radius:13px;padding:16px}.workspace-tools{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.workspace-tools input,.workspace-tools select{min-width:160px;max-width:260px;background:#0e192a;border:1px solid #34465f;color:var(--text);border-radius:9px;padding:9px 11px;font-size:11px}.room-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.room-card{border:1px solid var(--line);background:linear-gradient(150deg,#15243a,#111c2d);border-radius:13px;padding:15px;min-width:0}.room-card h3{font-size:12px;line-height:1.5;margin:0 0 7px;overflow-wrap:anywhere}.room-meta{font-size:9px;color:var(--muted);display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px}.room-detail{font-size:10px;color:#bdc9da;margin:7px 0}.room-detail summary{cursor:pointer;color:var(--blue);margin:7px 0}.room-detail .pre{max-height:180px}.room-actions{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}.room-reply{width:100%;min-height:68px;resize:vertical;background:#0e192a;border:1px solid #34465f;color:var(--text);border-radius:8px;padding:9px;font-size:10px}.metric-bars{display:grid;gap:11px}.metric-bar-row{display:grid;grid-template-columns:minmax(100px,1fr) minmax(80px,2fr) 34px;gap:10px;align-items:center;font-size:10px}.metric-bar-row .bar{margin:0;height:8px}.metric-bar-row .bar i{background:linear-gradient(90deg,#8ebaff,#b8ed72)}.chat-workbench{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:18px;border:1px solid #3c536d;border-radius:14px;background:linear-gradient(120deg,#1b2d43,#142235);margin-bottom:14px}.chat-workbench h2{font-size:15px;margin:0 0 4px}.chat-workbench p{font-size:10px;color:var(--muted);margin:0;max-width:600px}@media(max-width:1050px){.room-grid{grid-template-columns:1fr}.content{padding:24px 22px 42px}}@media(max-width:700px){.topbar{padding:0 12px}.content{padding:18px 12px 34px}.page-head h1{font-size:22px}.room-grid{grid-template-columns:1fr}.workspace-tools input,.workspace-tools select{max-width:none;flex:1;min-width:130px}.card{padding:14px}.metric-bar-row{grid-template-columns:90px minmax(60px,1fr) 28px}}
 </style>
 </head>
 <body>
@@ -37,45 +43,46 @@ details.emp{border:1px solid var(--line);background:#121e31;border-radius:10px;p
  <div class="nav-label">Command</div>
  <button class="nav active" data-view="overview"><span class="ico">◈</span>Overview</button>
  <button class="nav" data-view="tasks"><span class="ico">▤</span>Task centre <span class="count">—</span></button>
- <button class="nav" data-view="approvals"><span class="ico">✓</span>Approvals <span class="count">—</span></button>
+ <button class="nav" data-view="rooms"><span class="ico">▣</span>Work rooms <span class="count" id="roomNavCount">—</span></button>
+ <button class="nav" data-view="approvals"><span class="ico">✓</span>Founder inbox <span class="count">—</span></button>
+ <div class="nav-label">People & communication</div>
  <button class="nav" data-view="departments"><span class="ico">▦</span>Departments</button>
- <div class="nav-label">People & operations</div>
  <button class="nav" data-view="people"><span class="ico">♙</span>Workforce</button>
- <button class="nav" data-view="messages"><span class="ico">✉</span>Messages</button>
+ <button class="nav" data-view="chats"><span class="ico">✉</span>Chats & messages</button>
+ <div class="nav-label">Insights & systems</div>
+ <button class="nav" data-view="analytics"><span class="ico">▥</span>Metrics & insights</button>
+ <button class="nav" data-view="automation"><span class="ico">⟳</span>Automation</button>
  <button class="nav" data-view="documents"><span class="ico">▤</span>Documents &amp; payments</button>
  <button class="nav" data-view="signatures"><span class="ico">✍</span>Signatures</button>
- <button class="nav" data-view="automation"><span class="ico">⟳</span>Automation</button>
  <button class="nav" data-view="integrations"><span class="ico">⌘</span>Integrations</button>
- <div class="nav-label">Governance & system</div>
  <button class="nav" data-view="security"><span class="ico">◇</span>Security & audit</button>
- <button class="nav" data-view="analytics"><span class="ico">▥</span>Performance</button>
  <button class="nav" data-view="settings"><span class="ico">⚙</span>Configuration</button>
  <div class="sidebar-bottom"><div class="founder"><b><span class="dot"></span>Founder workspace</b><p>Reserved authority · Organization-wide visibility</p></div></div>
 </aside>
 <main class="main">
- <header class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="icon-btn mobile-toggle" id="menu">☰</button><div><div class="crumb">Tambala Organization / <span id="crumb">Overview</span></div><div style="font-size:12px;font-weight:750">Control Centre</div></div></div><div class="top-actions"><input class="search" id="globalSearch" placeholder="Search workspace…"><button class="icon-btn" id="notifications" title="Notifications">♧</button><div class="avatar">B</div></div></header>
+ <header class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="icon-btn mobile-toggle" id="menu">☰</button><div><div class="crumb">Tambala Organization / <span id="crumb">Overview</span></div><div style="font-size:12px;font-weight:750">Control Centre</div></div></div><div class="top-actions"><input class="search" id="globalSearch" placeholder="Search workspace…"><button class="outline-btn" id="runtimePause" title="Pause or resume all organization execution">Pause all</button><button class="icon-btn" id="notifications" title="Notifications">♧</button><div class="avatar">B</div></div></header>
  <div class="content">
 <section class="view active" id="view-overview"><div class="page-head"><div><div class="eyebrow">FOUNDER COMMAND</div><h1>Organization overview</h1><div class="sub">Live operating picture. <span class="sync" id="syncNote">Not loaded yet.</span></div></div><div class="actions"><button class="outline-btn" id="runDuties">Run due duties</button><button class="outline-btn" id="refresh">Refresh</button><button class="primary" id="openTaskConsole">＋ Create objective</button></div></div><div id="banner"></div>
 <div class="grid stats"><article class="card"><div class="stat-top">Active roles <span class="stat-icon">♙</span></div><div class="stat-value" id="sRoles">—</div><div class="stat-foot" id="sRolesFoot"></div></article><article class="card"><div class="stat-top">Ready agents <span class="stat-icon">◈</span></div><div class="stat-value" id="sAgents">—</div><div class="stat-foot" id="sAgentsFoot"></div></article><article class="card"><div class="stat-top">Open tasks <span class="stat-icon">▤</span></div><div class="stat-value" id="sTasks">—</div><div class="stat-foot" id="sTasksFoot"></div></article><article class="card"><div class="stat-top">Pending approvals <span class="stat-icon">✓</span></div><div class="stat-value" id="sApprovals">—</div><div class="stat-foot" id="sApprovalsFoot"></div></article></div>
-<div class="grid two"><article class="card"><div class="section-head"><h2>Division structure</h2><span>From the organization registry</span></div><div class="list" id="ovDivisions"></div></article><article class="card"><div class="section-head"><h2>System readiness</h2><span>Configuration, not guesses</span></div><div class="list" id="ovReadiness"></div></article></div>
+<div class="metric-strip" aria-label="Operating metrics"><article class="metric-tile"><small>Task success rate</small><strong id="mSuccess">—</strong><span id="mSuccessFoot">Recorded completed vs failed</span></article><article class="metric-tile"><small>Completed tasks</small><strong id="mCompleted">—</strong><span id="mCompletedFoot">Latest 100 records</span></article><article class="metric-tile"><small>Duty health</small><strong id="mDutyHealth">—</strong><span id="mDutyFoot">Scheduled duties completed</span></article><article class="metric-tile"><small>Staff available</small><strong id="mStaff">—</strong><span id="mStaffFoot">Ready and unassigned</span></article></div><div class="grid two"><article class="card"><div class="section-head"><h2>Division structure</h2><span>From the organization registry</span></div><div class="list" id="ovDivisions"></div></article><article class="card"><div class="section-head"><h2>System readiness</h2><span>Configuration, not guesses</span></div><div class="list" id="ovReadiness"></div></article></div>
 <div class="grid two" style="margin-top:14px"><article class="card"><div class="section-head"><h2>Daily briefing</h2><span id="briefMeta">From the CEO</span></div><div id="ovBriefing"></div></article><article class="card"><div class="section-head"><h2>Today’s duties</h2><span id="dutyMeta"></span></div><div class="list" id="ovDuties"></div></article></div>
-<div class="grid two" style="margin-top:14px"><article class="card"><div class="section-head"><h2>Recent activity</h2><span>Task events</span></div><div class="list" id="ovEvents"></div></article><article class="card"><div class="section-head"><h2>Needs attention</h2><span>Failures, denials, blockers</span></div><div class="list" id="ovAttention"></div></article></div></section>
-<section class="view" id="view-departments"><div class="page-head"><div><div class="eyebrow">ORGANIZATION DESIGN</div><h1>Departments & business units</h1><div class="sub">Status comes from the stored role and agent state, not from the chart alone.</div></div></div><div class="grid dept-grid" id="departmentGrid"></div></section>
+<div class="grid two" style="margin-top:14px"><article class="card"><div class="section-head"><h2>Recent activity</h2><span>Task events and duty runs</span></div><div class="list" id="ovEvents"></div></article><article class="card"><div class="section-head"><h2>Needs attention</h2><span>Failures, denials, blockers</span></div><div class="list" id="ovAttention"></div></article></div></section>
+<section class="view" id="view-departments"><div class="page-head"><div><div class="eyebrow">ORGANIZATION DESIGN</div><h1>Departments & business units</h1><div class="sub">Status comes from the stored role and agent state, not from the chart alone.</div></div></div><div class="grid dept-grid" id="departmentGrid"></div></section><section class="view" id="view-office"><div class="page-head"><div><div class="eyebrow">DEPARTMENT WORKSPACE</div><h1 id="officeTitle">Department office</h1><div class="sub" id="officePurpose">Live team, workload and operating metrics for this department.</div></div><div class="actions"><button class="office-back" id="officeBack">← All departments</button></div></div><div class="grid stats" id="officeStats"></div><div class="grid two"><article class="card"><div class="section-head"><h2>Department team</h2><span>Assign work directly to a staff member</span></div><div class="office-team" id="officeTeam"></div></article><article class="card"><div class="section-head"><h2>Workload breakdown</h2><span>Latest 100 recorded tasks</span></div><div class="office-bars" id="officeWorkload"></div></article></div><div class="grid two office-section"><article class="card"><div class="section-head"><h2>Department task board</h2><span>Latest recorded work</span></div><div id="officeTasks"></div></article><article class="card"><div class="section-head"><h2>Standing duties</h2><span>Schedules and latest outcomes</span></div><div id="officeDuties"></div></article></div><article class="card office-section"><div class="section-head"><h2>Department activity</h2><span>Recent recorded events</span></div><div class="list" id="officeActivity"></div></article></section>
 <section class="view" id="view-tasks"><div class="page-head"><div><div class="eyebrow">WORK ORCHESTRATION</div><h1>Task centre</h1><div class="sub">Founder objectives, CEO delegation, department work and outcomes.</div></div></div><div class="grid stats"><article class="card"><div class="stat-top">Open <span class="stat-icon">▤</span></div><div class="stat-value" id="tOpen">—</div><div class="stat-foot" id="tOpenFoot"></div></article><article class="card"><div class="stat-top">Completed <span class="stat-icon">✓</span></div><div class="stat-value" id="tDone">—</div><div class="stat-foot" id="tDoneFoot"></div></article><article class="card"><div class="stat-top">Failed <span class="stat-icon">!</span></div><div class="stat-value" id="tFailed">—</div><div class="stat-foot" id="tFailedFoot"></div></article><article class="card"><div class="stat-top">Total shown <span class="stat-icon">Σ</span></div><div class="stat-value" id="tTotal">—</div><div class="stat-foot" id="tTotalFoot"></div></article></div><div class="grid two"><article class="card"><div class="section-head"><h2>Work queue</h2><span>Latest 100 tasks</span></div><div class="list" id="taskList"></div></article><article class="card"><div class="section-head"><h2>Event feed</h2><span>Latest 40 events</span></div><div class="list" id="eventList"></div></article></div></section>
-<section class="view" id="view-approvals"><div class="page-head"><div><div class="eyebrow">GOVERNANCE</div><h1>Approvals inbox</h1><div class="sub">Pending requests and recent decisions. Resolution happens through governed tools, not this page.</div></div></div><div class="grid two"><article class="card"><div class="section-head"><h2>Pending approvals</h2><span>Awaiting an authorized role</span></div><div class="list" id="approvalList"></div></article><article class="card"><div class="section-head"><h2>Recent decisions</h2><span>Latest 15</span></div><div class="list" id="decisionList"></div></article></div></section>
+<section class="view" id="view-rooms"><div class="page-head"><div><div class="eyebrow">WORKSPACES & HANDOFFS</div><h1>Work rooms</h1><div class="sub">A single view of department rooms, employee handoffs and work awaiting your direction.</div></div><div class="actions"><button class="outline-btn" id="roomsRefresh">Refresh rooms</button></div></div><div class="grid stats"><article class="card"><div class="stat-top">Total rooms <span class="stat-icon">▣</span></div><div class="stat-value" id="roomTotal">—</div><div class="stat-foot">Rooms in the loaded record</div></article><article class="card"><div class="stat-top">Need your input <span class="stat-icon">!</span></div><div class="stat-value" id="roomWaiting">—</div><div class="stat-foot">Awaiting Founder clarification</div></article><article class="card"><div class="stat-top">Active work <span class="stat-icon">↻</span></div><div class="stat-value" id="roomActive">—</div><div class="stat-foot">Open and in progress</div></article><article class="card"><div class="stat-top">Failed rooms <span class="stat-icon">×</span></div><div class="stat-value" id="roomFailed">—</div><div class="stat-foot">Require investigation</div></article></div><div class="card"><div class="section-head"><h2>Room directory</h2><span id="roomMeta">Loading…</span></div><div class="workspace-tools"><input id="roomSearch" type="search" placeholder="Search rooms, owners or objectives…"><select id="roomFilter"><option value="all">All statuses</option><option value="awaiting_founder">Awaiting Founder</option><option value="in_progress">In progress</option><option value="open">Open</option><option value="completed">Completed</option><option value="failed">Failed</option><option value="cancelled">Cancelled</option></select></div><div class="room-grid" id="roomGrid"></div></div></section><section class="view" id="view-approvals"><div class="page-head"><div><div class="eyebrow">GOVERNANCE</div><h1>Approvals inbox</h1><div class="sub">Pending requests and recent decisions. Resolution happens through governed tools, not this page.</div></div></div><div class="grid two"><article class="card"><div class="section-head"><h2>Pending approvals</h2><span>Awaiting an authorized role</span></div><div class="list" id="approvalList"></div></article><article class="card"><div class="section-head"><h2>Recent decisions</h2><span>Latest 15</span></div><div class="list" id="decisionList"></div></article></div><article class="card" style="margin-top:14px"><div class="section-head"><h2>Task rooms needing your input</h2><span id="founderRoomMeta">Loading task rooms…</span></div><p class="sub" style="margin:0 0 12px">These are employee work items blocked pending your clarification. They are separate from formal approvals; replying resumes the employee handoff.</p><div class="list" id="founderRoomList"></div></article></section>
 <section class="view" id="view-people"><div class="page-head"><div><div class="eyebrow">WORKFORCE</div><h1>Staff directory</h1><div class="sub">Every role is a staff member with a job description, working hours, standing duties and a weekly record. <span class="sync" id="staffNote"></span></div></div></div>
-<div class="grid stats"><article class="card"><div class="stat-top">On duty now <span class="stat-icon">♙</span></div><div class="stat-value" id="wfOn">—</div><div class="stat-foot" id="wfOnFoot"></div></article><article class="card"><div class="stat-top">Duties done today <span class="stat-icon">✓</span></div><div class="stat-value" id="wfDone">—</div><div class="stat-foot" id="wfDoneFoot"></div></article><article class="card"><div class="stat-top">Overdue or failed <span class="stat-icon">!</span></div><div class="stat-value" id="wfBad">—</div><div class="stat-foot" id="wfBadFoot"></div></article><article class="card"><div class="stat-top">Skipped <span class="stat-icon">⏸</span></div><div class="stat-value" id="wfSkip">—</div><div class="stat-foot" id="wfSkipFoot">Employee inactive or unequipped</div></article></div>
+<div class="grid stats"><article class="card"><div class="stat-top">Available now <span class="stat-icon">♙</span></div><div class="stat-value" id="wfOn">—</div><div class="stat-foot" id="wfOnFoot">Active role, configured model and office hours; not proof of active work.</div></article><article class="card"><div class="stat-top">Duties done today <span class="stat-icon">✓</span></div><div class="stat-value" id="wfDone">—</div><div class="stat-foot" id="wfDoneFoot"></div></article><article class="card"><div class="stat-top">Overdue or failed <span class="stat-icon">!</span></div><div class="stat-value" id="wfBad">—</div><div class="stat-foot" id="wfBadFoot"></div></article><article class="card"><div class="stat-top">Skipped <span class="stat-icon">⏸</span></div><div class="stat-value" id="wfSkip">—</div><div class="stat-foot" id="wfSkipFoot">Employee inactive or unequipped</div></article></div>
 <article class="card"><div class="section-head"><h2>Staff</h2><span>Tap a person to open their job</span></div><div id="staffGrid"></div></article>
 <article class="card" style="margin-top:14px"><div class="section-head"><h2>Work between staff</h2><span>Handoffs between employees and your assignments</span></div><div class="list" id="handoffList"></div></article>
 <div class="grid two" style="margin-top:14px"><article class="card"><div class="section-head"><h2>Agent runtimes</h2><span>Credentials never shown</span></div><div class="list" id="agentList"></div></article><article class="card"><div class="section-head"><h2>Role directory</h2><span>Activation per role</span></div><div class="list" id="roleList"></div></article></div></section>
 <section class="view" id="view-automation"><div class="page-head"><div><div class="eyebrow">CONTINUOUS OPERATIONS</div><h1>Automation centre</h1><div class="sub">Prepare-only runs and actions awaiting review.</div></div></div><div class="grid two"><article class="card"><div class="section-head"><h2>Recent runs</h2><span>Latest 10</span></div><div class="list" id="runList"></div></article><article class="card"><div class="section-head"><h2>Actions awaiting review</h2><span>Prepared or approved, not sent</span></div><div class="list" id="actionList"></div></article></div></section>
 <section class="view" id="view-integrations"><div class="page-head"><div><div class="eyebrow">CONNECTED SYSTEMS</div><h1>Integrations</h1><div class="sub">Whether each connection is configured. A configured key is not proof the service is healthy.</div></div></div><div class="grid two"><article class="card"><div class="section-head"><h2>Connections</h2><span>Configuration status</span></div><div class="list" id="integList"></div></article><article class="card"><div class="section-head"><h2>Outbound channels</h2><span>Policy</span></div><div class="list" id="channelList"></div></article></div></section>
 <section class="view" id="view-security"><div class="page-head"><div><div class="eyebrow">TRUST & CONTROL</div><h1>Security & audit</h1><div class="sub">Role enforcement, bindings and the audit trail, including denied attempts.</div></div></div><div class="grid stats"><article class="card"><div class="stat-top">Role enforcement <span class="stat-icon">◇</span></div><div class="stat-value" id="secEnf">—</div><div class="stat-foot" id="secEnfFoot"></div></article><article class="card"><div class="stat-top">Active bindings <span class="stat-icon">⌘</span></div><div class="stat-value" id="secBind">—</div><div class="stat-foot" id="secBindFoot"></div></article><article class="card"><div class="stat-top">Denied (recent) <span class="stat-icon">!</span></div><div class="stat-value" id="secDenied">—</div><div class="stat-foot" id="secDeniedFoot"></div></article><article class="card"><div class="stat-top">Audit rows shown <span class="stat-icon">▥</span></div><div class="stat-value" id="secRows">—</div><div class="stat-foot" id="secRowsFoot"></div></article></div><div class="grid two"><article class="card"><div class="section-head"><h2>Audit log</h2><span>Latest 40 events</span></div><div class="list" id="auditList"></div></article><article class="card"><div class="section-head"><h2>Role bindings</h2><span>Principal ids are truncated</span></div><div class="list" id="bindList"></div></article></div></section>
-<section class="view" id="view-analytics"><div class="page-head"><div><div class="eyebrow">OUTCOMES & QUALITY</div><h1>Performance</h1><div class="sub">Computed from recorded tasks only. Empty until runs are recorded.</div></div></div><div class="grid stats"><article class="card"><div class="stat-top">Success rate <span class="stat-icon">%</span></div><div class="stat-value" id="pSuccess">—</div><div class="stat-foot" id="pSuccessFoot"></div></article><article class="card"><div class="stat-top">Avg completion <span class="stat-icon">⏱</span></div><div class="stat-value" id="pAvg">—</div><div class="stat-foot" id="pAvgFoot"></div></article><article class="card"><div class="stat-top">Completed <span class="stat-icon">✓</span></div><div class="stat-value" id="pDone">—</div><div class="stat-foot" id="pDoneFoot"></div></article><article class="card"><div class="stat-top">Failed <span class="stat-icon">!</span></div><div class="stat-value" id="pFailed">—</div><div class="stat-foot" id="pFailedFoot"></div></article></div><div class="grid two"><article class="card"><div class="section-head"><h2>Tasks by department</h2><span>Latest 100 tasks</span></div><div class="list" id="deptTaskList"></div></article><article class="card"><div class="section-head"><h2>Tasks by status</h2><span>Latest 100 tasks</span></div><div class="list" id="statusList"></div></article></div></section>
-<section class="view" id="view-messages"><div class="page-head"><div><div class="eyebrow">WHATSAPP</div><h1>Messages</h1><div class="sub">Employees reach you here, and talk to customers only after you approve. <span class="sync" id="msgNote"></span></div></div><div class="actions"><button class="outline-btn" id="msgProcess">Send waiting messages</button><button class="primary" id="msgTest">Send me a test</button></div></div>
+<section class="view" id="view-analytics"><div class="page-head"><div><div class="eyebrow">OPERATING INTELLIGENCE</div><h1>Metrics & insights</h1><div class="sub">Live operational indicators calculated from recorded work. Missing source data stays clearly unavailable.</div></div></div><div class="grid stats"><article class="card"><div class="stat-top">Success rate <span class="stat-icon">%</span></div><div class="stat-value" id="pSuccess">—</div><div class="stat-foot" id="pSuccessFoot"></div></article><article class="card"><div class="stat-top">Avg completion <span class="stat-icon">⏱</span></div><div class="stat-value" id="pAvg">—</div><div class="stat-foot" id="pAvgFoot"></div></article><article class="card"><div class="stat-top">Completed <span class="stat-icon">✓</span></div><div class="stat-value" id="pDone">—</div><div class="stat-foot" id="pDoneFoot"></div></article><article class="card"><div class="stat-top">Failed <span class="stat-icon">!</span></div><div class="stat-value" id="pFailed">—</div><div class="stat-foot" id="pFailedFoot"></div></article></div><div class="grid stats"><article class="card"><div class="stat-top">Rooms tracked <span class="stat-icon">▣</span></div><div class="stat-value" id="metricRooms">—</div><div class="stat-foot">Loaded room records</div></article><article class="card"><div class="stat-top">Founder queue <span class="stat-icon">!</span></div><div class="stat-value" id="metricFounderRooms">—</div><div class="stat-foot">Awaiting your clarification</div></article><article class="card"><div class="stat-top">Messages loaded <span class="stat-icon">✉</span></div><div class="stat-value" id="metricMessages">—</div><div class="stat-foot">Loaded communication records</div></article><article class="card"><div class="stat-top">WhatsApp sent today <span class="stat-icon">↗</span></div><div class="stat-value" id="metricSent">—</div><div class="stat-foot">Provider-reported sent messages</div></article></div><div class="grid two" style="margin-bottom:14px"><article class="card"><div class="section-head"><h2>Room status distribution</h2><span>Current loaded rooms</span></div><div class="metric-bars" id="metricRoomBars"></div></article><article class="card"><div class="section-head"><h2>Operational health</h2><span>Recorded workforce and tasks</span></div><div class="list" id="metricHealth"></div></article></div><div class="grid two"><article class="card"><div class="section-head"><h2>Tasks by department</h2><span>Latest 100 tasks</span></div><div class="list" id="deptTaskList"></div></article><article class="card"><div class="section-head"><h2>Tasks by status</h2><span>Latest 100 tasks</span></div><div class="list" id="statusList"></div></article></div><div class="grid two" style="margin-top:14px"><article class="card"><div class="section-head"><h2>Commercial performance</h2><span id="commercialMeta">Rolling 30 days</span></div><div class="grid stats" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div><div class="stat-top">Prospects discovered</div><div class="stat-value" id="bizProspects">—</div></div><div><div class="stat-top">Quotations sent</div><div class="stat-value" id="bizQuotes">—</div></div><div><div class="stat-top">Invoices paid</div><div class="stat-value" id="bizPaid">—</div></div><div><div class="stat-top">Paid revenue</div><div class="stat-value" id="bizRevenue">—</div></div></div><div class="list" id="commercialDetails"></div></article><article class="card"><div class="section-head"><h2>AI usage & model spend</h2><span id="aiUsageMeta">UTC today</span></div><div class="grid stats" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div><div class="stat-top">Requests</div><div class="stat-value" id="aiRequests">—</div></div><div><div class="stat-top">Priced cost</div><div class="stat-value" id="aiCost">—</div></div><div><div class="stat-top">Prompt tokens</div><div class="stat-value" id="aiPromptTokens">—</div></div><div><div class="stat-top">Unpriced requests</div><div class="stat-value" id="aiUnpriced">—</div></div></div><div class="list" id="aiEmployeeUsage"></div></article></div><div class="grid two" style="margin-top:14px"><article class="card"><div class="section-head"><h2>Employee trust & approvals</h2><span>Trust signals only · not permissions</span></div><div class="list" id="trustList"></div></article><article class="card"><div class="section-head"><h2>Runtime reliability</h2><span>Last 24 hours</span></div><div class="list" id="runtimeMetrics"></div></article></div><article class="card" style="margin-top:14px"><div class="section-head"><h2>Task-room activity timeline</h2><span>Latest 100 room events</span></div><div class="list" id="roomEventTimeline"></div><article class="card" style="margin-top:14px"><div class="section-head"><h2>Client & project portfolio</h2><span>Live CRM records</span></div><div class="list" id="portfolioList"></div></article></section>
+<section class="view" id="view-chats"><div class="page-head"><div><div class="eyebrow">COMMUNICATION HUB</div><h1>Chats & messages</h1><div class="sub">Persistent internal conversations and WhatsApp communication activity. Internal chat is separate from customer messaging. <span class="sync" id="msgNote"></span></div></div><div class="actions"><button class="outline-btn" id="msgProcess">Process approved queue</button><button class="primary" id="msgTest">Send test to me</button></div></div><div class="chat-workbench"><div><h2>Internal employee conversations</h2><p>Open persistent department rooms to message the AI employee assigned to that team. Conversation history is saved in the internal chat ledger and never enters the customer WhatsApp outbox.</p></div><div class="actions"><a class="primary" href="/chat">Open internal chat ↗</a><a class="outline-btn" href="/chat-live">Open AI workbench ↗</a></div></div>
 <div class="grid stats"><article class="card"><div class="stat-top">Channel <span class="stat-icon">✉</span></div><div class="stat-value" id="chState">—</div><div class="stat-foot" id="chStateFoot"></div></article><article class="card"><div class="stat-top">Sent to customers today <span class="stat-icon">↗</span></div><div class="stat-value" id="chClients">—</div><div class="stat-foot" id="chClientsFoot"></div></article><article class="card"><div class="stat-top">Sent to you today <span class="stat-icon">★</span></div><div class="stat-value" id="chFounder">—</div><div class="stat-foot" id="chFounderFoot"></div></article><article class="card"><div class="stat-top">Opted out <span class="stat-icon">⊘</span></div><div class="stat-value" id="chBlocked">—</div><div class="stat-foot">Never messaged again</div></article></div>
 <div class="grid two"><article class="card"><div class="section-head"><h2>Channel setup</h2><span>Evolution API</span></div><div class="list" id="chSetup"></div></article><article class="card"><div class="section-head"><h2>Rules</h2><span>Built in, not optional</span></div><div class="list" id="chRules"></div></article></div>
-<article class="card" style="margin-top:14px"><div class="section-head"><h2>Conversation log</h2><span>Latest 60</span></div><div id="msgList"></div></article></section>
+<article class="card" style="margin-top:14px"><div class="section-head"><h2>WhatsApp conversation activity</h2><span>Latest 60 recorded messages</span></div><div id="msgList"></div></article></section>
 <section class="view" id="view-documents"><div class="page-head"><div><div class="eyebrow">PAPERWORK AND PAYMENTS</div><h1>Documents &amp; payments</h1><div class="sub">Numbered, signed PDFs, a price list, and Tambala Pay links. Anything for a customer can be sent from here once you have checked it.</div></div></div>
 <div class="grid two"><article class="card"><div class="section-head"><h2>Payment system</h2><span>Tambala Pay</span></div><div class="list" id="payHealth"></div></article><article class="card"><div class="section-head"><h2>New document</h2><span>You sign as TT-000</span></div><div id="docForm"></div></article></div>
 <article class="card" style="margin-top:14px"><div class="section-head"><h2>Documents</h2><span>Latest 40</span></div><div id="docList"></div></article>
@@ -91,7 +98,7 @@ details.emp{border:1px solid var(--line);background:#121e31;border-radius:10px;p
 <div class="gate" id="gate"><form id="gateForm"><h2>Control Centre</h2><p>Enter the dashboard token (the same value as TAMBALA_CHAT_TEST_TOKEN).</p><input id="gateToken" type="password" autocomplete="off" placeholder="Token" required><button type="submit">Open</button><div class="err" id="gateErr"></div></form></div>
 <div class="toast" id="toast"></div>
 <script>
-const KEY='tambala_chat_test_token';let data=null,timer=null;
+const KEY='tambala_chat_test_token';let data=null,timer=null,selectedDepartmentId=null;
 const $=id=>document.getElementById(id);
 function h(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined&&text!==null)e.textContent=text;return e}
 function badge(text,kind){return h('span','badge '+(kind||''),text)}
@@ -104,7 +111,7 @@ const statusKind=s=>s==='completed'||s==='success'||s==='approved'?'good':s==='f
 const val=(id,v,foot)=>{$(id).textContent=v===null||v===undefined?'—':v;if(foot!==undefined&&$(id+'Foot'))$(id+'Foot').textContent=foot};
 function nameOf(unitId){const u=data.organization.ok?data.organization.data.units.find(x=>x.id===unitId):null;return u?u.name:(unitId||'unassigned')}
 
-function render(){
+function renderCore(){
  const d=data,H=d.headline;
  $('syncNote').textContent='Updated '+new Date(d.generatedAt).toLocaleTimeString()+' · auto-refreshes every 30s';
  const banners=[];
@@ -118,23 +125,33 @@ function render(){
  val('sTasks',H.openTasks,H.openTasks===null?(d.tasks.ok?'':'Task store unavailable'):'In progress or waiting');
  val('sApprovals',H.pendingApprovals,H.pendingApprovals===null?'Approval register unavailable':'Awaiting an authorized role');
  document.querySelector('.nav[data-view="tasks"] .count').textContent=H.openTasks??'—';
- document.querySelector('.nav[data-view="approvals"] .count').textContent=H.pendingApprovals??'—';
+ const pendingRooms=d.rooms&&d.rooms.ok?d.rooms.data.filter(x=>x.status==='awaiting_founder').length:null;
+ document.querySelector('.nav[data-view="approvals"] .count').textContent=H.pendingApprovals===null||pendingRooms===null?'—':H.pendingApprovals+pendingRooms;
+ $('roomNavCount').textContent=pendingRooms===null?'—':pendingRooms;
+ $('chatNavCount').textContent=d.messages&&d.messages.ok?d.messages.data.length:'—';
 
  // overview
+ const tm=d.taskSummary&&d.taskSummary.ok?d.taskSummary.data:null;
+ const wf=d.workforce&&d.workforce.ok?d.workforce.data:null;
+ val('mSuccess',tm&&tm.successRate!==null?tm.successRate+'%':'—',tm?'Completed ÷ finished tasks':'Task metrics unavailable');
+ val('mCompleted',tm?tm.completed:'—',tm?'of '+tm.total+' latest tasks':'Task metrics unavailable');
+ val('mDutyHealth',wf?wf.today.done+'/'+wf.today.scheduled:'—',wf?wf.today.overdue+' overdue · '+wf.today.failed+' failed':'Duty metrics unavailable');
+ val('mStaff',wf?wf.employees.filter(e=>e.status==='available').length:'—',wf?'of '+wf.employees.length+' staff · ready and unassigned':'Workforce metrics unavailable');
  sec('ovDivisions',d.organization,o=>o.units.filter(u=>u.kind==='division').map(div=>{const kids=o.units.filter(u=>u.parentId===div.id);const roles=o.roles.filter(r=>kids.some(k=>k.id===r.unitId)||r.unitId===div.id);const act=roles.filter(r=>r.activation==='active').length;return row(div.name,kids.length+' departments · '+act+'/'+roles.length+' roles active',badge(act?'Partly active':'Planned',act?'good':'pending'))}),'No divisions','The registry returned no divisions.');
- const c=d.config;const R=[['WhatsApp',c.whatsapp],['Worker signatures',c.signing],['Database',c.database],['OAuth sign-in',c.oauth],['Web research',c.webResearch],['Tambala Pay',c.tambalaPay],['Report email',c.email],['WhatsApp',c.whatsapp]];
+ const c=d.config;const R=[['WhatsApp',c.whatsapp],['Worker signatures',c.signing],['Database',c.database],['OAuth sign-in',c.oauth],['Web research',c.webResearch],['Tambala Pay',c.tambalaPay],['Report email',c.email]];
  fill('ovReadiness',R.map(([n,ok])=>row(n,ok?'Configured':'Not configured',badge(ok?'Configured':'Missing',ok?'good':'pending'))));
- sec('ovEvents',d.events,ev=>ev.slice(0,8).map(e=>row(e.event_type.replaceAll('_',' '),(e.stage||'')+' · '+(e.department_id?nameOf(e.department_id)+' · ':'')+ago(e.created_at))),'No activity yet','Run an objective from the console and its events will appear here.');
+ sec('ovEvents',d.events,ev=>ev.slice(0,8).map(e=>row(e.event_type.replaceAll('_',' '),(e.stage||'')+' · '+(e.department_id?nameOf(e.department_id)+' · ':'')+ago(e.created_at)+(e.summary?' · '+String(e.summary).slice(0,100):e.error?' · '+String(e.error).slice(0,100):''))),'No activity yet','Run an objective from the console and its events will appear here.');
  const att=[];
  if(d.tasks.ok)d.tasks.data.filter(t=>t.status==='failed').slice(0,4).forEach(t=>att.push(row('Failed: '+t.objective.slice(0,70),(t.error_message||'').slice(0,100),badge('Failed','bad'))));
  if(d.audit.ok)d.audit.data.filter(a=>a.outcome==='denied').slice(0,4).forEach(a=>att.push(row('Denied: '+a.action,a.reason.slice(0,100),badge('Denied','bad'))));
+ if(d.workforce.ok)d.workforce.data.employees.forEach(e=>e.duties.filter(x=>x.state==='overdue'||x.state==='failed').forEach(x=>att.push(row(x.state.toUpperCase()+': '+x.title,e.title+' · '+x.schedule+(x.lastRun&&x.lastRun.error?' · '+String(x.lastRun.error).slice(0,80):''),badge(x.state==='failed'?'Failed':'Overdue','bad')))));
  if(d.automation.pendingActions.ok&&d.automation.pendingActions.data.length)att.push(row(d.automation.pendingActions.data.length+' automation action(s) awaiting review','See Automation',badge('Review','pending')));
- fill('ovAttention',att,'Nothing needs attention','No failed tasks, denied calls or pending reviews in the loaded window.');
+ fill('ovAttention',att,'Nothing needs attention','No failed tasks, overdue duties, denied calls or pending reviews in the loaded window.');
 
  // departments
  const grid=$('departmentGrid');grid.replaceChildren();
  if(!d.organization.ok)grid.append(h('div','err-box','Could not load: '+d.organization.error));
- else{const o=d.organization.data;o.units.filter(u=>u.kind!=='division').forEach(u=>{const rs=o.roles.filter(r=>r.unitId===u.id);const lead=rs[0];const ag=d.agents.find(a=>a.unitId===u.id);const art=h('article','dept');art.append(h('b','',u.name),h('small','',u.purpose));const foot=h('div','dept-foot');const active=lead&&lead.activation==='active';foot.append(badge(active?(ag&&ag.ready?'Operational':'Active · runtime missing'):(ag?'Planned · runtime '+(ag.ready?'ready':'missing'):'Planned'),active&&ag&&ag.ready?'good':active?'info':'pending'),h('span','',u.kind==='business_unit'?'Business unit':nameOf(u.parentId)));foot.lastChild.style.cssText='font-size:9px;color:#8394ad';art.append(foot);grid.append(art)})}
+ else{const o=d.organization.data;o.units.filter(u=>u.kind!=='division').forEach(u=>{const rs=o.roles.filter(r=>r.unitId===u.id);const lead=rs[0];const ag=d.agents.find(a=>a.unitId===u.id);const art=h('article','dept');art.tabIndex=0;art.setAttribute('role','button');art.setAttribute('aria-label','Open '+u.name+' office');art.addEventListener('click',()=>openDepartmentOffice(u.id));art.addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();openDepartmentOffice(u.id)}});art.append(h('b','',u.name),h('small','',u.purpose));const foot=h('div','dept-foot');const active=lead&&lead.activation==='active';foot.append(badge(active?(ag&&ag.ready?'Operational':'Active · runtime missing'):(ag?'Planned · runtime '+(ag.ready?'ready':'missing'):'Planned'),active&&ag&&ag.ready?'good':active?'info':'pending'),h('span','',u.kind==='business_unit'?'Business unit':nameOf(u.parentId)));foot.lastChild.style.cssText='font-size:9px;color:#8394ad';art.append(foot,h('div','dept-open','OPEN DEPARTMENT OFFICE  ↗'));grid.append(art)})}
 
  // tasks
  const T=d.taskSummary;if(T.ok){val('tOpen',T.data.open);val('tDone',T.data.completed);val('tFailed',T.data.failed);val('tTotal',T.data.total)}else{['tOpen','tDone','tFailed','tTotal'].forEach(i=>val(i,null))}
@@ -143,6 +160,10 @@ function render(){
 
  // approvals
  renderApprovals(d.approvals);
+ renderFounderRooms(d.rooms);
+ renderRooms(d.rooms);
+ renderWorkspaceMetrics(d);
+ renderExtendedInsights(d);
  sec('decisionList',d.decisions,a=>a.map(x=>row(x.title.slice(0,100),(x.required_authority||'no authority required')+' · '+ago(x.created_at),badge(x.status.replaceAll('_',' '),statusKind(x.status)))),'No decisions recorded','');
 
  // people
@@ -170,6 +191,7 @@ function render(){
   fill('statusList',Object.entries(t.byStatus).map(([k,v])=>row(k.replaceAll('_',' '),'',badge(String(v),statusKind(k)))),'No tasks','')}
  else{['pSuccess','pAvg','pDone','pFailed'].forEach(i=>val(i,null));['deptTaskList','statusList'].forEach(id=>{$(id).replaceChildren(h('div','err-box','Task store unavailable.'))})}
 
+ if(selectedDepartmentId)renderDepartmentOffice();
  renderWorkforce(d);
  renderSignatures(d);
  renderMessages(d);
@@ -177,6 +199,110 @@ function render(){
  // settings
  fill('flagList',[['Role enforcement',c.roleEnforcement],['Worker signatures',c.signing],['Dev: treat agent roles as active',c.devActiveRoles],['Web research key',c.webResearch],['Pay token',c.tambalaPay],['WhatsApp flag',c.whatsapp]].map(([n,v])=>row(n,'',badge(v?'On':'Off',v?'good':'pending'))));
  fill('sourceList',[row('Organization source',c.orgSource==='supabase'?'Loaded from Supabase tables':c.orgSource==='seed-fallback'?'Built-in seed (no database verification)':'Unavailable',badge(c.orgSource||'unknown',c.orgSource==='supabase'?'good':'pending'))]);
+}
+
+
+function render(){
+ try{renderCore()}
+ catch(error){
+  console.error('Dashboard section rendering failed:',error);
+  $('syncNote').textContent='Some dashboard panels needed recovery: '+(error&&error.message?error.message:'render error')+' · data refresh continues';
+ }
+ renderCriticalSections(data);
+}
+function renderCriticalSections(d){
+ if(!d)return;
+ try{
+  if(!d.tasks||!d.tasks.ok){sec('taskList',d.tasks||{ok:false,error:'No task payload returned.'},()=>[],'No tasks','')}
+  else{
+   const tasks=Array.isArray(d.tasks.data)?d.tasks.data:[];
+   fill('taskList',tasks.slice(0,50).map(t=>row(String(t.objective||'Untitled task').slice(0,110),(t.assigned_department_id?nameOf(t.assigned_department_id)+' · ':'')+String(t.current_stage||'—')+' · '+ago(t.created_at),badge(String(t.status||'unknown').replaceAll('_',' '),statusKind(t.status)))),'No tasks recorded','The task store returned no rows.');
+  }
+  if(d.taskSummary&&d.taskSummary.ok){const t=d.taskSummary.data;val('tOpen',t.open);val('tDone',t.completed);val('tFailed',t.failed);val('tTotal',t.total)}
+ }catch(error){$('taskList').replaceChildren(h('div','err-box','Task Centre could not render: '+error.message))}
+ try{
+  if(d.workforce&&d.workforce.ok)renderWorkforce(d);else renderFallbackStaff(d);
+ }catch(error){console.error('Staff directory rendering failed:',error);renderFallbackStaff(d,error)}
+ try{renderApprovals(d.approvals||{ok:false,error:'No approvals payload returned.'})}catch(error){$('approvalList').replaceChildren(h('div','err-box','Approvals could not render: '+error.message))}
+ try{renderFounderRooms(d.rooms);renderRooms(d.rooms)}catch(error){$('roomGrid').replaceChildren(h('div','err-box','Rooms could not render: '+error.message))}
+ try{renderMessages(d)}catch(error){$('msgList').replaceChildren(h('div','err-box','Messages could not render: '+error.message))}
+ try{renderDocuments(d)}catch(error){$('docList').replaceChildren(h('div','err-box','Documents could not render: '+error.message))}
+ try{renderPortfolio(d)}catch(error){$('portfolioList').replaceChildren(h('div','err-box','Portfolio could not render: '+error.message))}
+ try{renderWorkspaceMetrics(d);renderExtendedInsights(d)}catch(error){$('metricHealth').replaceChildren(h('div','err-box','Metrics could not render: '+error.message))}
+ try{renderSignatures(d)}catch(error){$('ledgerList').replaceChildren(h('div','err-box','Signature ledger could not render: '+error.message))}
+ try{
+  sec('decisionList',d.decisions,x=>x.map(a=>row(a.title||'Untitled decision',(a.required_authority||'')+' · '+ago(a.created_at),badge(a.status||'unknown',statusKind(a.status)))),'No decisions recorded','The decisions table has no records.');
+  fill('agentList',(d.agents||[]).map(a=>row(a.title,(a.model||'No model set')+' · '+a.requestsPerMinute+'/min',badge(a.ready?'Ready':'Not ready',a.ready?'good':'pending'))),'No agents','No agent runtime directory returned.');
+  sec('roleList',d.organization,o=>o.roles.map(r=>row(r.title,r.kind+(r.unitId?' · '+nameOf(r.unitId):''),badge(r.activation,r.activation==='active'?'good':'pending'))),'No roles','No role records returned.');
+  sec('auditList',d.audit,as=>as.map(a=>row(a.action+' → '+(a.target_id||''),(a.reason||'No reason recorded')+' · '+ago(a.created_at),badge(a.outcome,statusKind(a.outcome)))),'No audit events','No audit events were returned.');
+  sec('bindList',d.bindings,bs=>bs.map(b=>row(b.role_id,b.principal_id+(b.note?' · '+b.note:''),badge('active','good'))),'No active bindings','No active identity bindings were returned.');
+  sec('runList',d.automation.runs,rs=>rs.map(r=>row(r.mode+' · '+(r.run_key||'').slice(0,28),(r.followups_prepared??0)+' follow-ups · '+(r.tasks_flagged??0)+' flagged · '+ago(r.started_at),badge(r.status,statusKind(r.status)))),'No automation runs','No automation run records were returned.');
+  sec('actionList',d.automation.pendingActions,as=>as.map(a=>row(a.action_type,ago(a.created_at),badge(a.status,statusKind(a.status)))),'Nothing awaiting review','No prepared automation actions were returned.');
+ }catch(error){console.error('Secondary dashboard panels failed:',error)}
+}
+function renderFallbackStaff(d,error){
+ const grid=$('staffGrid');grid.replaceChildren();
+ const agents=Array.isArray(d&&d.agents)?d.agents:[];
+ const roles=d&&d.organization&&d.organization.ok?d.organization.data.roles:[];
+ const roleByAgent={orchestrator:'ceo',outreach:'director-sales-business-development',followup:'director-customer-relations',research:'director-research-intelligence',marketing:'director-marketing-brand',content:'director-media-content',finance:'director-finance-accounting',payments:'leader-fintech-ventures',engineering:'director-technology-engineering',strategy:'director-strategy-planning',product:'director-product-innovation',security:'director-cybersecurity-it',operations:'director-operations-administration',people:'director-people-agent-management',legal:'director-legal-risk-compliance',procurement:'director-procurement-resources',executive:'director-executive-management',rnd:'director-research-development',governance:'director-board-governance'};
+ if(!agents.length){grid.append(h('div','err-box','Staff directory unavailable: no agent directory was returned. '+(error?error.message:'')));return}
+ $('staffNote').textContent='Showing the organization’s registered AI employee directory. Live duty metrics are unavailable'+(d&&d.workforce&&!d.workforce.ok?': '+d.workforce.error:'.');
+ agents.forEach(a=>{
+  const role=roles.find(r=>r.id===roleByAgent[a.agent]);
+  const det=document.createElement('details');det.className='emp';
+  const sm=document.createElement('summary'),main=h('div','emp-main');
+  main.append(h('b','',a.title),h('small','',a.unitName+' · '+(a.reportsTo||'Reports to CEO')+' · '+(a.model||'No model configured')));
+  sm.append(main,badge(!role?'Role not mapped':role.activation==='active'?(a.ready?'Active · runtime ready':'Active · runtime not ready'):'Inactive',role&&role.activation==='active'?(a.ready?'good':'pending'):'bad'));
+  det.append(sm);const body=h('div','emp-body');
+  body.append(h('div','',a.agent+' · '+(role?role.id:'No matching role record')));
+  if(role)body.append(h('div','',role.activation+' · '+role.kind));
+  if(error||d.workforce&&!d.workforce.ok)body.append(h('div','notice','Workforce metrics could not be loaded. '+(error?error.message:d.workforce.error)));
+  det.append(body);grid.append(det);
+ });
+}
+function renderPortfolio(d){
+ const el=$('portfolioList');el.replaceChildren();
+ const clients=d.clients&&d.clients.ok?d.clients.data:null,projects=d.projects&&d.projects.ok?d.projects.data:null;
+ if(!clients){el.append(h('div','err-box','Clients unavailable: '+(d.clients&&d.clients.error||'No client payload returned.')))}
+ else{
+  el.append(row('Clients',String(clients.length)+' records',badge('CRM','info')));
+  clients.slice(0,12).forEach(x=>el.append(row(x.business_name||x.name||'Unnamed client',(x.status||'status unavailable')+' · '+(x.location||x.phone||x.email||'No contact detail recorded')+' · '+ago(x.updated_at||x.created_at))));
+  if(!clients.length)el.append(empty('No client records','The CRM client table returned no rows.'));
+ }
+ if(!projects)el.append(h('div','err-box','Projects unavailable: '+(d.projects&&d.projects.error||'No project payload returned.')));
+ else{
+  el.append(row('Projects',String(projects.length)+' records',badge('Projects','info')));
+  projects.slice(0,12).forEach(x=>el.append(row(x.name||'Unnamed project',(x.status||'status unavailable')+' · '+(x.project_type||'project')+' · '+ago(x.updated_at||x.created_at))));
+  if(!projects.length)el.append(empty('No project records','The projects table returned no rows.'));
+ }
+}
+
+
+function openDepartmentOffice(unitId){selectedDepartmentId=unitId;renderDepartmentOffice();showView('office')}
+function renderDepartmentOffice(){
+ const d=data;if(!d||!d.organization.ok)return;
+ const unit=d.organization.data.units.find(u=>u.id===selectedDepartmentId);if(!unit)return;
+ const roles=d.organization.data.roles.filter(r=>r.unitId===unit.id);
+ const people=d.workforce.ok?d.workforce.data.employees.filter(e=>e.unitId===unit.id):[];
+ const tasks=d.tasks.ok?d.tasks.data.filter(t=>t.assigned_department_id===unit.id):[];
+ const done=tasks.filter(t=>t.status==='completed').length,failed=tasks.filter(t=>t.status==='failed').length;
+ const open=tasks.filter(t=>!['completed','failed','cancelled'].includes(t.status)).length;
+ const duties=people.flatMap(e=>e.duties.map(x=>({...x,employee:e})));
+ const dutyDone=duties.filter(x=>x.state==='done'||x.state==='awaiting_approval').length;
+ const dutyBad=duties.filter(x=>x.state==='overdue'||x.state==='failed').length;
+ const on=people.filter(e=>e.status==='available').length;
+ $('officeTitle').textContent=unit.name+' office';$('officePurpose').textContent=unit.purpose||'Department workspace · live team, workload and operating metrics.';
+ const stat=(label,value,foot)=>{const a=h('article','card');a.append(h('div','stat-top',label),h('div','stat-value',String(value)),h('div','stat-foot',foot));return a};
+ const stats=$('officeStats');stats.replaceChildren(stat('Team members',people.length,on+' available · '+roles.length+' registered roles'),stat('Open tasks',open,'Assigned to this department'),stat('Completed tasks',done,'Latest 100 task records'),stat('Overdue / failed duties',dutyBad,dutyDone+' duties completed or awaiting approval'));
+ const team=$('officeTeam');team.replaceChildren();
+ if(!d.workforce.ok)team.append(h('div','err-box','Workforce data unavailable: '+d.workforce.error));
+ else if(!people.length)team.append(h('div','office-empty','No staff are currently assigned to this department.'));
+ people.forEach(e=>{const card=h('div','office-person');card.append(h('b','',e.employeeNumber+' · '+e.title),h('small','',e.status.replaceAll('_',' ')+' · '+e.week.completed+' weekly duties completed · '+e.inbox.queued+' queued handoffs'));const ta=el2('textarea',{maxlength:'1000'});ta.placeholder='Describe a task for this employee…';const btn=h('button','sm ok','Assign task');btn.style.marginTop='7px';btn.addEventListener('click',async()=>{const request=ta.value.trim();if(request.length<5){notify('Write a clear task first.');return}btn.disabled=true;try{await post('/api/dashboard/handoffs/assign',{agent:e.agent,request});ta.value='';notify('Task assigned to '+e.employeeNumber+'.');await load();renderDepartmentOffice()}catch(err){notify(err.message)}btn.disabled=false});card.append(ta,btn);team.append(card)});
+ const wl=$('officeWorkload');wl.replaceChildren();const counts=[['Completed',done],['Open',open],['Failed',failed]];const max=Math.max(1,...counts.map(x=>x[1]));counts.forEach(([label,n])=>{const r=h('div','office-bar');r.append(h('span','',label));const bar=h('div','bar');const fillBar=h('i','');fillBar.style.setProperty('--pct',(n/max*100)+'%');bar.append(fillBar);r.append(bar,h('b','',String(n)));wl.append(r)});
+ if(!tasks.length)wl.append(h('div','office-empty','No department tasks are recorded in the latest 100 tasks.'));
+ const taskBox=$('officeTasks');taskBox.replaceChildren();if(!d.tasks.ok)taskBox.append(h('div','err-box','Task data unavailable: '+d.tasks.error));else if(!tasks.length)taskBox.append(h('div','office-empty','No tasks assigned to this department yet.'));tasks.slice(0,20).forEach(t=>{const r=h('div','office-task');r.append(h('b','',t.objective),h('small','',(t.current_stage||'—')+' · '+t.status.replaceAll('_',' ')+' · '+ago(t.created_at)));if(t.error_message)r.append(h('small','',t.error_message));taskBox.append(r)});
+ const dutyBox=$('officeDuties');dutyBox.replaceChildren();if(!d.workforce.ok)dutyBox.append(h('div','err-box','Workforce data unavailable.'));else if(!duties.length)dutyBox.append(h('div','office-empty','No standing duties are assigned to this department.'));duties.forEach(x=>{const r=h('div','duty');const c=h('div','dc');c.append(h('b','',x.title),h('small','',x.employee.employeeNumber+' · '+x.schedule+(x.lastRun?' · last '+x.lastRun.status.replaceAll('_',' ')+' '+ago(x.lastRun.at):'')));r.append(c,badge(DUTY_LABEL[x.state]||x.state,DUTY_KIND[x.state]));dutyBox.append(r)});
+ const ev=d.events.ok?d.events.data.filter(x=>x.department_id===unit.id):[];fill('officeActivity',ev.slice(0,15).map(x=>row(x.event_type.replaceAll('_',' '),(x.stage||'')+' · '+ago(x.created_at))), 'No department activity','Recorded task events will appear here.');
 }
 
 
@@ -215,11 +341,55 @@ function renderSignatures(d){
 $('verifyBtn').addEventListener('click',()=>{const v=$('verifyInput').value.trim();if(!v){notify('Paste a fingerprint first.');return}verify({fingerprint:v})});
 $('verifyInput').addEventListener('keydown',e=>{if(e.key==='Enter')$('verifyBtn').click()});
 
+function renderRooms(section){
+ const grid=$('roomGrid'),meta=$('roomMeta');grid.replaceChildren();
+ if(!section||!section.ok){meta.textContent='Unavailable';grid.append(empty('Rooms unavailable',section&&section.error||'Room records could not be loaded.'));return}
+ const rooms=section.data||[],waiting=rooms.filter(x=>x.status==='awaiting_founder'),active=rooms.filter(x=>['open','in_progress','queued','pending'].includes(x.status)),failed=rooms.filter(x=>x.status==='failed');
+ val('roomTotal',rooms.length);val('roomWaiting',waiting.length);val('roomActive',active.length);val('roomFailed',failed.length);
+ const search=$('roomSearch').value.trim().toLowerCase(),filter=$('roomFilter').value;
+ const filtered=rooms.filter(x=>(filter==='all'||x.status===filter)&&(!search||[x.objective,x.owner_role_id,x.owner_agent,x.opened_by_role_id,x.blocker].some(v=>String(v||'').toLowerCase().includes(search))));
+ meta.textContent=filtered.length+' of '+rooms.length+' rooms · '+waiting.length+' need your input';
+ if(!filtered.length){grid.append(empty('No matching rooms','Try another search or status filter.'));return}
+ filtered.forEach(room=>{const card=h('article','room-card');card.append(h('h3','',room.objective||'Untitled room'));const metaLine=h('div','room-meta');metaLine.append(badge(String(room.status||'unknown').replaceAll('_',' '),statusKind(room.status)),h('span','',(room.owner_agent||room.owner_role_id||'Unassigned')+' · opened by '+(room.opened_by_role_id||'unknown')),h('span','',ago(room.updated_at||room.opened_at)));card.append(metaLine);
+ if(room.blocker){const det=document.createElement('details');det.className='room-detail';det.append(h('summary','','Blocker / clarification required'),h('div','pre',String(room.blocker).slice(0,5000)));card.append(det)}
+ if(room.deliverable){const det=document.createElement('details');det.className='room-detail';det.append(h('summary','','Prepared work / deliverable'),h('div','pre',String(room.deliverable).slice(0,5000)));card.append(det)}
+ if(room.status==='awaiting_founder'){const reply=h('textarea','room-reply');reply.maxLength=4000;reply.placeholder='Give the employee the clarification or decision needed…';const actions=h('div','room-actions');const btn=h('button','sm ok','Reply & resume');btn.addEventListener('click',async()=>{const clarification=reply.value.trim();if(clarification.length<2){notify('Add a clarification first.');reply.focus();return}if(!confirm('Send this instruction and resume the employee handoff?'))return;btn.disabled=true;try{await post('/api/dashboard/rooms/'+room.id+'/reply',{clarification});notify('Instruction sent. Handoff resumed.');await load()}catch(e){notify(e.message);btn.disabled=false}});actions.append(btn);card.append(reply,actions)}
+ grid.append(card)});
+}
+function renderWorkspaceMetrics(d){
+ const rooms=d.rooms&&d.rooms.ok?d.rooms.data:[],msgs=d.messages&&d.messages.ok?d.messages.data:null,channel=d.channel&&d.channel.ok?d.channel.data:null,wf=d.workforce&&d.workforce.ok?d.workforce.data:null,tasks=d.taskSummary&&d.taskSummary.ok?d.taskSummary.data:null,waiting=rooms.filter(x=>x.status==='awaiting_founder').length;
+ val('metricRooms',d.rooms&&d.rooms.ok?rooms.length:null);val('metricFounderRooms',d.rooms&&d.rooms.ok?waiting:null);val('metricMessages',msgs?msgs.length:null);val('metricSent',channel?channel.sentToday.clients+channel.sentToday.founder:null);
+ const counts={};rooms.forEach(x=>counts[x.status||'unknown']=(counts[x.status||'unknown']||0)+1);const bars=$('metricRoomBars');bars.replaceChildren();const entries=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+ if(!d.rooms||!d.rooms.ok)bars.append(h('div','err-box','Room metrics unavailable: '+(d.rooms&&d.rooms.error||'No data')));else if(!entries.length)bars.append(empty('No room records','Room distribution will appear when rooms are recorded.'));else entries.forEach(([status,n])=>{const line=h('div','metric-bar-row');line.append(h('span','',status.replaceAll('_',' ')));const bar=h('div','bar'),fillbar=h('i','');fillbar.style.width=(n/rooms.length*100)+'%';bar.append(fillbar);line.append(bar,h('b','',String(n)));bars.append(line)});
+ const health=$('metricHealth');health.replaceChildren();health.append(row('Task success rate',tasks&&tasks.successRate!==null?tasks.successRate+'%':'Unavailable',badge(tasks&&tasks.successRate!==null?'Recorded':'No data',tasks&&tasks.successRate!==null?'good':'pending')));health.append(row('Staff available',wf?wf.employees.filter(e=>e.status==='available').length+' / '+wf.employees.length:'Unavailable',badge(wf?'Workforce loaded':'No data',wf?'info':'pending')));health.append(row('Duties overdue / failed',wf?wf.today.overdue+' overdue · '+wf.today.failed+' failed':'Unavailable',badge(wf&&(wf.today.overdue+wf.today.failed)>0?'Attention':'Recorded',wf&&(wf.today.overdue+wf.today.failed)>0?'pending':'good')));health.append(row('WhatsApp connection',channel?(channel.state==='open'?'Connected':channel.state||'Unknown'):'Unavailable',badge(channel?(channel.state==='open'?'Connected':'Check'):'No data',channel&&channel.state==='open'?'good':'pending')));
+}
+function renderFounderRooms(section){
+ const el=$('founderRoomList'),meta=$('founderRoomMeta');el.replaceChildren();
+ if(!section||!section.ok){meta.textContent='Unavailable';el.append(h('div','err-box','Could not load task rooms: '+(section&&section.error||'No data returned.')));return}
+ const waiting=section.data.filter(x=>x.status==='awaiting_founder').sort((a,b)=>Date.parse(b.updated_at||'')-Date.parse(a.updated_at||''));
+ meta.textContent=waiting.length+' waiting · latest '+Math.min(waiting.length,30)+' shown';
+ if(!waiting.length){el.append(empty('No task rooms waiting for you','Employee handoffs that need clarification will appear here.'));return}
+ waiting.slice(0,30).forEach(room=>{
+  const box=h('div','apv'),top=h('div','list-row');top.style.border='0';top.style.padding='0';
+  const copy=h('div','list-copy');
+  copy.append(h('b','',String(room.objective||'Employee task').slice(0,180)),h('small','',(room.owner_agent||room.owner_role_id||'Unassigned')+' · opened by '+(room.opened_by_role_id||'unknown')+' · updated '+ago(room.updated_at)));
+  top.append(copy,badge('Needs your input','pending'));box.append(top);
+  if(room.blocker){const detail=document.createElement('details');const summary=h('summary','','What is blocking this work?');summary.style.cssText='cursor:pointer;font-size:10px;color:var(--blue);margin:7px 0';detail.append(summary,h('div','pre',String(room.blocker).slice(0,4000)));box.append(detail)}
+  if(room.deliverable){const detail=document.createElement('details');const summary=h('summary','','Work prepared so far');summary.style.cssText='cursor:pointer;font-size:10px;color:var(--blue);margin:7px 0';detail.append(summary,h('div','pre',String(room.deliverable).slice(0,4000)));box.append(detail)}
+  const reply=document.createElement('textarea');reply.className='note';reply.rows=3;reply.maxLength=4000;reply.placeholder='Write the clarification or instruction this employee needs…';reply.style.cssText='width:100%;min-height:72px;margin-top:9px;resize:vertical';
+  const btn=h('button','sm ok','Reply & resume work');btn.style.marginTop='7px';
+  btn.addEventListener('click',async()=>{const clarification=reply.value.trim();if(clarification.length<2){notify('Add the clarification first.');reply.focus();return}if(!confirm('Send this clarification and resume the employee handoff?'))return;btn.disabled=true;try{await post('/api/dashboard/rooms/'+room.id+'/reply',{clarification});notify('Clarification sent. Employee handoff resumed.');await load()}catch(e){notify(e.message);btn.disabled=false}});
+  box.append(reply,btn);el.append(box);
+ });
+ if(waiting.length>30)el.append(h('div','muted-box','Showing the 30 most recently updated rooms. '+(waiting.length-30)+' older rooms remain in the record.'));
+}
 function renderApprovals(section){
  const el=$('approvalList');el.replaceChildren();
  if(!section.ok){el.append(h('div','err-box','Could not load: '+section.error));return}
- if(!section.data.length){el.append(empty('No pending approvals','Prepared work from your staff appears here for your decision.'));return}
- section.data.forEach(a=>{
+ const pending=section.data.filter(a=>a.status==='pending');
+ const history=section.data.filter(a=>a.status!=='pending');
+ if(!pending.length)el.append(empty('No pending approvals','There are no outstanding approval requests. Recent decisions are listed below.'));
+ pending.forEach(a=>{
   const box=h('div','apv');const top=h('div','list-row');top.style.border='0';top.style.padding='0';
   const c=h('div','list-copy');c.append(h('b','',a.summary),h('small','',a.action_type.replaceAll('_',' ')+' · from '+a.requested_by_role_id+' · '+ago(a.created_at)));top.append(c,badge(a.risk_level,a.risk_level==='high'||a.risk_level==='critical'?'bad':'pending'));box.append(top);
   if(a.content){const det=document.createElement('details');det.append(h('summary','','View prepared work'));det.lastChild.style.cssText='cursor:pointer;font-size:10px;color:var(--blue);margin-top:4px';det.append(h('div','pre',a.content));box.append(det)}
@@ -235,10 +405,18 @@ function renderApprovals(section){
   };
   ok.addEventListener('click',()=>act('approved'));no.addEventListener('click',()=>act('rejected'));
   const row2=h('div','btn-row');row2.append(note,ok,no);box.append(row2);el.append(box)});
+ if(history.length){
+  el.append(h('h3','','Recent approval decisions'));
+  history.slice(0,20).forEach(a=>{
+   const status=String(a.status||'unknown');
+   el.append(row(a.summary||a.action_type||'Approval request',(a.resolved_by_role_id||a.requested_by_role_id||'Unknown role')+' · '+ago(a.resolved_at||a.created_at)+(a.resolution_note?' · '+a.resolution_note:''),badge(status.replaceAll('_',' '),status==='approved'?'good':status==='rejected'?'bad':'info')));
+  });
+ }
+
 }
 
 const EMP_KIND={on_duty:'good',off_hours:'info',unequipped:'pending',inactive:'pending'};
-const EMP_LABEL={on_duty:'On duty',off_hours:'Off hours',unequipped:'No model',inactive:'Inactive'};
+const EMP_LABEL={on_duty:'Available',off_hours:'Off hours',unequipped:'No model',inactive:'Inactive'};
 const DUTY_KIND={done:'good',awaiting_approval:'info',running:'info',scheduled:'info',overdue:'bad',failed:'bad',skipped:'pending',not_today:'',off:''};
 const DUTY_LABEL={done:'Done',awaiting_approval:'Awaiting you',running:'Running',scheduled:'Scheduled',overdue:'Overdue',failed:'Failed',skipped:'Skipped',not_today:'Not today',off:'Switched off'};
 
@@ -287,14 +465,57 @@ function dutyForm(e,x,canEdit){
  form.append(row2);return form;
 }
 
+function renderExtendedInsights(d){
+ const goals=d.goals&&d.goals.ok?d.goals.data:null;
+ const trust=d.trust&&d.trust.ok?d.trust.data:null;
+ const usage=d.aiSpend&&d.aiSpend.ok?d.aiSpend.data:null;
+ const runtime=d.runtime&&d.runtime.ok?d.runtime.data:null;
+ const roomEvents=d.roomEvents&&d.roomEvents.ok?d.roomEvents.data:null;
+ const count=(id,value)=>val(id,value===null||value===undefined?'—':Number(value).toLocaleString());
+ if(!goals){['bizProspects','bizQuotes','bizPaid','bizRevenue'].forEach(id=>val(id,'—'));$('commercialMeta').textContent='Unavailable';$('commercialDetails').replaceChildren(h('div','err-box','Commercial metrics unavailable: '+(d.goals&&d.goals.error||'No data')))}
+ else{
+  $('commercialMeta').textContent='Rolling '+goals.windowDays+' days';
+  count('bizProspects',goals.prospects.total);count('bizQuotes',goals.quotations.sent);count('bizPaid',goals.invoices.paid);
+  val('bizRevenue',money(goals.invoices.paidRevenueMinor));
+  const rows=[
+   row('Prospect pipeline',Object.entries(goals.prospects.byStatus||{}).map(([k,v])=>k.replaceAll('_',' ')+': '+v).join(' · ')||'No status records'),
+   row('Quotations',goals.quotations.created+' created · '+goals.quotations.sent+' sent · acceptance unavailable'),
+   row('Invoices',goals.invoices.created+' created · '+goals.invoices.unpaid+' unpaid'),
+   row('Customer messages',goals.customerCommunication.sent+' sent · '+goals.customerCommunication.replies+' inbound replies · reply rate unavailable')
+  ];fill('commercialDetails',rows);
+ }
+ if(!usage){['aiRequests','aiCost','aiPromptTokens','aiUnpriced'].forEach(id=>val(id,'—'));$('aiUsageMeta').textContent='Unavailable';$('aiEmployeeUsage').replaceChildren(h('div','err-box','AI usage unavailable: '+(d.aiSpend&&d.aiSpend.error||'No data')))}
+ else{
+  $('aiUsageMeta').textContent=usage.window||'UTC today';count('aiRequests',usage.requests);val('aiCost','$'+Number(usage.pricedCostUsd||0).toFixed(6));count('aiPromptTokens',usage.promptTokens);count('aiUnpriced',usage.unpricedRequests);
+  const rows=Object.entries(usage.byEmployee||{}).sort((a,b)=>b[1].requests-a[1].requests).map(([employee,x])=>row(employee,x.requests+' requests · '+Number(x.promptTokens||0).toLocaleString()+' prompt / '+Number(x.completionTokens||0).toLocaleString()+' completion tokens · '+x.unpricedRequests+' unpriced',badge('$'+Number(x.pricedCostUsd||0).toFixed(5),'info')));
+  fill('aiEmployeeUsage',rows,'No AI usage recorded','Usage is recorded when an employee makes a model request.');
+ }
+ if(!trust){$('trustList').replaceChildren(h('div','err-box','Trust data unavailable: '+(d.trust&&d.trust.error||'No data')))}
+ else if(!trust.employees.length){$('trustList').replaceChildren(empty('No trust records','Trust is earned from eligible, low-risk, unedited approvals.'))}
+ else fill('trustList',trust.employees.map(x=>row(x.employee_number+' · '+x.action_type.replaceAll('_',' '),x.consecutive_approvals+' consecutive approvals'+(x.demoted_reason?' · '+x.demoted_reason:''),badge(x.standing_approval?'Standing approval earned':'Not earned',x.standing_approval?'good':'pending'))));
+ if(!runtime){$('runtimeMetrics').replaceChildren(h('div','err-box','Runtime metrics unavailable: '+(d.runtime&&d.runtime.error||'No data')))}
+ else{
+  const c=runtime.control||{},e=runtime.errorBudget||{};
+  fill('runtimeMetrics',[
+   row('Organization runtime',c.paused?'Paused':'Running',badge(c.paused?'Paused':'Active',c.paused?'bad':'good')),
+   row('Duty runs observed',String(e.observed??0)+' · '+e.windowHours+'-hour window'),
+   row('Duty success target',e.targetSuccessPercent+'%',e.completed+' completed · '+e.failed+' failed'),
+   row('Failure rate',e.failureRatePercent===null?'Unavailable':e.failureRatePercent+'%',e.remainingPercent===null?'No completed/failed runs to calculate error budget':e.remainingPercent+'% error budget remaining')
+  ]);
+ }
+ if(!roomEvents){$('roomEventTimeline').replaceChildren(h('div','err-box','Room event history unavailable: '+(d.roomEvents&&d.roomEvents.error||'No data')))}
+ else if(!roomEvents.length){$('roomEventTimeline').replaceChildren(empty('No room events','Room changes and handoff activity will appear here.'))}
+ else fill('roomEventTimeline',roomEvents.slice(0,40).map(x=>row(String(x.event_type||'room event').replaceAll('_',' '),(x.actor_role_id||'System')+' · '+ago(x.created_at)+(x.payload&&x.payload.summary?' · '+String(x.payload.summary).slice(0,100):''),badge('Room','info'))));
+}
+
 function renderWorkforce(d){
  const grid=$('staffGrid');grid.replaceChildren();
  if(!d.workforce.ok){const msg='Could not load: '+d.workforce.error;grid.append(h('div','err-box',msg));['wfOn','wfDone','wfBad','wfSkip'].forEach(i=>val(i,null));$('ovDuties').replaceChildren(h('div','err-box',msg));$('ovBriefing').replaceChildren(h('div','err-box',msg));$('handoffList').replaceChildren(h('div','err-box',msg));return}
  const w=d.workforce.data;
  const openIds=new Set([...document.querySelectorAll('details.emp[open]')].map(x=>x.dataset.role));
  $('staffNote').textContent='Office time '+w.office.time+' · '+(w.office.workingHours?'working hours':'outside working hours')+(w.persistence==='memory'?' · records kept in memory only':'');
- const on=w.employees.filter(e=>e.status==='on_duty').length;
- val('wfOn',on,'of '+w.employees.length+' staff · '+w.employees.filter(e=>e.status==='inactive').length+' inactive');
+ const on=w.employees.filter(e=>e.status==='available').length;
+ val('wfOn',on,'of '+w.employees.length+' staff · availability only, not proof of active work');
  val('wfDone',w.today.done,'of '+w.today.scheduled+' scheduled today');
  val('wfBad',w.today.overdue+w.today.failed,w.today.overdue+' overdue · '+w.today.failed+' failed');
  val('wfSkip',w.today.skipped);
@@ -443,19 +664,40 @@ function renderDocuments(d){
  if(!d.channel.ok||!d.channel.data.configured){}
 }
 
+async function refreshRuntimeControl(){
+ const r=await fetch('/api/runtime/control',{headers:authHeaders()});
+ if(!r.ok)throw Error('Runtime control unavailable.');
+ const s=await r.json();const b=$('runtimePause');
+ b.textContent=s.paused?'Resume all':'Pause all';
+ b.style.borderColor=s.paused?'#ff9696':'';
+ b.style.color=s.paused?'#ff9696':'';
+ b.title=s.paused?'Paused: '+(s.reason||'Founder pause')+' · click to resume':'System running · click to pause all execution';
+}
+$('runtimePause').addEventListener('click',async()=>{
+ const b=$('runtimePause');b.disabled=true;
+ try{
+  const r=await fetch('/api/runtime/control',{headers:authHeaders()});if(!r.ok)throw Error('Could not read runtime state.');
+  const state=await r.json();let reason=null;
+  if(!state.paused){reason=window.prompt('Reason for pausing Tambala (optional):','Founder emergency pause');if(reason===null)return}
+  else if(!window.confirm('Resume all organization execution and approved message delivery?'))return;
+  await post('/api/runtime/control',{paused:!state.paused,reason});
+  notify(state.paused?'Tambala organization resumed.':'Tambala organization paused.');
+  await load();
+ }catch(e){notify(e.message)}finally{b.disabled=false}
+});
 async function load(){
  const token=sessionStorage.getItem(KEY);if(!token){$('gate').style.display='flex';return}
  try{const r=await fetch('/api/dashboard',{headers:{Authorization:'Bearer '+token}});
   if(r.status===401){sessionStorage.removeItem(KEY);$('gate').style.display='flex';$('gateErr').textContent='Token rejected.';return}
   if(!r.ok)throw Error('Server returned '+r.status);
-  data=await r.json();$('gate').style.display='none';render()}
+  data=await r.json();$('gate').style.display='none';render();await refreshRuntimeControl().catch(e=>{$('syncNote').textContent='Runtime control unavailable: '+e.message});if($('view-office').classList.contains('active'))renderDepartmentOffice()}
  catch(e){$('syncNote').textContent='Refresh failed: '+e.message+(data?' (showing last data)':'')}
 }
 $('gateForm').addEventListener('submit',e=>{e.preventDefault();sessionStorage.setItem(KEY,$('gateToken').value.trim());$('gateErr').textContent='';load()});
-function showView(name){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+name));document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.view===name));const a=document.querySelector('.nav[data-view="'+name+'"]');$('crumb').textContent=a?a.textContent.replace(/[—\d]+$/,'').trim():name;$('sidebar').classList.remove('open')}
+function showView(name){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+name));document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.view===name));const a=document.querySelector('.nav[data-view="'+name+'"]');$('crumb').textContent=a?a.textContent.replace(/[—\d]+$/,'').trim():(name==='office'?'Department office':name);$('sidebar').classList.remove('open')}
 document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.view)));
 $('menu').addEventListener('click',()=>$('sidebar').classList.toggle('open'));
-$('refresh').addEventListener('click',load);
+$('refresh').addEventListener('click',load);$('roomsRefresh').addEventListener('click',load);$('roomSearch').addEventListener('input',()=>renderRooms(data&&data.rooms));$('roomFilter').addEventListener('change',()=>renderRooms(data&&data.rooms));$('officeBack').addEventListener('click',()=>showView('departments'));
 $('openTaskConsole').addEventListener('click',()=>{window.location.href='/chat-live'});
 $('notifications').addEventListener('click',()=>{const n=data&&data.headline?(data.headline.pendingApprovals||0)+(data.headline.deniedRecent||0):0;const t=$('toast');t.textContent=n?n+' item(s) need attention (approvals and denied calls).':'Nothing needs attention.';t.style.display='block';setTimeout(()=>t.style.display='none',2800)});
 const gs=$('globalSearch');gs.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const q=gs.value.trim().toLowerCase();const m=[...document.querySelectorAll('.nav[data-view]')].find(n=>n.textContent.toLowerCase().includes(q));if(m)showView(m.dataset.view);else if(q){showView('departments');[...$('departmentGrid').children].forEach(c=>c.hidden=!c.textContent.toLowerCase().includes(q))}});

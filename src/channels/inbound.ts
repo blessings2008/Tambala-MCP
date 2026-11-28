@@ -1,6 +1,6 @@
 import { jidToNumber, maskNumber, normalizePhone } from './phone.js';
 import { OPT_OUT_PATTERN } from './policy.js';
-import type { MessageStore } from './message-store.js';
+import type { MessageRow, MessageStore } from './message-store.js';
 
 export interface InboundDeps {
   store: MessageStore;
@@ -16,18 +16,55 @@ export interface InboundDeps {
     pending: () => Promise<{ id: string; summary: string }[]>;
     decide: (idPrefix: string, decision: 'approved' | 'rejected', note: string) => Promise<{ ok: boolean; message: string }>;
   };
+  /** Route ordinary messages from the verified Founder number into the CEO workflow. */
+  handleFounderInstruction?: (envelope: FounderMessageEnvelope) => Promise<string>;
+  demoteTrustForNumber?: (number: string, reason: string) => Promise<void>;
+  recordQuotationAcceptance?: (outbound: MessageRow, inbound: MessageRow, customerText: string) => Promise<boolean>;
+  runtimeControl?: {
+    get: () => Promise<{ paused: boolean; reason: string | null }>;
+    set: (paused: boolean, reason: string | null) => Promise<void>;
+  };
 }
 
-export interface InboundSummary { stored: number; duplicates: number; optOuts: number; founderCommands: number; forwarded: number; unresolved: number; ignored: number }
+export interface FounderMessageEnvelope {
+  message_id: string;
+  channel: 'whatsapp';
+  direction: 'inbound';
+  sender: { name: string | null; phone: string };
+  recipient: { role_id: 'ceo'; title: 'Chief Executive Officer' };
+  message_type: 'founder_instruction';
+  priority: 'normal' | 'high';
+  content: { text: string; attachments: string[] };
+  routing: { assigned_by: 'inbound_gateway'; department: null; capability_id: null };
+  status: 'received';
+  received_at: string;
+}
+
+export interface InboundSummary { stored: number; duplicates: number; optOuts: number; founderCommands: number; routedToOrganization: number; forwarded: number; unresolved: number; ignored: number }
 
 interface RawMessage { key?: { remoteJid?: unknown; remoteJidAlt?: unknown; fromMe?: unknown; id?: unknown; participant?: unknown }; pushName?: unknown; message?: Record<string, unknown>; senderPn?: unknown }
 
-export function messageText(message: Record<string, unknown> | undefined): string {
-  if (!message) return '';
+export function messageText(message: Record<string, unknown> | undefined, depth = 0): string {
+  if (!message || depth > 3) return '';
+  // Evolution can wrap messages in ephemeral/view-once containers.
+  for (const wrapper of ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'documentWithCaptionMessage']) {
+    const wrapped = message[wrapper] as { message?: Record<string, unknown> } | undefined;
+    if (wrapped?.message) return messageText(wrapped.message, depth + 1);
+  }
   const ext = message.extendedTextMessage as { text?: unknown } | undefined;
-  const image = message.imageMessage as { caption?: unknown } | undefined;
-  const doc = message.documentMessage as { caption?: unknown } | undefined;
-  const pick = [message.conversation, ext?.text, image?.caption, doc?.caption].find((v) => typeof v === 'string' && v.trim());
+  const candidates: unknown[] = [message.conversation, ext?.text];
+  for (const kind of ['imageMessage', 'videoMessage', 'documentMessage'] as const) {
+    const media = message[kind] as { caption?: unknown; fileName?: unknown } | undefined;
+    if (!media) continue;
+    const caption = typeof media.caption === 'string' ? media.caption.trim() : '';
+    const fileName = typeof media.fileName === 'string' ? media.fileName.trim().slice(0, 120) : '';
+    candidates.push(caption || '[Incoming ' + kind.replace('Message', '') + ' attachment' + (fileName ? ': ' + fileName : '') + ']');
+  }
+  if (message.audioMessage) candidates.push('[Incoming audio message]');
+  if (message.stickerMessage) candidates.push('[Incoming sticker]');
+  if (message.locationMessage || message.liveLocationMessage) candidates.push('[Incoming location share]');
+  if (message.contactMessage || message.contactsArrayMessage) candidates.push('[Incoming contact card]');
+  const pick = candidates.find((v) => typeof v === 'string' && v.trim());
   return typeof pick === 'string' ? pick.trim().slice(0, 2000) : '';
 }
 
@@ -39,8 +76,20 @@ export function senderNumber(m: RawMessage): string | null {
 const COMMAND_YES = /^\s*(yes|approve|ok)\s+([0-9a-f]{6})\s*$/i;
 const COMMAND_NO = /^\s*(no|reject)\s+([0-9a-f]{6})\s*(.*)$/is;
 
+export type CustomerReplyIntent = 'accepted' | 'interested' | 'not_interested' | 'question' | 'other';
+
+/** Deterministic triage for customer replies; informs the Founder but never sends an unapproved sales response. */
+export function classifyCustomerReply(value: string): CustomerReplyIntent {
+  const text = value.trim().toLowerCase();
+  if (/\b(?:we|i)\s+(?:formally\s+)?accept(?:\s+the)?\s+(?:quote|quotation|proposal)\b|\baccept(?:ed)?\s+(?:the\s+)?(?:quote|quotation|proposal)\b|\bgo ahead with (?:the )?(?:quote|quotation|proposal|project)\b|\bproceed with (?:the )?(?:quote|quotation|proposal|project)\b|\bwe agree to the quotation\b/.test(text)) return 'accepted';
+  if (/\b(not interested|no thanks|not for us|we are not interested|don't need|dont need)\b/.test(text)) return 'not_interested';
+  if (/\b(yes|interested|sounds good|send (?:me )?(?:the )?(?:quote|quotation|details|proposal)|let's talk|lets talk|call me|contact me)\b/.test(text)) return 'interested';
+  if (/[?]/.test(text) || /^\s*(what|how|when|where|who|why|which|can|could|would|do|does|is|are|please explain)\b/.test(text)) return 'question';
+  return 'other';
+}
+
 export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown): Promise<InboundSummary> {
-  const summary: InboundSummary = { stored: 0, duplicates: 0, optOuts: 0, founderCommands: 0, forwarded: 0, unresolved: 0, ignored: 0 };
+  const summary: InboundSummary = { stored: 0, duplicates: 0, optOuts: 0, founderCommands: 0, routedToOrganization: 0, forwarded: 0, unresolved: 0, ignored: 0 };
   const body = payload as { event?: unknown; instance?: unknown; data?: unknown };
   const event = typeof body?.event === 'string' ? body.event.toLowerCase().replace(/_/g, '.') : '';
   if (event !== 'messages.upsert') { summary.ignored += 1; return summary; }
@@ -50,7 +99,7 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
   const items = (Array.isArray(body.data) ? body.data : [body.data]).filter(Boolean) as RawMessage[];
   const founder = deps.founderNumber();
   for (const m of items.slice(0, 20)) {
-    if (m.key?.fromMe === true) { summary.ignored += 1; continue; } // our own outgoing echo
+    if (m.key?.fromMe === true || m.key?.fromMe === 'true') { summary.ignored += 1; continue; } // our own outgoing echo
     const text = messageText(m.message);
     const providerId = typeof m.key?.id === 'string' ? m.key.id : null;
     if (!text) { summary.ignored += 1; continue; }
@@ -59,7 +108,7 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
     const label = number ? await deps.contactLookup(number).catch(() => null) : null;
     const pushName = typeof m.pushName === 'string' ? m.pushName.slice(0, 60) : null;
 
-    await deps.store.add({
+    const receivedMessage = await deps.store.add({
       direction: 'in', number, audience: null, purpose: 'inbound', from_role_id: null, text, document_id: null, approval_id: null,
       status: 'received', reason: number ? null : 'WhatsApp did not reveal this sender’s phone number.', provider_message_id: providerId, attempts: 0,
       task_id: null, signature: null, contact_label: label ?? pushName, created_at: deps.now().toISOString(), sent_at: null,
@@ -67,7 +116,13 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
     summary.stored += 1;
     if (!number) { summary.unresolved += 1; continue; }
 
-    if (OPT_OUT_PATTERN.test(text)) {
+    if (number !== founder && /\b(complaint|complain|spam|report you|report this number|unprofessional|harassment)\b/i.test(text)) {
+      await deps.demoteTrustForNumber?.(number, 'Customer complaint or spam report').catch(() => undefined);
+      await deps.tellFounder(`${label ?? maskNumber(number)} sent a complaint or spam-related message. Employee standing approvals linked to the latest outbound contact have been demoted.`).catch(() => undefined);
+    }
+
+    if (number !== founder && OPT_OUT_PATTERN.test(text)) {
+      await deps.demoteTrustForNumber?.(number, 'Customer STOP/opt-out request').catch(() => undefined);
       await deps.store.addBlock(number, 'Customer replied STOP');
       await deps.reply(number, 'You have been unsubscribed and will not receive more messages from Tambala Technologies. Sorry to see you go.').catch(() => undefined);
       await deps.tellFounder(`${label ?? maskNumber(number)} replied STOP and has been added to the do-not-contact list.`).catch(() => undefined);
@@ -83,11 +138,66 @@ export async function handleEvolutionWebhook(deps: InboundDeps, payload: unknown
         await deps.reply(number, list.length ? `${list.length} waiting:\n${list.slice(0, 8).map((a) => `${a.id.slice(0, 6)} · ${a.summary.slice(0, 70)}`).join('\n')}\n\nReply YES <code> or NO <code> <reason>.` : 'Nothing is waiting for you.').catch(() => undefined);
         summary.founderCommands += 1; continue;
       }
+      if (deps.runtimeControl && /^\s*pause\s+all(?:\s+(.+))?\s*$/i.test(text)) {
+        const match = text.match(/^\s*pause\s+all(?:\s+(.+))?\s*$/i)!;
+        await deps.runtimeControl.set(true, match[1]?.trim() || 'Paused by Founder via WhatsApp');
+        await deps.reply(number, 'Tambala organization is now PAUSED. AI requests, duty execution and WhatsApp outbox delivery are blocked until you send RESUME ALL.').catch(() => undefined);
+        summary.founderCommands += 1; continue;
+      }
+      if (deps.runtimeControl && /^\s*resume\s+all\s*$/i.test(text)) {
+        await deps.runtimeControl.set(false, null);
+        await deps.reply(number, 'Tambala organization has been RESUMED. Normal duties and approved message delivery may continue.').catch(() => undefined);
+        summary.founderCommands += 1; continue;
+      }
+      if (deps.runtimeControl && /^\s*pause\s+status\s*$/i.test(text)) {
+        const state = await deps.runtimeControl.get();
+        await deps.reply(number, state.paused ? `Tambala is PAUSED. Reason: ${state.reason ?? 'Founder pause'}.` : 'Tambala is RUNNING.').catch(() => undefined);
+        summary.founderCommands += 1; continue;
+      }
+      if (deps.handleFounderInstruction) {
+        const receivedAt = deps.now().toISOString();
+        const envelope: FounderMessageEnvelope = {
+          message_id: providerId ?? ('wa-' + receivedAt.replace(/[^0-9]/g, '').slice(0, 14)),
+          channel: 'whatsapp',
+          direction: 'inbound',
+          sender: { name: pushName ?? 'Founder / Bless', phone: number },
+          recipient: { role_id: 'ceo', title: 'Chief Executive Officer' },
+          message_type: 'founder_instruction',
+          priority: /\b(urgent|urgently|asap|immediately|critical)\b/i.test(text) ? 'high' : 'normal',
+          content: { text, attachments: text.startsWith('[Incoming ') ? [text] : [] },
+          routing: { assigned_by: 'inbound_gateway', department: null, capability_id: null },
+          status: 'received',
+          received_at: receivedAt,
+        };
+        const response = await deps.handleFounderInstruction(envelope);
+        await deps.reply(number, response).catch(() => undefined);
+        summary.routedToOrganization += 1;
+        continue;
+      }
       await deps.reply(number, 'Commands: YES <code> to approve, NO <code> <reason> to reject, PENDING to list what is waiting.').catch(() => undefined);
       summary.founderCommands += 1; continue;
     }
 
-    await deps.tellFounder(`Reply from ${label ?? pushName ?? maskNumber(number)}:\n"${text.slice(0, 400)}"`).catch(() => undefined);
+    const intent = classifyCustomerReply(text);
+    const received = receivedMessage;
+    const since = new Date(deps.now().getTime() - 90 * 86_400_000).toISOString();
+    let attributedTo: MessageRow | null = null;
+    if (intent === 'accepted') attributedTo = await deps.store.latestSentTo(number, since, true);
+    if (!attributedTo) attributedTo = await deps.store.latestSentTo(number, since);
+    if (received?.direction === 'in' && received.number === number) {
+      await deps.store.update(received.id, { reply_to_message_id: attributedTo?.id ?? null, reply_intent: intent });
+    }
+    let acceptanceRecorded = false;
+    if (intent === 'accepted' && attributedTo?.document_id && deps.recordQuotationAcceptance) {
+      acceptanceRecorded = await deps.recordQuotationAcceptance(attributedTo, received, text).catch(() => false);
+    }
+    const attribution = attributedTo
+      ? ` Linked to outbound message ${attributedTo.id} (employee ${attributedTo.from_role_id ?? 'unavailable'}).`
+      : ' No matching sent customer message was found in the last 90 days.';
+    const acceptance = intent === 'accepted'
+      ? (acceptanceRecorded ? ' Explicit quotation acceptance recorded.' : ' Acceptance wording received, but no matching sent quotation could be verified; no quote was marked accepted.')
+      : '';
+    await deps.tellFounder(`Reply from ${label ?? pushName ?? maskNumber(number)} [${intent.replace('_', ' ')}]:\n"${text.slice(0, 400)}"${attribution}${acceptance}`).catch(() => undefined);
     summary.forwarded += 1;
   }
   return summary;

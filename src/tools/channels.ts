@@ -9,11 +9,37 @@ import { toMinor } from '../documents/model.js';
 import { createClientInvoice, InvoiceError, invoiceStore } from '../payments/invoices.js';
 import { payHealth } from '../payments/tambala-pay.js';
 import { dbConfigured } from '../organization/workforce/db-util.js';
+import { resolveOrganizationIdentity } from '../organization/identity-service.js';
+import { getRuntimeControl, setRuntimePaused } from '../organization/runtime-control.js';
 
 const text = (value: unknown, isError = false) => ({ ...(isError ? { isError: true } : {}), content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
 const party = z.object({ name: z.string().min(1).max(120), business: z.string().max(120).optional(), phone: z.string().max(30).optional(), email: z.string().max(254).optional(), address: z.string().max(200).optional() });
 
 export function registerChannelTools(server: McpServer): void {
+  server.registerTool('get_global_runtime_control', {
+    description: 'Read whether the Tambala organization is globally paused. Read-only; does not change system state.',
+    inputSchema: {},
+  }, async () => text(await getRuntimeControl()));
+
+  server.registerTool('set_global_runtime_pause', {
+    description: 'Founder-only emergency switch. Pause or resume AI requests, standing duties and WhatsApp outbox delivery. The change is recorded with the Founder signature. Never use this to alter employee permissions.',
+    inputSchema: {
+      paused: z.boolean().describe('true pauses organization execution; false resumes it.'),
+      reason: z.string().max(500).optional().describe('Short reason for pausing; ignored when resuming.'),
+    },
+  }, async ({ paused, reason }) => {
+    const identity = await resolveOrganizationIdentity();
+    if (!identity.authenticated || identity.principalType !== 'oauth' || identity.role?.id !== 'founder') {
+      return text({ error: 'Founder-only control: an active OAuth connection bound to the Founder role is required.' }, true);
+    }
+    try {
+      const state = await setRuntimePaused(paused, reason ?? null, identity.role.id);
+      return text({ paused: state.paused, reason: state.reason, signature: state.signature_fingerprint, updatedAt: state.updated_at });
+    } catch (error) {
+      return text({ error: error instanceof Error ? error.message : 'Could not update runtime control.' }, true);
+    }
+  });
+
   server.registerTool('get_channel_status', {
     description: 'Check the WhatsApp channel (Evolution API): configured, connection state, Founder number set, messages sent today against the limits. Read-only.',
     inputSchema: {},

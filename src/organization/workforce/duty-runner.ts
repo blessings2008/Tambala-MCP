@@ -1,4 +1,4 @@
-import { AGENT_DIRECTORY } from '../../services/ai/models.js';
+import { AGENT_DIRECTORY, type AgentName } from '../../services/ai/models.js';
 import type { ContextKind, StandingDuty } from './duties.js';
 import { actionHelp, parseActions, type Action } from './actions.js';
 import { colleagueList, extractHandoffs, MAX_HANDOFFS_PER_DUTY } from './handoffs.js';
@@ -6,6 +6,7 @@ import { roleIdFor } from './profiles.js';
 import { localTime, OFFICE_TZ, periodKey, runsToday, timeReached, type LocalTime } from './schedule.js';
 import type { DutyRun, DutyStore } from './duty-store.js';
 import type { OrganizationTaskTransition } from '../task-lifecycle.js';
+import { isPermanentAgentFailure } from './retry-policy.js';
 
 export type DutyOutcomeStatus = 'completed' | 'awaiting_approval' | 'skipped' | 'failed' | 'not_due' | 'already_running';
 export interface DutyOutcome { dutyId: string; status: DutyOutcomeStatus; reason?: string; taskId?: string; runId?: string; handoffs?: number }
@@ -24,13 +25,15 @@ export interface DutyDeps {
   /** Why this employee cannot work right now, or null when they can. */
   unavailableReason(duty: StandingDuty): Promise<string | null>;
   buildContext(kinds: ContextKind[], now: Date): Promise<Record<string, unknown>>;
+  /** Recent signed outcomes for this employee, used to prevent repeated work and expose recurring blockers. */
+  employeeOutcomeHistory?(duty: StandingDuty, roleId: string, now: Date): Promise<Array<{ dutyId: string; status: string; at: string; summary: string | null; error: string | null }>>;
   ask(duty: StandingDuty, prompt: string, context: Record<string, unknown>): Promise<string>;
   /** Used when the output is a report and no model is available, so the Founder still gets a briefing. */
   fallbackBody?(duty: StandingDuty, context: Record<string, unknown>): string | null;
   tasks: {
     begin(objective: string): Promise<{ taskId: string; tracking: 'recorded' | 'unavailable' }>;
     advance(taskId: string, transitions: OrganizationTaskTransition[]): Promise<unknown>;
-    fail(taskId: string, message: string): Promise<void>;
+    fail(taskId: string, message: string, sourceAgent?: AgentName): Promise<void>;
   };
   approvals: { create(input: { actionType: string; summary: string; requestedByRoleId: string; riskLevel: 'low' | 'medium'; taskId: string; content: string }): Promise<void> };
   reports: { save(input: { kind: 'daily_briefing'; periodKey: string; title: string; body: string; taskId: string }): Promise<void> };
@@ -38,7 +41,7 @@ export interface DutyDeps {
 
 const MAX_ATTEMPTS = 3;
 const STALE_RUNNING_MS = 15 * 60_000;
-const RULES = 'Use ONLY the supplied data. If a source is empty or unavailable, say so plainly and list what you could not check. Never invent leads, clients, amounts, dates or results. Do not sign or add a sign-off: the system signs your work with your employee number. Anything addressed to a customer is a DRAFT for Founder approval; never claim it was sent or posted.';
+const RULES = 'Use ONLY the supplied data. If a source is empty or unavailable, say so plainly and list what you could not check. Never invent leads, clients, amounts, dates or results. Do not sign or add a sign-off: the system signs your work with your employee number. Routine first-contact outreach and customer follow-ups may be sent only through the authorised WhatsApp outbox after CRM/number verification. The outbox enforces opt-outs, duplicate checks, cooldowns and send windows. Never send around those safeguards. High-risk commitments and financial actions remain subject to their specific authority rules. No employee trust score or CRM status bypasses those controls. Never claim a message was sent unless the outbox confirms it.';
 
 export function buildDutyPrompt(duty: StandingDuty, lt: LocalTime, who?: { employeeNumber: string; title: string }): string {
   const parts = [
@@ -46,10 +49,14 @@ export function buildDutyPrompt(duty: StandingDuty, lt: LocalTime, who?: { emplo
     who ? `You are employee ${who.employeeNumber}, ${who.title} at Tambala Technologies.` : '',
     `Today is ${lt.date} (office time, ${OFFICE_TZ}). This is your recurring job, not a Founder request.`,
     RULES,
+    'EMPLOYEE OUTCOME HISTORY: context.employee_outcome_history contains your recent recorded duty outcomes. Use it to avoid repeating completed work, follow up unresolved items, and identify recurring failures. Treat historical summaries as records, not proof that an old issue is still current; verify against today’s supplied context.',
     `JOB: ${duty.job}`,
     `DELIVERABLE: ${duty.deliverable}`,
     'Keep it under 350 words, plain and scannable.',
   ];
+  if (duty.id === 'morning-board-minutes') {
+    parts.push('BOARD MINUTES CONTROL: The supplied context.boardMeeting object is the authoritative attendance and department-report matrix. Include the Chair opening and all four departmentUpdates. Use its status exactly: mark the minutes COMPLETE only when boardMeeting.status is COMPLETE; otherwise mark PARTIAL and name every entry in missingItems. Quote findings only from boardMeeting.opening.report and each departmentUpdates.report. Do not infer a missing report from another department’s summary.');
+  }
   if (!duty.report) {
     parts.push(actionHelp(duty.agent));
     parts.push(`If part of this work genuinely belongs to a colleague, end your answer with a block exactly like:\nHANDOFFS:\n- to: <colleague key> | task: <one clear sentence of what you need from them>\nColleagues: ${colleagueList(duty.agent)}.\nUse at most ${MAX_HANDOFFS_PER_DUTY}. If nothing needs handing off, omit the block entirely.`);
@@ -61,8 +68,9 @@ function dueNow(duty: StandingDuty, lt: LocalTime, existing: DutyRun | null, now
   if (!runsToday(duty.cadence, lt) || !timeReached(duty.time, lt)) return false;
   if (!existing) return true;
   if (existing.status === 'skipped') return true;
-  if (existing.status === 'failed') return existing.attempts < MAX_ATTEMPTS;
-  if (existing.status === 'running') return nowMs - Date.parse(existing.started_at) > STALE_RUNNING_MS && existing.attempts < MAX_ATTEMPTS;
+  const maxAttempts = duty.id === 'daily-lead-discovery' ? 5 : MAX_ATTEMPTS;
+  if (existing.status === 'failed') return !isPermanentAgentFailure(existing.error ?? '') && existing.attempts < maxAttempts;
+  if (existing.status === 'running') return nowMs - Date.parse(existing.started_at) > STALE_RUNNING_MS && existing.attempts < maxAttempts;
   return false;
 }
 
@@ -105,6 +113,9 @@ export async function runDuty(deps: DutyDeps, duty: StandingDuty, opts: { force?
       { status: 'executing', stage: 'department', eventType: 'department_execution_started', roleId },
     ]);
     const context = await deps.buildContext(duty.contexts, now);
+    if (deps.employeeOutcomeHistory) {
+      context.employee_outcome_history = await deps.employeeOutcomeHistory(duty, roleId, now);
+    }
     let body: string;
     let compiledWithoutModel = false;
     let pendingHandoffs: { toAgent: StandingDuty['agent']; request: string }[] = [];
@@ -142,7 +153,7 @@ export async function runDuty(deps: DutyDeps, duty: StandingDuty, opts: { force?
     return { dutyId: duty.id, status, taskId, runId: run.id, handoffs: pendingHandoffs.length };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Duty failed.';
-    await deps.tasks.fail(taskId, message);
+    await deps.tasks.fail(taskId, message, duty.agent);
     await deps.store.update(run.id, { status: 'failed', error: message.slice(0, 500), completed_at: new Date().toISOString() });
     return { dutyId: duty.id, status: 'failed', reason: message, taskId, runId: run.id };
   }

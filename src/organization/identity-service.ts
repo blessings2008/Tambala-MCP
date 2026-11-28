@@ -22,7 +22,7 @@ type RoleRow = {
 export type ResolvedOrganizationIdentity =
   | { authenticated: true; principalType: 'oauth'; clientId: string; role: OrganizationalRole }
   | { authenticated: true; principalType: 'legacy-shared-token'; clientId: null; role: null }
-  | { authenticated: false; principalType: 'unknown'; clientId: null; role: null; reason: string };
+  | { authenticated: false; principalType: 'unknown'; clientId: string | null; role: null; reason: string };
 
 /**
  * Resolve a request identity only from the verified HTTP principal and persisted binding.
@@ -71,7 +71,7 @@ export async function resolveOrganizationIdentity(): Promise<ResolvedOrganizatio
     return {
       authenticated: false,
       principalType: 'unknown',
-      clientId: null,
+      clientId: principal.clientId,
       role: null,
       reason,
     };
@@ -99,7 +99,7 @@ export async function resolveOrganizationIdentity(): Promise<ResolvedOrganizatio
     return {
       authenticated: false,
       principalType: 'unknown',
-      clientId: null,
+      clientId: principal.clientId,
       role: null,
       reason,
     };

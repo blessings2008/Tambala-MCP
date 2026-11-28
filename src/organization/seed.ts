@@ -54,139 +54,139 @@ const roles: OrganizationalRole[] = [
 const units: OrganizationUnit[] = [
   {
     id: 'executive-governance', name: 'Executive & Governance', kind: 'division', parentId: null,
-    purpose: 'Corporate governance, executive coordination, and strategic planning.', status: 'planned',
+    purpose: 'Corporate governance, executive coordination, and strategic planning.', status: 'active',
     accountableRoleIds: ['board', 'ceo', 'director-executive-governance'], tags: ['governance', 'executive', 'strategy'],
   },
   {
     id: 'technology-innovation', name: 'Technology & Innovation', kind: 'division', parentId: null,
-    purpose: 'Engineering, AI, automation, product development, research and technical security.', status: 'planned',
+    purpose: 'Engineering, AI, automation, product development, research and technical security.', status: 'active',
     accountableRoleIds: ['director-technology-innovation'], tags: ['technology', 'engineering', 'innovation'],
   },
   {
     id: 'commercial-growth', name: 'Commercial & Growth', kind: 'division', parentId: null,
-    purpose: 'Marketing, sales, business development, media production, and customer relationships.', status: 'planned',
+    purpose: 'Marketing, sales, business development, media production, and customer relationships.', status: 'active',
     accountableRoleIds: ['director-commercial-growth'], tags: ['commercial', 'growth', 'customers'],
   },
   {
     id: 'corporate-services', name: 'Corporate Services', kind: 'division', parentId: null,
-    purpose: 'Finance, operations, people and agent management, legal risk, compliance, and procurement.', status: 'planned',
+    purpose: 'Finance, operations, people and agent management, legal risk, compliance, and procurement.', status: 'active',
     accountableRoleIds: ['director-corporate-services'], tags: ['finance', 'operations', 'risk', 'administration'],
   },
 
   // Executive & Governance departments
   {
     id: 'board-governance', name: 'Board & Corporate Governance', kind: 'department', parentId: 'executive-governance',
-    purpose: 'Governance records, Board processes, oversight, and policy stewardship.', status: 'planned',
+    purpose: 'Governance records, Board processes, oversight, and policy stewardship.', status: 'active',
     accountableRoleIds: ['director-board-governance'], tags: ['board', 'governance'],
   },
   {
     id: 'executive-management', name: 'Executive Management', kind: 'department', parentId: 'executive-governance',
-    purpose: 'Executive coordination, organization-wide operating rhythm, and performance reviews.', status: 'planned',
+    purpose: 'Executive coordination, organization-wide operating rhythm, and performance reviews.', status: 'active',
     accountableRoleIds: ['director-executive-management'], tags: ['executive', 'coordination'],
   },
   {
     id: 'strategy-planning', name: 'Strategy & Corporate Planning', kind: 'department', parentId: 'executive-governance',
-    purpose: 'Translate approved direction into strategies, plans, priorities, and measurable objectives.', status: 'planned',
+    purpose: 'Translate approved direction into strategies, plans, priorities, and measurable objectives.', status: 'active',
     accountableRoleIds: ['director-strategy-planning'], tags: ['strategy', 'planning'],
   },
 
   // Technology & Innovation departments
   {
     id: 'technology-engineering', name: 'Technology & Engineering', kind: 'department', parentId: 'technology-innovation',
-    purpose: 'Design, build, maintain, and improve the organization’s software and technical infrastructure.', status: 'planned',
+    purpose: 'Design, build, maintain, and improve the organization’s software and technical infrastructure.', status: 'active',
     accountableRoleIds: ['director-technology-engineering'], tags: ['engineering', 'software'],
   },
   {
     id: 'ai-automation', name: 'AI & Automation', kind: 'department', parentId: 'technology-innovation',
-    purpose: 'Build agent workflows, automation, model routing, and orchestration capabilities.', status: 'planned',
+    purpose: 'Build agent workflows, automation, model routing, and orchestration capabilities.', status: 'active',
     accountableRoleIds: ['director-ai-automation'], tags: ['ai', 'automation', 'agents'],
   },
   {
     id: 'product-innovation', name: 'Product Management & Innovation', kind: 'department', parentId: 'technology-innovation',
-    purpose: 'Discover user needs, shape product strategy, and coordinate product delivery.', status: 'planned',
+    purpose: 'Discover user needs, shape product strategy, and coordinate product delivery.', status: 'active',
     accountableRoleIds: ['director-product-innovation'], tags: ['product', 'innovation'],
   },
   {
     id: 'research-development', name: 'Research & Development', kind: 'department', parentId: 'technology-innovation',
-    purpose: 'Explore and validate technical concepts, prototypes, and emerging capabilities.', status: 'planned',
+    purpose: 'Explore and validate technical concepts, prototypes, and emerging capabilities.', status: 'active',
     accountableRoleIds: ['director-research-development'], tags: ['technical-research', 'r-and-d'],
   },
   {
     id: 'cybersecurity-it', name: 'Cybersecurity & IT', kind: 'department', parentId: 'technology-innovation',
-    purpose: 'Protect systems, manage access, monitor security, and maintain reliable IT operations.', status: 'planned',
+    purpose: 'Protect systems, manage access, monitor security, and maintain reliable IT operations.', status: 'active',
     accountableRoleIds: ['director-cybersecurity-it'], tags: ['security', 'it', 'risk'],
   },
 
   // Commercial & Growth departments
   {
     id: 'marketing-brand', name: 'Marketing & Brand Management', kind: 'department', parentId: 'commercial-growth',
-    purpose: 'Manage brand positioning, campaigns, audience development, and marketing performance.', status: 'planned',
+    purpose: 'Manage brand positioning, campaigns, audience development, and marketing performance.', status: 'active',
     accountableRoleIds: ['director-marketing-brand'], tags: ['marketing', 'brand'],
   },
   {
     id: 'sales-business-development', name: 'Sales & Business Development', kind: 'department', parentId: 'commercial-growth',
-    purpose: 'Generate opportunities, qualify prospects, manage partnerships, and grow revenue.', status: 'planned',
+    purpose: 'Generate opportunities, qualify prospects, manage partnerships, and grow revenue.', status: 'active',
     accountableRoleIds: ['director-sales-business-development'], tags: ['sales', 'business-development'],
   },
   {
     id: 'media-content', name: 'Media & Content Production', kind: 'department', parentId: 'commercial-growth',
-    purpose: 'Research, plan, produce, publish, and evaluate content and media assets.', status: 'planned',
+    purpose: 'Research, plan, produce, publish, and evaluate content and media assets.', status: 'active',
     accountableRoleIds: ['director-media-content'], tags: ['media', 'content', 'publishing'],
   },
   {
     id: 'customer-relations', name: 'Customer Relations & Support', kind: 'department', parentId: 'commercial-growth',
-    purpose: 'Manage customer communications, service quality, support workflows, and feedback.', status: 'planned',
+    purpose: 'Manage customer communications, service quality, support workflows, and feedback.', status: 'active',
     accountableRoleIds: ['director-customer-relations'], tags: ['customer', 'support'],
   },
 
   // Corporate Services departments
   {
     id: 'finance-accounting', name: 'Finance & Accounting', kind: 'department', parentId: 'corporate-services',
-    purpose: 'Maintain budgets, cost records, financial reporting, and internal financial controls.', status: 'planned',
+    purpose: 'Maintain budgets, cost records, financial reporting, and internal financial controls.', status: 'active',
     accountableRoleIds: ['director-finance-accounting'], tags: ['finance', 'accounting', 'budget'],
   },
   {
     id: 'operations-administration', name: 'Operations & Administration', kind: 'department', parentId: 'corporate-services',
-    purpose: 'Maintain operating procedures, coordination, records, and administrative services.', status: 'planned',
+    purpose: 'Maintain operating procedures, coordination, records, and administrative services.', status: 'active',
     accountableRoleIds: ['director-operations-administration'], tags: ['operations', 'administration'],
   },
   {
     id: 'people-agent-management', name: 'Human Resources & Agent Management', kind: 'department', parentId: 'corporate-services',
-    purpose: 'Define role requirements, agent lifecycle, capability assignment proposals, and performance reviews.', status: 'planned',
+    purpose: 'Define role requirements, agent lifecycle, capability assignment proposals, and performance reviews.', status: 'active',
     accountableRoleIds: ['director-people-agent-management'], tags: ['people', 'agent-management', 'roles'],
   },
   {
     id: 'legal-risk-compliance', name: 'Legal, Risk & Compliance', kind: 'department', parentId: 'corporate-services',
-    purpose: 'Identify legal and operational risks, maintain compliance requirements, and escalate regulated activities.', status: 'planned',
+    purpose: 'Identify legal and operational risks, maintain compliance requirements, and escalate regulated activities.', status: 'active',
     accountableRoleIds: ['director-legal-risk-compliance'], tags: ['legal', 'risk', 'compliance'],
   },
   {
     id: 'procurement-resources', name: 'Procurement & Resource Management', kind: 'department', parentId: 'corporate-services',
-    purpose: 'Evaluate suppliers and manage approved resource allocation and procurement workflows.', status: 'planned',
+    purpose: 'Evaluate suppliers and manage approved resource allocation and procurement workflows.', status: 'active',
     accountableRoleIds: ['director-procurement-resources'], tags: ['procurement', 'resources'],
   },
 
   // Central intelligence is independent of the Technology division and serves the whole organization.
   {
     id: 'research-intelligence', name: 'Central Research & Intelligence', kind: 'department', parentId: null,
-    purpose: 'Provide cross-organizational research, evidence evaluation, market intelligence, technical investigation, and opportunity analysis.', status: 'planned',
+    purpose: 'Provide cross-organizational research, evidence evaluation, market intelligence, technical investigation, and opportunity analysis.', status: 'active',
     accountableRoleIds: ['director-research-intelligence'], tags: ['research', 'intelligence', 'evidence'],
   },
 
   // Business units are operating ventures, not corporate departments.
   {
     id: 'fintech-ventures', name: 'Financial Technology', kind: 'business_unit', parentId: null,
-    purpose: 'Operate financial technology products and ventures, subject to applicable risk and compliance controls.', status: 'planned',
+    purpose: 'Operate financial technology products and ventures, subject to applicable risk and compliance controls.', status: 'active',
     accountableRoleIds: ['leader-fintech-ventures'], tags: ['business-unit', 'fintech', 'pocketvault', 'tambala-pay'],
   },
   {
     id: 'software-digital-services', name: 'Software & Digital Services', kind: 'business_unit', parentId: null,
-    purpose: 'Deliver software products, websites, automation, and digital services.', status: 'planned',
+    purpose: 'Deliver software products, websites, automation, and digital services.', status: 'active',
     accountableRoleIds: ['leader-software-digital-services'], tags: ['business-unit', 'software', 'digital-services'],
   },
   {
     id: 'media-publishing', name: 'Media & Publishing', kind: 'business_unit', parentId: null,
-    purpose: 'Develop and operate content channels, publishing brands, and media products.', status: 'planned',
+    purpose: 'Develop and operate content channels, publishing brands, and media products.', status: 'active',
     accountableRoleIds: ['leader-media-publishing'], tags: ['business-unit', 'media', 'publishing'],
   },
 ];

@@ -1,7 +1,7 @@
 import type { AgentName } from '../../services/ai/models.js';
 import type { Cadence } from './schedule.js';
 
-export type ContextKind = 'crm' | 'company' | 'organization' | 'briefing' | 'catalog' | 'invoices';
+export type ContextKind = 'crm' | 'crm_detail' | 'company' | 'organization' | 'briefing' | 'catalog' | 'invoices' | 'discovery';
 
 export interface StandingDuty {
   id: string;
@@ -27,9 +27,22 @@ export interface StandingDuty {
 
 export const STANDING_DUTIES: readonly StandingDuty[] = [
   {
-    id: 'security-audit-review', agent: 'security', title: 'Daily security and audit review',
-    cadence: { kind: 'weekdays' }, time: '07:30', contexts: ['organization'],
-    job: 'Review the last day of audit events, denied tool calls, failed tasks and role bindings. Flag anything unusual: repeated denials, activity outside office hours, unbound connections.',
+    id: 'daily-lead-discovery', agent: 'research', title: 'Daily prospect queue intelligence',
+    cadence: { kind: 'daily' }, time: '06:00', contexts: ['discovery'],
+    job: `TEMPORARY MODE — the external discovery engine is under repair. Do NOT perform web research and do NOT generate new prospects. Work exclusively from context.discovery, which is a compact full-table snapshot of the live lead_discovery_queue. Report its total and processing_status/verification_status counts, list the organisations still awaiting review, and flag any status inconsistencies. The compact snapshot does not contain source evidence or contacts, so do not decide qualification from it; individual record handoffs provide the full evidence for that assessment. Never reject a record merely because a named decision-maker is missing. Do not change queue rows, create CRM records, or contact organisations. Do not repeat work already completed or treat promoted/rejected records as pending. Be explicit if the supplied snapshot is incomplete or truncated.`,
+    deliverable: 'A concise daily queue utilisation report: total records, processing and verification counts, names still awaiting Research review, and any status inconsistencies. Do not claim to have checked individual source evidence. Clearly state that this is a read-only report.',
+  },
+  {
+    id: 'sales-discovery-queue-review', agent: 'research', title: 'Research department queue assessment',
+    cadence: { kind: 'weekdays' }, time: '08:15', contexts: ['company', 'discovery'],
+    job: 'Review the discovery queue records supplied in context.discovery. This is a read-only oversight review; the individual record assessment workflow is handled by the queue watcher. Identify records stuck in reviewing and any status inconsistencies. Do not assess service-fit evidence from the compact summary; individual Research handoffs carry that evidence. Do not repeat web research while the discovery engine is paused. Do not edit statuses, create CRM leads, or contact organisations.',
+    deliverable: 'A short exception report naming queue IDs and organisations, explaining the exact issue and recommended next step. Do not re-list all records.',
+  },
+
+  {
+    id: 'security-audit-review', agent: 'security', title: 'Daily incident monitoring and security review',
+    cadence: { kind: 'daily' }, time: '07:30', contexts: ['organization'],
+    job: 'Act as the organisation incident-monitoring and security function, not merely an audit-event summariser. Review audit_last_24h, audit_non_success_last_24h, audit_denials_truncated, tasks_last_7d, failed_task_events_last_7d, duty_runs_last_7d and active_role_bindings. The failed_task_events_last_7d list is authoritative for execution failures because task failures are recorded in organization_task_events, not necessarily in organization_audit_events. Correlate each stage_failed event with its task and duty run where possible. Report every distinct failure with timestamp, affected task/duty/department if known, exact error, likely cause category (provider/model, rate limit, tool/schema, application, permissions, data/persistence, or unknown), and whether it repeated. Any non-success audit event, truncated denied-event list, failed task, failed duty, skipped critical duty, unbound active connection, or rejected security action means status MUST be Needs attention; never report Normal while any such issue is present. State Normal only when the relevant sources were checked and there are no failures or anomalies. Do not invent tool actions such as check_tool_permissions; the only action you may request is notify_founder. When notifying the Founder, use exactly this schema inside ACTIONS: {\"type\":\"notify_founder\",\"text\":\"Subject: ...\\n\\nMessage: ...\"}. Never use an action or payload property. For repeated production failures or a security/permission risk, include this exact valid action. Distinguish no events found from monitoring unavailable or incomplete data.' ,
     deliverable: 'A short security status (Normal / Needs attention), the specific items behind it, and one recommended action if any.',
   },
   {
@@ -40,17 +53,15 @@ export const STANDING_DUTIES: readonly StandingDuty[] = [
   },
   {
     id: 'sales-pipeline-review', agent: 'outreach', title: 'Daily pipeline review and outreach preparation',
-    cadence: { kind: 'weekdays' }, time: '08:30', contexts: ['crm', 'company', 'catalog'],
-    job: 'Review the lead pipeline by status. Pick the best-fit leads that have not been contacted or are due. Prepare up to five first-contact WhatsApp messages (use the whatsapp action, only for leads that have a phone or WhatsApp number in the data), each naming the lead it is for, using only verified company facts. If a lead clearly needs a quotation and the price list covers it, prepare it with the document action.',
-    deliverable: 'Pipeline snapshot, the chosen leads with a one-line reason each, and the drafts.',
-    approval: { actionType: 'prepared_outreach', riskLevel: 'low', summary: 'Prepared outreach drafts awaiting Founder approval' },
+    cadence: { kind: 'weekdays' }, time: '08:30', contexts: ['crm', 'crm_detail', 'company', 'catalog'],
+    job: 'Review the lead pipeline by status. Pick the best-fit leads that have not been contacted or are due. Identify the single best-fit CRM prospect that has not been contacted, verify its business name and WhatsApp number, and prepare and queue one personalised first-contact WhatsApp message using the whatsapp action when the CRM lead and WhatsApp number are verified. Routine first contact is CEO-authorised and does not wait for Founder approval. The outbox enforces opt-outs, duplicate detection, cooldowns and send windows; report queued separately from provider-confirmed sent. The system processes additional qualified prospects in separate scheduler cycles to respect the customer-send cooldown. Keep each message natural, specific, relevant and customer-ready; never include internal role titles, employee codes (such as TT-001), agent names, signatures, routing notes, draft labels, internal analysis or unrelated information. Do not mention services unless they are in the verified catalogue. Do not message unknown numbers or invent contact details. If a lead clearly needs a quotation and the price list covers it, prepare it with the document action.',
+    deliverable: 'Pipeline snapshot, the one prospect selected, the message prepared, queue status, provider-confirmed delivery outcome, replies received, and any blockers. Clearly separate queued, sent, failed and blocked messages using the action results; never claim delivery unless the outbox confirms it.',
   },
   {
     id: 'customer-followups', agent: 'followup', title: 'Daily customer follow-ups',
-    cadence: { kind: 'weekdays' }, time: '09:00', contexts: ['crm', 'company'],
-    job: 'Find leads and clients whose next follow-up is due or overdue, and open client tasks. Prepare a short check-in WhatsApp message (whatsapp action) for each due contact who has a number in the records, using only facts in the supplied records.',
-    deliverable: 'Who is due and why, then one draft per person. Say clearly if nobody is due.',
-    approval: { actionType: 'prepared_followups', riskLevel: 'low', summary: 'Prepared customer follow-up drafts awaiting Founder approval' },
+    cadence: { kind: 'weekdays' }, time: '09:00', contexts: ['crm_detail'],
+    job: 'Find leads and clients whose next follow-up is due or overdue, and open client tasks. Send a short, natural check-in WhatsApp message (whatsapp action) for each due contact who has a verified number in the records, using only supplied facts. Routine follow-ups are CEO-authorised and do not wait for Founder approval. Respect opt-outs, duplicate detection, cooldowns and send windows; never bypass the outbox.',
+    deliverable: 'Who was due and why, the outbox result for each eligible contact (queued, provider-confirmed sent, failed or blocked), and any contacts safely held. Say clearly if nobody is due.',
   },
   {
     id: 'payment-followups', agent: 'finance', title: 'Daily unpaid invoice follow-up',
@@ -87,6 +98,12 @@ export const STANDING_DUTIES: readonly StandingDuty[] = [
     cadence: { kind: 'weekly', day: 5 }, time: '15:00', contexts: ['crm', 'organization'],
     job: 'Review the week across the pipeline, tasks and organization activity. State what moved, what stalled, and the top three priorities for next week with reasons.',
     deliverable: 'What moved, what stalled, three priorities, and the single biggest risk.',
+  },
+  {
+    id: 'ceo-weekly-operating-plan', agent: 'orchestrator', title: 'Weekly CEO operating plan',
+    cadence: { kind: 'weekly', day: 1 }, time: '08:00', contexts: ['crm', 'organization', 'invoices', 'company'],
+    job: 'You are the CEO. Prepare the company operating plan for the coming week using only the supplied CRM, invoice, organization and company records. Review real pipeline movement, quotations, payments, overdue work, duty outcomes, staffing readiness and risks. Set no financial commitments, prices or regulatory positions. Do not assign work outside active employee duties or change anyone’s permissions. Separate verified metrics from unavailable data and recommendations. Escalate any decision requiring Founder authority.',
+    deliverable: 'A signed weekly operating plan with: measurable company targets based on the actual baseline; sales pipeline priorities; delivery and client commitments already on record; cash/invoice facts; department priorities and owners; risks and blockers; Founder decisions required; and what evidence will be reviewed next week. Label every unavailable metric explicitly.',
   },
   {
     id: 'ceo-daily-briefing', agent: 'orchestrator', title: 'Daily executive briefing',

@@ -3,6 +3,7 @@
  *   POST /message/sendText/{instance}     { number, text, delay? }
  *   POST /message/sendMedia/{instance}    { number, mediatype, mimetype, caption, media (URL or base64), fileName, delay? }
  *   GET  /instance/connectionState/{instance}
+ *   POST /chat/whatsappNumbers/{instance} { numbers: [number] }
  * Authentication is the `apikey` header.
  */
 export interface EvolutionConfig { url: string; key: string; instance: string }
@@ -64,10 +65,70 @@ export async function sendDocument(number: string, base64: string, fileName: str
   return { id: messageId(data) };
 }
 
+/** Verify one destination against WhatsApp before autonomous first-contact outreach. */
+export async function isWhatsAppNumber(number: string): Promise<boolean> {
+  const digits = number.replace(/\D/g, '');
+  if (!/^\d{8,15}$/.test(digits)) return false;
+  const request = () => call('/chat/whatsappNumbers/{instance}', { method: 'POST', json: { numbers: [digits] } });
+  let data: Record<string, unknown>;
+  try {
+    data = await request();
+  } catch (error) {
+    if (!(error instanceof EvolutionError) || !/Evolution API 429/.test(error.message)) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 60_000));
+    data = await request();
+  }
+  const rows: unknown[] = Array.isArray(data) ? data : Array.isArray(data.response) ? data.response as unknown[] : [];
+  return rows.some((entry) => {
+    if (!entry || typeof entry !== 'object') return false;
+    const row = entry as Record<string, unknown>;
+    const returnedNumber = String(row.number ?? row.jid ?? '').split('@')[0].replace(/\D/g, '');
+    return row.exists === true && returnedNumber === digits;
+  });
+}
+
 /** Evolution returns { instance: { instanceName, state } } (v2) or { state } on some builds. */
 export async function connectionState(): Promise<{ state: string }> {
   const data = await call('/instance/connectionState/{instance}');
   const inner = data.instance as { state?: unknown } | undefined;
   const state = typeof inner?.state === 'string' ? inner.state : typeof data.state === 'string' ? data.state : 'unknown';
   return { state };
+}
+
+
+export interface EvolutionStoredMessages {
+  records: Record<string, unknown>[];
+  complete: boolean;
+}
+
+/**
+ * Read the recent provider-side history for one WhatsApp conversation.
+ * A missing/unexpected response is deliberately marked incomplete: callers must
+ * never interpret an API error or an unknown response shape as proof of non-delivery.
+ */
+export async function findMessages(number: string): Promise<EvolutionStoredMessages> {
+  const digits = number.replace(/\D/g, '');
+  if (!/^\d{8,15}$/.test(digits)) throw new EvolutionError('Cannot inspect WhatsApp history for an invalid number.', false);
+  const remoteJid = `${digits}@s.whatsapp.net`;
+  const records: Record<string, unknown>[] = [];
+  const pageSize = 100;
+  for (let page = 1; page <= 5; page += 1) {
+    const data = await call('/chat/findMessages/{instance}', {
+      method: 'POST',
+      json: { where: { key: { remoteJid } }, page, offset: pageSize },
+    });
+    const messages = data.messages;
+    const rows = Array.isArray(messages)
+      ? messages
+      : messages && typeof messages === 'object' && Array.isArray((messages as Record<string, unknown>).records)
+        ? (messages as { records: unknown[] }).records
+        : Array.isArray(data.records) ? data.records : null;
+    if (!rows) return { records, complete: false };
+    for (const row of rows) if (row && typeof row === 'object') records.push(row as Record<string, unknown>);
+    const total = messages && typeof messages === 'object' && typeof (messages as Record<string, unknown>).total === 'number'
+      ? Number((messages as Record<string, unknown>).total)
+      : typeof data.total === 'number' ? Number(data.total) : null;
+    if (rows.length < pageSize || (total !== null && records.length >= total)) return { records, complete: true };
+  }
+  return { records, complete: false };
 }

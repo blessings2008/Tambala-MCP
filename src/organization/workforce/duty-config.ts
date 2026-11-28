@@ -50,7 +50,9 @@ export function validateCustomDuty(input: unknown, takenIds: ReadonlySet<string>
   if (!TIME.test(time)) throw new DutyConfigError('Time must look like 08:30.');
   if (toMinutes(time) < 6 * 60 || toMinutes(time) > 20 * 60) throw new DutyConfigError('Pick a time between 06:00 and 20:00 office time.');
   const contexts = Array.isArray(o.contexts) ? [...new Set(o.contexts.map(String))] : [];
-  if (contexts.some((c) => !CUSTOM_CONTEXTS.includes(c as ContextKind))) throw new DutyConfigError('Unknown data source.');
+  // Only the CEO may consume the internal briefing feed when preparing consolidated meeting minutes.
+  const allowedContexts = agent === 'orchestrator' ? [...CUSTOM_CONTEXTS, 'briefing' as ContextKind] : CUSTOM_CONTEXTS;
+  if (contexts.some((c) => !allowedContexts.includes(c as ContextKind))) throw new DutyConfigError('Unknown data source.');
   let id = editingId;
   if (!id) {
     const base = slugify(title);

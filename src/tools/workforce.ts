@@ -5,14 +5,23 @@ import { assignWork, buildWorkforce, getLatestBriefing, runDutiesOnce } from '..
 import { verifySignature } from '../organization/workforce/sign-work.js';
 import { HandoffError } from '../organization/workforce/handoffs.js';
 import { AGENT_DIRECTORY } from '../services/ai/models.js';
+import { resolveOrganizationIdentity } from '../organization/identity-service.js';
+import { proposeDutyChange, proposeRoleChange } from '../organization/workforce/governed-proposals.js';
 
 function text(value: unknown, isError = false) {
   return { ...(isError ? { isError: true } : {}), content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] };
 }
 
+const proposalEvidence = z.array(z.object({
+  type: z.enum(['crm_record', 'task', 'duty_run', 'organization_report', 'web_source']),
+  reference: z.string().min(3).max(300),
+  summary: z.string().min(10).max(500),
+  sourceUrl: z.string().url().refine((value) => value.startsWith('https://'), 'Evidence URLs must use HTTPS.').optional(),
+})).min(1).max(8);
+
 export function registerWorkforceTools(server: McpServer): void {
   server.registerTool('get_workforce_status', {
-    description: 'Read the staff directory: each employee’s status (on duty, off hours, unequipped, inactive), today’s duties and their state, and weekly results. Read-only.',
+    description: 'Read the staff directory: each employee’s live operational state (available, assigned, processing, awaiting Founder input, unequipped, inactive), inbox and recent work. Calendar duties are separate from employee availability. Read-only.',
     inputSchema: {},
   }, async () => {
     const w = await buildWorkforce();
@@ -58,7 +67,7 @@ export function registerWorkforceTools(server: McpServer): void {
   });
 
   server.registerTool('assign_work_to_employee', {
-    description: 'Assign a piece of work directly to an employee, as their manager. It lands in their inbox and is done on the next duty cycle (or when duties are run). The employee only works if their role is active and equipped; otherwise it waits. Results are internal; drafts are never sent.',
+    description: 'Assign work directly to an employee as their manager. The assignment is placed in the employee inbox and processed immediately, without waiting for a scheduled duty. If the employee is inactive or unequipped, the handoff remains queued with the blocker shown. Results are internal; drafts are never sent.',
     inputSchema: {
       employee: z.enum(Object.keys(AGENT_DIRECTORY).filter((a) => a !== 'orchestrator') as [string, ...string[]]).describe('Employee key, e.g. outreach, finance, marketing.'),
       request: z.string().min(5).max(1000).describe('What you need done, in plain words.'),
@@ -66,10 +75,63 @@ export function registerWorkforceTools(server: McpServer): void {
   }, async ({ employee, request }) => {
     try {
       const h = await assignWork(employee as keyof typeof AGENT_DIRECTORY, request);
-      return text({ queued: true, handoffId: h.id, to: employee, request: h.request });
+      return text({
+        handoffId: h.id, roomId: h.room_id, to: employee, request: h.request,
+        status: h.status, queued: h.status === 'queued', result: h.result, blocker: h.error,
+      });
     } catch (error) {
       if (error instanceof HandoffError) return text({ error: error.message }, true);
       throw error;
+    }
+  });
+
+  server.registerTool('propose_organization_duty', {
+    description: 'People/HR or Strategy may propose a new standing duty for an existing employee. The proposal goes to the Founder approval inbox. It is not activated until the Founder approves it. This cannot change employee permissions, trust thresholds, pricing, spending caps or regulatory policy.',
+    inputSchema: {
+      title: z.string().min(3).max(120),
+      employee: z.enum(Object.keys(AGENT_DIRECTORY) as [string, ...string[]]),
+      cadence: z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal('weekdays') }),
+        z.object({ kind: z.literal('weekly'), day: z.number().int().min(1).max(7) }),
+      ]),
+      time: z.string().regex(/^([01]\\d|2[0-3]):[0-5]\\d$/),
+      contexts: z.array(z.enum(['crm', 'company', 'organization', 'catalog', 'invoices'])).max(5),
+      job: z.string().min(10).max(2000),
+      deliverable: z.string().min(5).max(1000),
+      evidence: proposalEvidence,
+    },
+  }, async ({ title, employee, cadence, time, contexts, job, deliverable, evidence }) => {
+    const identity = await resolveOrganizationIdentity();
+    if (!identity.authenticated || !identity.role) return text({ error: 'A trusted OAuth role binding is required.' }, true);
+    try {
+      const approvalId = await proposeDutyChange(identity.role.id, {
+        title, agent: employee as keyof typeof AGENT_DIRECTORY, cadence, time, contexts, job, deliverable,
+        requiresApproval: true, enabled: true, evidence,
+      });
+      return text({ status: 'pending_founder_approval', approvalId, summary: `Proposed duty “${title}” for ${employee}. It is not active until Founder approval.` });
+    } catch (error) {
+      return text({ error: error instanceof Error ? error.message : 'Could not submit duty proposal.' }, true);
+    }
+  });
+
+  server.registerTool('propose_organization_role', {
+    description: 'People/HR or Strategy may propose a human or shared-responsibility role inside an existing unit. The proposal goes to the Founder approval inbox. After approval it is added through the persistent organization role table with no capabilities granted. This does not create an AI employee or assign an employee number.',
+    inputSchema: {
+      title: z.string().min(3).max(120),
+      kind: z.enum(['human', 'shared_responsibility']),
+      unitId: z.string().min(2).max(80),
+      reportsToRoleId: z.string().min(2).max(100),
+      purpose: z.string().min(10).max(1000),
+      evidence: proposalEvidence,
+    },
+  }, async ({ title, kind, unitId, reportsToRoleId, purpose, evidence }) => {
+    const identity = await resolveOrganizationIdentity();
+    if (!identity.authenticated || !identity.role) return text({ error: 'A trusted OAuth role binding is required.' }, true);
+    try {
+      const approvalId = await proposeRoleChange(identity.role.id, { title, kind, unitId, reportsToRoleId, purpose, evidence });
+      return text({ status: 'pending_founder_approval', approvalId, summary: `Proposed role “${title}”. No role is added until Founder approval.` });
+    } catch (error) {
+      return text({ error: error instanceof Error ? error.message : 'Could not submit role proposal.' }, true);
     }
   });
 

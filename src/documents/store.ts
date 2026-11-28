@@ -4,10 +4,11 @@ import { dbConfigured } from '../organization/workforce/db-util.js';
 import type { DocKind } from './model.js';
 
 export interface DocumentRow {
-  id: string; kind: DocKind; number: string; status: 'draft' | 'sent' | 'void';
+  id: string; kind: DocKind; number: string; status: 'draft' | 'sent' | 'accepted' | 'void';
   client_name: string; client_phone: string | null; client_email: string | null;
   data: unknown; total_minor: number; currency: string; pdf_base64: string; pdf_sha256: string;
   created_by_role_id: string; signature: string | null; created_at: string;
+  sent_at?: string | null; accepted_at?: string | null; accepted_by_message_id?: string | null; acceptance_text?: string | null;
 }
 export type DocumentListRow = Omit<DocumentRow, 'pdf_base64' | 'data'>;
 
@@ -24,7 +25,7 @@ export interface DocumentStore {
   savePrice(item: PriceItem): Promise<void>;
 }
 
-const LIST_COLS = 'id,kind,number,status,client_name,client_phone,client_email,total_minor,currency,pdf_sha256,created_by_role_id,signature,created_at';
+const LIST_COLS = 'id,kind,number,status,client_name,client_phone,client_email,total_minor,currency,pdf_sha256,created_by_role_id,signature,created_at,sent_at,accepted_at,accepted_by_message_id';
 
 export class SupabaseDocumentStore implements DocumentStore {
   async nextNumber(prefix: string, year: number) {

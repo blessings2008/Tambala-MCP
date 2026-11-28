@@ -1,8 +1,8 @@
 import { localTime, toMinutes, type LocalTime } from '../organization/workforce/schedule.js';
 
 /**
- * Who may message whom, and when. Pure functions so the rules are easy to read and test.
- * Customers only ever hear from Tambala after the Founder approves; the Founder can be messaged by anyone.
+ * Who may message whom, and when. Routine client communication is autonomously
+ * permitted for authorised client-facing roles; safeguards are enforced by the outbox.
  */
 export type Purpose = 'outreach' | 'followup' | 'invoice' | 'document' | 'notify_founder' | 'reply';
 export type Audience = 'founder' | 'client';
@@ -11,11 +11,9 @@ export type Audience = 'founder' | 'client';
 export const CLIENT_FACING_AGENTS: ReadonlySet<string> = new Set(['outreach', 'followup', 'finance', 'payments']);
 
 export const MAX_TEXT = 1500;
-export const OPT_OUT_LINE = 'Reply STOP to opt out.';
 export const SEND_WINDOW = { open: '07:30', close: '19:30' } as const; // office time, Monday to Saturday
 
 export const FOUNDER_DAILY_LIMIT = () => Number(process.env.TAMBALA_WHATSAPP_FOUNDER_DAILY_LIMIT) || 40;
-export const CLIENT_DAILY_LIMIT = () => Number(process.env.TAMBALA_WHATSAPP_DAILY_LIMIT) || 25;
 
 export function sendWindowOpen(now: Date): boolean {
   const lt: LocalTime = localTime(now);
@@ -45,13 +43,8 @@ export function decide(input: PolicyInput, state: PolicyState): Verdict {
   if (state.blocked.has(input.to)) return { verdict: 'block', audience, reason: 'This number opted out or is on the do-not-contact list.' };
   if (input.agent !== 'founder' && !CLIENT_FACING_AGENTS.has(input.agent)) return { verdict: 'block', audience, reason: `The ${input.agent} role may only message the Founder.` };
   if (input.purpose === 'notify_founder') return { verdict: 'block', audience, reason: 'notify_founder must go to the Founder number.' };
-  return { verdict: 'needs_approval', audience };
+  return { verdict: 'allow_now', audience };
 }
 
-/** First-contact outreach always carries an opt-out line. */
-export function withOptOut(text: string, purpose: Purpose): string {
-  if (purpose !== 'outreach') return text;
-  return /\bSTOP\b/.test(text) ? text : `${text.trim()}\n\n${OPT_OUT_LINE}`;
-}
-
-export const OPT_OUT_PATTERN = /^\s*(stop|unsubscribe|opt[\s-]?out|cancel)\s*[.!]*\s*$/i;
+/** Recognise clear opt-out requests without mistaking ordinary objections for consent withdrawal. */
+export const OPT_OUT_PATTERN = /^\s*(?:(?:stop|unsubscribe|opt[\s-]?out|cancel|end|quit)|(?:please\s+)?(?:stop|cease)\s+(?:messaging|contacting|texting|calling|sending(?:\s+me)?(?:\s+messages?)?)(?:\s+me)?(?:\s+again|\s+about\s+.+)?|(?:do\s+not|don't|dont)\s+(?:message|contact|text)\s+me(?:\s+again)?|remove\s+me\s+from\s+(?:your\s+)?(?:list|mailing\s+list)|no\s+more\s+(?:messages|texts|calls))\s*[.!]*\s*$/i;

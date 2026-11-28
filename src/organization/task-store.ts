@@ -9,10 +9,12 @@ export type OrganizationTaskStatus =
   | 'department_review'
   | 'returned_to_ceo'
   | 'needs_more_work'
+  | 'awaiting_founder'
+  | 'superseded'
   | 'completed'
   | 'failed';
 
-export type OrganizationTaskStage = 'founder' | 'ceo' | 'department' | 'review' | 'complete' | 'failed';
+export type OrganizationTaskStage = 'founder' | 'ceo' | 'department' | 'review' | 'complete' | 'failed' | 'superseded';
 
 export type OrganizationTask = {
   id: string;
@@ -69,6 +71,7 @@ export async function recordOrganizationTaskEvent(input: {
   actorRoleId?: string | null;
   departmentId?: string | null;
   payload?: unknown;
+  eventKey?: string | null;
 }): Promise<void> {
   await supabaseInsert('organization_task_events', {
     task_id: input.taskId,
@@ -77,5 +80,9 @@ export async function recordOrganizationTaskEvent(input: {
     actor_role_id: input.actorRoleId ?? null,
     department_id: input.departmentId ?? null,
     payload: input.payload ?? null,
+    event_key: input.eventKey ?? null,
+  }).catch((error: unknown) => {
+    if (input.eventKey && error instanceof Error && /unique|duplicate|23505/i.test(error.message)) return;
+    throw error;
   });
 }

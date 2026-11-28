@@ -16,6 +16,8 @@ const names = [
   'TAMBALA_RESEARCH_API_KEY',
   'TAMBALA_RESEARCH_BASE_URL',
   'TAMBALA_RESEARCH_MODEL',
+  'TAMBALA_RESEARCH_FORCE_GROQ',
+  'TAMBALA_FORCE_LEGACY_GROQ_ROUTING',
   'TAMBALA_MARKETING_API_KEY',
   'TAMBALA_MARKETING_BASE_URL',
   'TAMBALA_MARKETING_MODEL',
@@ -155,5 +157,21 @@ test('new department agents require their own credentials and provider configura
       );
       assert.equal(getAgentRuntimeInfo(agent).ready, false);
     }
+  });
+});
+
+test('targeted Research Groq recovery overrides legacy OpenRouter routing without changing other agents', () => {
+  withCleanEnv(() => {
+    process.env.TAMBALA_FORCE_LEGACY_GROQ_ROUTING = 'true';
+    process.env.TAMBALA_RESEARCH_FORCE_GROQ = 'true';
+    process.env.TAMBALA_RESEARCH_API_KEY = 'research-groq-secret';
+    process.env.TAMBALA_RESEARCH_MODEL = 'openai/gpt-oss-20b';
+    const config = getAgentRuntimeConfig('research');
+    assert.equal(config.provider, 'groq');
+    assert.equal(config.baseURL, 'https://api.groq.com/openai/v1');
+    assert.equal(config.model, 'openai/gpt-oss-20b');
+    assert.equal(config.apiKey, 'research-groq-secret');
+    assert.equal(getAgentRuntimeInfo('research').ready, true);
+    assert.equal(getAgentRuntimeConfig('outreach').provider, 'groq');
   });
 });

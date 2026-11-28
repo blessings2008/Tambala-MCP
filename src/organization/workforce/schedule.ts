@@ -3,7 +3,7 @@ export const OFFICE_TZ = 'Africa/Blantyre';
 export const WORK_START = '08:00';
 export const WORK_END = '17:00';
 
-export type Cadence = { kind: 'weekdays' } | { kind: 'weekly'; day: number /* 1=Mon … 7=Sun */ };
+export type Cadence = { kind: 'daily' } | { kind: 'weekdays' } | { kind: 'weekly'; day: number /* 1=Mon … 7=Sun */ };
 
 export interface LocalTime {
   date: string;      // YYYY-MM-DD in office time
@@ -45,12 +45,12 @@ export function toMinutes(hhmm: string): number {
 
 /** Is the duty scheduled for this calendar day at all? */
 export function runsToday(cadence: Cadence, lt: LocalTime): boolean {
-  return cadence.kind === 'weekdays' ? lt.weekday <= 5 : lt.weekday === cadence.day;
+  return cadence.kind === 'daily' ? true : cadence.kind === 'weekdays' ? lt.weekday <= 5 : lt.weekday === cadence.day;
 }
 
 /** One run per period: per day for weekday duties, per ISO week for weekly duties. */
 export function periodKey(cadence: Cadence, lt: LocalTime): string {
-  return cadence.kind === 'weekdays' ? lt.date : lt.isoWeek;
+  return cadence.kind === 'daily' || cadence.kind === 'weekdays' ? lt.date : lt.isoWeek;
 }
 
 export function timeReached(time: string, lt: LocalTime): boolean {
@@ -63,5 +63,5 @@ export function isWorkingHours(lt: LocalTime): boolean {
 
 export function cadenceLabel(cadence: Cadence, time: string): string {
   const days = ['', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays'];
-  return cadence.kind === 'weekdays' ? `Every weekday at ${time}` : `${days[cadence.day]} at ${time}`;
+  return cadence.kind === 'daily' ? `Every day at ${time}` : cadence.kind === 'weekdays' ? `Every weekday at ${time}` : `${days[cadence.day]} at ${time}`;
 }
