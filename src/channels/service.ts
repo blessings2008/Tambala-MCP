@@ -346,11 +346,14 @@ async function verifyOutreachLead(number: string): Promise<string | null> {
   whatsappCheckQueue = new Promise<void>((resolve) => { release = resolve; });
   await previous;
   try {
-    const waitMs = Math.max(0, 90_000 - (Date.now() - lastWhatsAppCheckAt));
+    // Keep a modest global gap between Evolution checks without serialising the
+    // entire sales queue for 90 seconds per prospect.
+    const waitMs = Math.max(0, 15_000 - (Date.now() - lastWhatsAppCheckAt));
     if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
     lastWhatsAppCheckAt = Date.now();
     const exists = await isWhatsAppNumber(number);
     whatsappCheckCache.set(number, { at: Date.now(), exists });
+    console.info('WhatsApp CRM verification completed', { waitMs, exists });
     return exists ? hit.name + ' (lead)' : null;
   } finally {
     release();
