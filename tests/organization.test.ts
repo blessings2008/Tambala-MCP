@@ -331,7 +331,7 @@ test('discovery validation accepts Unicode hyphens and requires contact evidence
     'Remaining Verification Gaps:',
     '- Current project budget is not publicly confirmed.',
     'Recommendation: INVESTIGATE',
-  ].join('\\n');
+  ].join('\n');
   assert.equal(validateDiscoveryQueueDeliverable(context, report).ok, true);
   assert.equal(validateDiscoveryQueueDeliverable(context, report.replace('info@example.mw', '')) .ok, false);
 });
