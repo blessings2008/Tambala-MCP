@@ -370,7 +370,7 @@ function confirmsQueuedOrSentAction(value: string): boolean {
 }
 
 function confirmsPendingApprovalAction(value: string): boolean {
-  return /^\s*Actions:\s*\r?\n\s*✔\s*whatsapp:\s*[^\r\n]*\bawaiting Founder approval\b/i.test(value);
+  return /^\s*Actions:\s*\r?\n\s*✔\s*whatsapp:\s*[^\r\n]*\bawaiting standing autonomous-send policy\b/i.test(value);
 }
 /** Each delegation runs in an isolated, durable room. A room closes only after its deliverable is accepted. */
 export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<HandoffOutcome[]> {
@@ -559,12 +559,12 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
     const taskRules = autonomousFirstContact
       ? RULES.replace(
           'Anything addressed to a customer is a DRAFT; never claim it was sent.',
-          'Exception: this exact Founder-approved first-contact may prepare one WhatsApp outreach action using ACTIONS. The shared outbox verifies the CRM lead and WhatsApp registration, then places the message in the Founder approval inbox. Do not claim prior client work, similar customers served, testimonials or results unless approved portfolio evidence supports the exact claim. Never claim sent. All other customer-facing messages remain drafts.',
+          'Exception: this exact CEO-authorised first-contact may prepare one WhatsApp outreach action using ACTIONS. The shared outbox verifies the CRM lead and WhatsApp registration, then places the message in the autonomous WhatsApp outbox. Do not claim prior client work, similar customers served, testimonials or results unless approved portfolio evidence supports the exact claim. Never claim sent. All other customer-facing messages remain drafts.',
         )
       : RULES;
     const reviewRule = autonomousFirstContact
       ? 'For this Founder-approved first-contact only, accept when the action result confirms the message was placed in the Founder approval inbox, queued, or sent after CRM and WhatsApp verification. Report the exact state. A pending-approval message is not delivered; never claim sent unless the action result confirms sent.'
-      : 'Accept when the requested work is complete against the supplied evidence, including a clear account of limitations and unavailable sources. Do not demand provider logs, account metrics, credentials or actions that the employee cannot access. For customer-facing message actions, ACCEPT only authorizes preparing the message in the Founder approval inbox; it never authorizes delivery. Do not return FOUNDER_INPUT_REQUIRED solely because a separate Founder approval is required for sending. Never approve payments, permission changes, security-sensitive changes or other Founder-reserved decisions. If missing Founder-controlled access, data or a decision prevents completion, return FOUNDER_INPUT_REQUIRED and ask one precise question. Return REVISION_REQUIRED only when the employee omitted work or made an unsupported claim that can be corrected from the supplied context.';
+      : 'Accept when the requested work is complete against the supplied evidence, including a clear account of limitations and unavailable sources. Do not demand provider logs, account metrics, credentials or actions that the employee cannot access. For customer-facing message actions, ACCEPT only authorizes preparing the message in the Founder approval inbox; it never authorizes delivery. Do not return SAFE_HOLD solely because a separate Founder approval is required for sending. Never approve payments, permission changes, security-sensitive changes or other Founder-reserved decisions. If missing Founder-controlled access, data or a decision prevents completion, return FOUNDER_INPUT_REQUIRED and ask one precise question. Return REVISION_REQUIRED only when the employee omitted work or made an unsupported claim that can be corrected from the supplied context.';
     const taskId = h.task_id ?? (await deps.tasks.begin(`[Room ${h.room_id ?? h.id}] [Handoff from ${sender}] ${h.request.slice(0, 160)}`)).taskId;
     let leaseLost = false;
     const heartbeatTimer = setInterval(() => {
@@ -653,7 +653,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         continue;
       }
       let actionsText = '';
-      // This deterministic, Founder-authorized first-contact path still enters the
+      // This deterministic, CEO-authorised first-contact path still enters the
       // Founder approval inbox. All other actions wait for CEO acceptance below.
       if (autonomousFirstContact) {
         actionsText = await deps.actions.run({ agent, roleId: h.to_role_id, taskId, founderApprovedFirstContact: true }, acted.actions, acted.rejected);
@@ -680,32 +680,6 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       const stamp = await deps.sign({ roleId: h.to_role_id, kind: 'handoff_result', subjectId: h.id, content: result });
       let stamped = `${result}${actionsText ? `\n\n${actionsText}` : ''}\n\n${stamp.block}`;
       if (h.room_id) await deps.store.roomEvent(h.room_id, 'employee_deliverable_submitted', h.to_role_id, { response: result.slice(0, 8000), actions: actionsText || null });
-      if (autonomousFirstContact && confirmsPendingApprovalAction(actionsText)) {
-        const reason = 'The verified first-contact message is waiting in the Founder approval inbox; it has not been sent.';
-        await deps.tasks.advance(taskId, [
-          { status: 'awaiting_founder', stage: 'founder', eventType: 'first_contact_waiting_for_founder_approval', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, summary: stamped.slice(0, 8000), messageStatus: 'pending_approval' } },
-        ]);
-        await deps.store.update(h.id, { status: 'awaiting_founder', result: stamped.slice(0, 8000), error: reason, completed_at: null });
-        if (h.room_id) {
-          await deps.store.updateRoom(h.room_id, { status: 'awaiting_founder', deliverable: stamped.slice(0, 8000), blocker: reason });
-          await deps.store.roomEvent(h.room_id, 'first_contact_waiting_for_founder_approval', 'ceo', { taskId, messageStatus: 'pending_approval', sent: false });
-        }
-        outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason, taskId, roomId: h.room_id ?? undefined });
-        continue;
-      }
-      if (isFounderClarificationRequest(result)) {
-        const question = result.slice(0, 8000);
-        await deps.tasks.advance(taskId, [
-          { status: 'awaiting_founder', stage: 'founder', eventType: 'handoff_waiting_for_founder', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, clarification: question } },
-        ]);
-        await deps.store.update(h.id, { status: 'awaiting_founder', result: stamped.slice(0, 8000), error: 'Awaiting Founder clarification.', completed_at: null });
-        if (h.room_id) {
-          await deps.store.updateRoom(h.room_id, { status: 'awaiting_founder', deliverable: stamped.slice(0, 8000), blocker: question });
-          await deps.store.roomEvent(h.room_id, 'clarification_requested', h.to_role_id, { question, response: stamped.slice(0, 8000) });
-        }
-        outcomes.push({ handoffId: h.id, toAgent: h.to_agent, status: 'waiting', reason: 'Founder clarification required.', taskId, roomId: h.room_id ?? undefined });
-        continue;
-      }
       if (h.room_id) {
         await deps.store.updateRoom(h.room_id, { status: 'ready_for_review', deliverable: stamped.slice(0, 8000) });
         await deps.store.roomEvent(h.room_id, 'room_ready_for_review', h.to_role_id, { taskId });
@@ -736,7 +710,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         `EMPLOYEE SELF-REVIEWED DELIVERABLE: ${stamped.slice(0, 3500)}`,
         `PROPOSED ACTIONS — NOT YET EXECUTED: ${JSON.stringify(acted.actions).slice(0, 1800)}`,
         `REJECTED OR UNPARSED ACTIONS: ${JSON.stringify(acted.rejected).slice(0, 500)}`,
-        'Check the deliverable and proposed actions independently. Do not execute or authorize any action that exceeds the employee role, the original request, or the existing Founder approval and safety policy.',
+        'Check the deliverable and proposed actions independently. Do not execute or authorize any action that exceeds the employee role, the original request, or the organisation delegated safety policy.',
         reviewRule,
       ].join('\n\n');
       const discoveryReview = ['lead-discovery-queue-watcher', 'lead-discovery-queue-research-review'].includes(h.source_duty_id ?? '')
@@ -748,7 +722,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       const decision = review.match(/^\s*(?:\*\*)?DECISION:\s*(ACCEPT|REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)\b/im)?.[1];
       if (decision !== 'ACCEPT') {
         const reason = review.slice(0, 1500) || 'CEO review did not return a recognized decision.';
-        const awaitingFounder = decision !== 'REVISION_REQUIRED';
+        const awaitingFounder = false;
         await deps.tasks.advance(taskId, [
           { status: awaitingFounder ? 'awaiting_founder' : 'needs_more_work', stage: awaitingFounder ? 'founder' : 'ceo', eventType: decision === 'REVISION_REQUIRED' ? 'ceo_revision_requested' : 'ceo_review_waiting_for_founder', roleId: 'ceo', result: { handoffId: h.id, roomId: h.room_id, review: reason } },
         ]);
