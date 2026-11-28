@@ -76,7 +76,7 @@ export function validateDiscoveryQueueDeliverable(contextSummary: string | null,
   const normalized = (value: string) => value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
   if (!name || !normalized(text).includes(normalized(name))) return { ok: false, reason: 'The report must identify the exact organisation name from the supplied record.' };
   if (!recordId || !text.toLowerCase().includes(recordId.toLowerCase())) return { ok: false, reason: 'The report must include the exact lead_discovery_queue record ID.' };
-  if (!/service[\\u2010-\\u2015\\u2212 -]+fit evidence|supported service fit/i.test(text)) return { ok: false, reason: 'The report must include a service-fit evidence section.' };
+  if (!/service[-‐‑‒–—− ]+fit evidence|supported service fit/i.test(text)) return { ok: false, reason: 'The report must include a service-fit evidence section.' };
   const fits = Array.isArray(prospect.service_fit) ? prospect.service_fit.filter((v): v is string => typeof v === 'string') : [];
   if (fits.length && !fits.some((fit) => normalized(text).includes(normalized(fit)))) return { ok: false, reason: 'The report must name at least one service fit recorded in the supplied prospect record.' };
   const sources = Array.isArray(prospect.source_urls) ? prospect.source_urls.filter((v): v is string => typeof v === 'string' && /^https?:\/\//i.test(v)) : [];
