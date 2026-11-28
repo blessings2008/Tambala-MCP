@@ -22,7 +22,7 @@ export interface EmployeeProfile {
 export const EMPLOYEE_NUMBERS: Record<AgentName, string> = {
   orchestrator: 'TT-001', outreach: 'TT-002', followup: 'TT-003', research: 'TT-004', marketing: 'TT-005', content: 'TT-006',
   finance: 'TT-007', payments: 'TT-008', engineering: 'TT-009', strategy: 'TT-010', product: 'TT-011', security: 'TT-012',
-  operations: 'TT-013', people: 'TT-014', legal: 'TT-015', procurement: 'TT-016', executive: 'TT-017', rnd: 'TT-018', governance: 'TT-019',
+  operations: 'TT-013', people: 'TT-014', legal: 'TT-015', procurement: 'TT-016', executive: 'TT-017', rnd: 'TT-018', governance: 'TT-019', automation: 'TT-020',
 };
 
 const KPIS: Partial<Record<AgentName, string[]>> = {
@@ -36,6 +36,7 @@ const KPIS: Partial<Record<AgentName, string[]>> = {
   marketing: ['Weekly focus delivered with measurable actions'],
   people: ['Weekly workforce review delivered', 'Roles without duties identified'],
   strategy: ['Weekly priorities delivered with reasons', 'Top risk named each week'],
+  automation: ['Daily workflow reliability review completed', 'Recurring automation blockers identified with evidence'],
 };
 
 /** The accountable lead of the agent's unit (business units use a different role naming than departments). The CEO is `ceo`. */
