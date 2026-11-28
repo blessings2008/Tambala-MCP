@@ -1,8 +1,8 @@
 import { localTime, toMinutes, type LocalTime } from '../organization/workforce/schedule.js';
 
 /**
- * Who may message whom, and when. Pure functions so the rules are easy to read and test.
- * Customers only ever hear from Tambala after the Founder approves; the Founder can be messaged by anyone.
+ * Who may message whom, and when. Routine client communication is autonomously
+ * permitted for authorised client-facing roles; safeguards are enforced by the outbox.
  */
 export type Purpose = 'outreach' | 'followup' | 'invoice' | 'document' | 'notify_founder' | 'reply';
 export type Audience = 'founder' | 'client';
@@ -43,7 +43,7 @@ export function decide(input: PolicyInput, state: PolicyState): Verdict {
   if (state.blocked.has(input.to)) return { verdict: 'block', audience, reason: 'This number opted out or is on the do-not-contact list.' };
   if (input.agent !== 'founder' && !CLIENT_FACING_AGENTS.has(input.agent)) return { verdict: 'block', audience, reason: `The ${input.agent} role may only message the Founder.` };
   if (input.purpose === 'notify_founder') return { verdict: 'block', audience, reason: 'notify_founder must go to the Founder number.' };
-  return { verdict: 'needs_approval', audience };
+  return { verdict: 'allow_now', audience };
 }
 
 /** Recognise clear opt-out requests without mistaking ordinary objections for consent withdrawal. */
