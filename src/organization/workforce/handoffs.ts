@@ -74,7 +74,7 @@ export function validateDiscoveryQueueDeliverable(contextSummary: string | null,
   const recordId = typeof prospect.id === 'string' ? prospect.id.trim() : '';
   const text = deliverable.trim();
   const normalized = (value: string) => value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
-  if (!/service[-‐‑‒–—− ]+fit evidence|supported service fit/i.test(text)) return { ok: false, reason: 'The report must include a service-fit evidence section.' };
+  if (!/service[-‐‑‒–—− ]+fit evidence|potential tambala fit|supported service fit/i.test(text)) return { ok: false, reason: 'The report must include a service-fit evidence section.' };
   const fits = Array.isArray(prospect.service_fit) ? prospect.service_fit.filter((v): v is string => typeof v === 'string') : [];
   if (fits.length && !fits.some((fit) => normalized(text).includes(normalized(fit)))) return { ok: false, reason: 'The report must name at least one service fit recorded in the supplied prospect record.' };
   const publishedServices = Array.isArray(prospect.published_services) ? prospect.published_services.filter((v): v is string => typeof v === 'string') : [];
@@ -669,7 +669,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
             'Organisation Name: [exact name from the supplied record]',
             'Queue Record ID: [exact UUID from the supplied record]',
             'Published Services Evidence: list only services the prospect’s official sources actually state. Never copy the service_fit array into this section.',
-            'Service-Fit Evidence: explain the potential Tambala fit separately. The service_fit field is a proposed Tambala offer, not evidence that the prospect offers it or has an active need.',
+            'Potential Tambala Fit: explain the potential fit separately. The service_fit field is a proposed Tambala offer, not evidence that the prospect offers it or has an active need.',
             'Direct Need Evidence: if a current need is explicitly supported by an official source, state it with the exact URL; otherwise say no direct public need evidence was found.',
             'Source URLs: [at least one exact URL copied verbatim from the supplied record]',
             'Public Organisational Contact Evidence: [exact public email and/or phone from the supplied record, or explicitly state None supplied]',
