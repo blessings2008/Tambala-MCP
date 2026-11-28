@@ -25,7 +25,7 @@ export interface OutboxDeps {
   pauseMs?: number;
   /** Minimum gap between customer sends, including across separate worker runs. */
   cooldownMs?: number;
-  /** CRM/WhatsApp verification used only by the explicitly Founder-approved first-contact workflow. */
+  /** CRM/WhatsApp verification required for every first-contact outreach message. */
   verifyOutreachLead?: (number: string) => Promise<string | null>;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -33,9 +33,9 @@ export interface OutboxDeps {
 export interface QueueInput {
   to: string; text: string; purpose: Purpose; roleId: string; agent: string;
   documentId?: string | null; taskId?: string | null; contactLabel?: string | null;
-  /** The Founder himself pressed send in the dashboard: no approval needed. Ignored for every other sender. */
+  /** Founder-originated messages are tagged for audit; customer messages use the autonomous policy. */
   founderApproved?: boolean;
-  /** Server-only provenance from the approved-prospect-first-contact handoff; verification still runs and send still needs Founder approval. */
+  /** Server-only provenance from the qualified-prospect handoff; verification still runs before autonomous delivery. */
   founderApprovedFirstContact?: boolean;
 }
 export interface QueueResult { id: string; status: MessageRow['status']; reason?: string; approvalId?: string | null }
@@ -72,16 +72,17 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
   const founder = deps.founderNumber();
   const blocked = await deps.store.blockedNumbers();
   const base = decide({ to, purpose: input.purpose, agent: input.agent, text: input.text, hasDocument: Boolean(input.documentId) }, { founderNumber: founder, blocked });
-  if (input.founderApprovedFirstContact) {
-    // Validate provenance before any other policy outcome so a blocked/unknown
-    // sender cannot smuggle the privileged first-contact flag through this path.
-    if (input.agent !== 'outreach' || input.roleId !== 'director-sales-business-development' || input.purpose !== 'outreach' || !input.taskId) {
-      throw new OutboxError('Founder-approved first-contact verification is restricted to the approved Outreach workflow.');
+  if (outreachCopy) {
+    // Every first-contact message must match a real CRM lead and a WhatsApp-registered number.
+    // The server-only flag additionally proves that the request came from the qualified-prospect workflow.
+    if (input.founderApprovedFirstContact &&
+      (input.agent !== 'outreach' || input.roleId !== 'director-sales-business-development' || !input.taskId)) {
+      throw new OutboxError('Autonomous first-contact verification is restricted to the qualified Outreach workflow.');
     }
     if (base.verdict !== 'block') {
       if (!deps.verifyOutreachLead) throw new OutboxError('The CRM/WhatsApp verification service is unavailable; no customer message was queued.');
       const verified = await deps.verifyOutreachLead(to);
-      if (!verified) throw new OutboxError('Autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number.');
+      if (!verified) throw new OutboxError('First-contact outreach requires a matching CRM lead with a verified WhatsApp number.');
       verifiedContactLabel = verified;
     }
   }
@@ -118,36 +119,8 @@ export async function queueMessage(deps: OutboxDeps, input: QueueInput): Promise
     return { id: row.id, status: 'queued' };
   }
 
-  let approvalId: string | null;
-  try {
-    approvalId = await deps.approvals.create({
-      actionType: 'whatsapp_message',
-      summary: `WhatsApp ${input.purpose} to ${input.contactLabel ?? to}${input.documentId ? ' with a document' : ''}`,
-      requestedByRoleId: input.roleId, riskLevel: input.purpose === 'outreach' ? 'medium' : 'low', taskId: input.taskId ?? null,
-      content: `To: ${input.contactLabel ? `${input.contactLabel} ` : ''}${to}${input.documentId ? '\nAttachment: PDF document' : ''}\n\n${text}\n\n${stamp.block}`,
-      subjectType: 'outbox_message', subjectId: row.id,
-    });
-  } catch (error) {
-    const reason = `Founder approval request could not be created: ${error instanceof Error ? error.message : 'approval service unavailable'}`.slice(0, 500);
-    await deps.store.update(row.id, { ...patch, status: 'failed', approval_id: null, reason });
-    return { id: row.id, status: 'failed', reason };
-  }
-  if (!approvalId) {
-    const reason = 'Founder approval request could not be created because the approval database is unavailable. No customer message was sent.';
-    await deps.store.update(row.id, { ...patch, status: 'failed', approval_id: null, reason });
-    return { id: row.id, status: 'failed', reason };
-  }
-  await deps.store.update(row.id, { ...patch, status: 'pending_approval', approval_id: approvalId, reason: null });
-
-  // Tell the Founder right away, so he can answer from his phone.
-  if (approvalId && founder) {
-    const code = approvalId.slice(0, 6);
-    await queueMessage(deps, {
-      to: founder, purpose: 'notify_founder', roleId: input.roleId, agent: input.agent, taskId: input.taskId ?? null,
-      text: `Needs your OK: ${input.purpose} to ${input.contactLabel ?? to}.\n\n"${text.slice(0, 280)}${text.length > 280 ? '…' : ''}"\n\nReply YES ${code} to send, or NO ${code} <reason> to reject.`,
-    }).catch(() => undefined);
-  }
-  return { id: row.id, status: 'pending_approval', approvalId };
+  await deps.store.update(row.id, { ...patch, status: 'queued', approval_id: null, reason: null });
+  return { id: row.id, status: 'queued' };
 }
 
 /** Looks for an earlier identical message, ignoring the row we just added. */
@@ -181,12 +154,7 @@ export async function processOutbox(deps: OutboxDeps, max = 10): Promise<SendOut
     if (!row.number) { await deps.store.update(row.id, { status: 'failed', claimed_at: null, reason: 'No destination number is available.' }); out.push({ id: row.id, status: 'failed', reason: 'No destination number is available.' }); continue; }
     if (!deps.transport.configured()) { await wait('WhatsApp is not configured yet.'); continue; }
     if (row.audience === 'client') {
-      // Defence in depth: legacy autonomous rows without a Founder approval are held, too.
-      if (!row.approval_id && row.from_role_id !== 'founder') {
-        await deps.store.update(row.id, { status: 'pending_approval', claimed_at: null, reason: 'Founder approval is required before any customer message can be sent.' });
-        out.push({ id: row.id, status: 'waiting', reason: 'Founder approval is required.' });
-        continue;
-      }
+      // Autonomous client delivery is permitted only through the validated queue path.
       if (blocked.has(row.number)) { await deps.store.update(row.id, { status: 'blocked', claimed_at: null, reason: 'This number opted out before the message was sent.' }); out.push({ id: row.id, status: 'blocked' }); continue; }
       if (!sendWindowOpen(now)) { await wait('Outside the sending window (Mon-Sat 07:30-19:30). It will go out when the window opens.'); continue; }
       const cooldownMs = Math.max(0, deps.cooldownMs ?? deps.pauseMs ?? 0);
