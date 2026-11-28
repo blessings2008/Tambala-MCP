@@ -13,7 +13,7 @@ import { extractDiscoveryRecommendation, isFalseMissingDeliverableReview, isRese
 
 export const MAX_HANDOFFS_PER_DUTY = 2;
 export const MAX_HANDOFF_ATTEMPTS = 5;
-export const HANDOFF_LEASE_TIMEOUT_MS = 30 * 60 * 1000;
+export const HANDOFF_LEASE_TIMEOUT_MS = 5 * 60 * 1000;
 export const HANDOFF_HEARTBEAT_INTERVAL_MS = 30 * 1000;
 
 export type HandoffStatus = 'queued' | 'running' | 'awaiting_founder' | 'completed' | 'failed';
