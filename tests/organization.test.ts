@@ -6,7 +6,7 @@ import { authorizeOrganizationalAction } from '../src/organization/policy.js';
 import { getOrganizationSummary } from '../src/organization/service.js';
 import { getRequestPrincipal, runWithRequestPrincipal } from '../src/organization/request-context.js';
 import { isAllowedOrganizationTaskTransition } from '../src/organization/task-transition-rules.js';
-import { HANDOFF_HEARTBEAT_INTERVAL_MS, HANDOFF_LEASE_TIMEOUT_MS } from '../src/organization/workforce/handoffs.js';
+import { HANDOFF_HEARTBEAT_INTERVAL_MS, HANDOFF_LEASE_TIMEOUT_MS, isReadOnlyResearchQueueHandoff } from '../src/organization/workforce/handoffs.js';
 
 const role = (id: string) => {
   const found = initialOrganization.roles.find((candidate) => candidate.id === id);
@@ -299,4 +299,17 @@ test('stale handoffs recover promptly after a worker restart', () => {
   assert.equal(HANDOFF_HEARTBEAT_INTERVAL_MS, 30_000);
   assert.equal(HANDOFF_LEASE_TIMEOUT_MS, 5 * 60_000);
   assert.ok(HANDOFF_LEASE_TIMEOUT_MS > HANDOFF_HEARTBEAT_INTERVAL_MS * 5);
+});
+
+
+test('only read-only discovery queue Research handoffs auto-retry after lease expiry', () => {
+  const safe = {
+    to_agent: 'research',
+    source_duty_id: 'lead-discovery-queue-research-review',
+    context_summary: '{"source":"public.lead_discovery_queue"}',
+    request: 'Re-assess this existing queue record. Do not contact the organisation.',
+  } as const;
+  assert.equal(isReadOnlyResearchQueueHandoff(safe), true);
+  assert.equal(isReadOnlyResearchQueueHandoff({ ...safe, to_agent: 'outreach' }), false);
+  assert.equal(isReadOnlyResearchQueueHandoff({ ...safe, request: 'Send a WhatsApp message to the prospect.' }), false);
 });
