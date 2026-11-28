@@ -595,7 +595,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       const firstContactTarget = autonomousFirstContact ? approvedFirstContactTarget(h.context_summary) : null;
       if (autonomousFirstContact && !firstContactTarget) throw new Error('Approved first-contact is missing its CRM destination or verified organisation name.');
       const discoveryQueueTask = ['lead-discovery-queue-watcher', 'lead-discovery-queue-research-review'].includes(h.source_duty_id ?? '');
-      const automationIncident = agent === 'automation' && /^AUTOMATIC AI & AUTOMATION INCIDENT/i.test(h.request);
+      const automationIncident = agent === 'automation' && /^AUTOMATIC (?:AI & AUTOMATION )?INCIDENT/i.test(h.request);
       const discoveryQueueFormat = discoveryQueueTask
         ? [
             'MANDATORY DISCOVERY QUEUE REPORT FORMAT — use these exact headings and keep the Recommendation section last:',
