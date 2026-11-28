@@ -362,7 +362,7 @@ test('discovery validation accepts Unicode hyphens and requires contact evidence
     'Verification Gaps:',
     '- No public evidence of an active digital project.',
     'Recommendation: INVESTIGATE',
-  ].join('\\n');
+  ].join('\n');
   assert.equal(validateDiscoveryQueueDeliverable(sourcedContext, groundedReport).ok, true);
   const falsePublishedClaim = groundedReport.replace('Audit Services, Tax Services, Advisory Services and Forensic Services', 'Web Development, Software Development, Digital Product Development');
   assert.equal(validateDiscoveryQueueDeliverable(sourcedContext, falsePublishedClaim).ok, false);
