@@ -207,6 +207,25 @@ export async function getDetailedCRMContext(): Promise<DbRow> {
   return {
     generated_at: new Date(now).toISOString(),
     data_scope: 'Detailed CRM contact records are supplied only to Sales & Business Development and Customer Relations & Support duties.',
+    // Put the small, actionable follow-up slice first: the AI request budget deliberately
+    // truncates large CRM packets, so placing this after 167 lead records hid every due item.
+    customer_followups: {
+      due_leads: dueLeads.slice(0, 12).map((lead) => ({
+        id: lead.id, name: lead.name, business_name: lead.business_name,
+        phone: lead.phone, whatsapp: lead.whatsapp, status: lead.status,
+        next_follow_up_at: lead.next_follow_up_at,
+        has_contact_number: lead.has_contact_number,
+        last_successful_outreach_at: lead.last_successful_outreach_at,
+      })),
+      open_client_tasks: openClientTasks.slice(0, 8).map((task) => ({
+        id: task.id, title: task.title, status: task.status, priority: task.priority,
+        due_at: task.due_at, client: task.client,
+      })),
+      overdue_client_tasks: dueClientTasks.slice(0, 8).map((task) => ({
+        id: task.id, title: task.title, status: task.status, due_at: task.due_at, client: task.client,
+      })),
+      note: 'A lead is due only when next_follow_up_at is present and at or before generated_at. Client follow-up work is represented by open tasks linked through client_id.',
+    },
     lead_pipeline: {
       total: leadRecords.length,
       by_status: counts(activeLeads),
@@ -217,12 +236,6 @@ export async function getDetailedCRMContext(): Promise<DbRow> {
       total: clientRecords.length,
       by_status: counts(activeClients),
       records: clientRecords.slice(0, 30),
-    },
-    customer_followups: {
-      due_leads: dueLeads.slice(0, 30),
-      open_client_tasks: openClientTasks.slice(0, 40),
-      overdue_client_tasks: dueClientTasks.slice(0, 30),
-      note: 'A lead is due only when next_follow_up_at is present and at or before generated_at. Client follow-up work is represented by open tasks linked through client_id; tasks without a due_at are open but not classified as overdue.',
     },
     outreach_history: {
       outbound_client_messages_loaded: outbound.length,
