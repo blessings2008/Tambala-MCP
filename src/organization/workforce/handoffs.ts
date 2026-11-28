@@ -106,6 +106,13 @@ export function validateDiscoveryQueueDeliverable(contextSummary: string | null,
     && !(recordIdMatch && contactIdentityMatch) && !(coreNameMatch && contactIdentityMatch)) {
     return { ok: false, reason: 'The report must identify the organisation by its supplied name or queue ID, or by its core name together with an exact supplied public contact and its source.' };
   }
+  const recommendation = extractDiscoveryRecommendation(text, name);
+  if (recommendation === 'QUALIFY') {
+    const directNeedSection = text.match(/direct need evidence([\\s\\S]*?)(?:verification gaps|recommendation)/i)?.[1] ?? '';
+    if (directNeedSection.trim().length < 25 || !sources.some((url) => directNeedSection.includes(url))) {
+      return { ok: false, reason: 'QUALIFY requires a Direct Need Evidence section with a concrete fact and its exact official source URL. Without that, recommend INVESTIGATE.' };
+    }
+  }
   const gapsHeading = text.match(/verification gaps/i);
   if (!gapsHeading || gapsHeading.index === undefined) return { ok: false, reason: 'The report must explicitly list remaining verification gaps, or state that none were identified.' };
   const gapsTail = text.slice(gapsHeading.index + gapsHeading[0].length);
@@ -643,12 +650,13 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
             'The first two lines are mandatory and must appear first, with no preamble. Copy both values verbatim from prospect.organisation_name and prospect.id in the supplied context. A report without these two lines is invalid:',
             'Organisation Name: [exact name from the supplied record]',
             'Queue Record ID: [exact UUID from the supplied record]',
-            'Service-Fit Evidence: [supported Tambala services and the supplied evidence]',
+            'Service-Fit Evidence: distinguish the prospect’s published services from possible Tambala fit. The service_fit field is a proposed Tambala offer, not evidence that the prospect offers or needs it.',
+            'Direct Need Evidence: include a concrete current need only when an official source explicitly supports it, with the exact source URL. If none is found, say so and recommend INVESTIGATE.',
             'Source URLs: [at least one exact URL copied verbatim from the supplied record]',
             'Public Organisational Contact Evidence: [exact public email and/or phone from the supplied record, or explicitly state None supplied]',
             'Verification Gaps: [specific gaps, or None identified]',
             'Recommendation: QUALIFY | INVESTIGATE | REJECT',
-            'Use the exact label Recommendation:, not Decision: and not a bare status. QUALIFY only when the record is verified and a supplied public WhatsApp phone number is reproduced exactly. If no valid public phone is supplied, choose INVESTIGATE. Never invent a contact or source.',
+            'Use the exact label Recommendation:, not Decision: and not a bare status. QUALIFY only when the record is verified, a supplied public WhatsApp phone number is reproduced exactly, and Direct Need Evidence is supported by an official source. If no direct need evidence or valid public phone is supplied, choose INVESTIGATE. Never invent a service, need, contact or source.',
           ].join('\n')
         : '';
       const prompt = [
