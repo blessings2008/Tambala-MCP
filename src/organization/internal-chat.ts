@@ -9,6 +9,7 @@ const CHANNELS = {
   sales: { agent: 'outreach', role: 'director-sales-business-development', name: 'Sales & Business Development' },
   customer: { agent: 'followup', role: 'director-customer-relations', name: 'Customer Relations' },
   technology: { agent: 'engineering', role: 'director-technology-engineering', name: 'Technology & Engineering' },
+  automation: { agent: 'automation', role: 'director-ai-automation', name: 'AI & Automation' },
   finance: { agent: 'finance', role: 'director-finance-accounting', name: 'Finance & Accounting' },
   founder: { agent: 'executive', role: 'director-executive-management', name: 'Executive Management' },
 } as const;
@@ -26,6 +27,7 @@ const ROLE_AGENT: Record<string, AgentName> = {
   'director-finance-accounting': 'finance',
   'leader-fintech-ventures': 'payments',
   'director-technology-engineering': 'engineering',
+  'director-ai-automation': 'automation',
   'director-strategy-planning': 'strategy',
   'director-product-innovation': 'product',
   'director-cybersecurity-it': 'security',
