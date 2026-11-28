@@ -278,7 +278,7 @@ export async function dispatchNewDiscoveryQueue(maxCount = 5): Promise<number> {
           sourceDutyId: 'lead-discovery-queue-watcher',
           request: [
             'You are Central Research & Intelligence reviewing one existing lead_discovery_queue record. Do not run a new prospect search and do not contact the organisation.',
-            'Return the exact organisation name, queue record ID, service-fit evidence, source URLs, public organisational contact evidence, verification gaps, and one clear recommendation: QUALIFY, INVESTIGATE, or REJECT.',
+            'Return the exact organisation name and queue record ID, then use these explicit headings: Service-Fit Evidence (with facts tied to supplied source URLs); Public Organisational Contact Evidence (reproduce at least one supplied public email or phone and its source, or explicitly state none was supplied); Remaining Verification Gaps; Recommendation (QUALIFY, INVESTIGATE, or REJECT).',
             'A named decision-maker is optional enrichment and MUST NOT be a qualification requirement. A missing decision-maker alone is never a reason to downgrade. QUALIFY only when service fit is supported by credible source evidence, the organisation is genuinely relevant to an active Tambala service, and at least one public organisational email or phone is verified in the supplied record. If a contact is present but not evidenced, INVESTIGATE and name the exact check needed. Never invent or infer contact details. Do not contact the prospect.',
             `Queue record ID: ${prospect.id}.`,
           ].join(' '),
@@ -377,7 +377,7 @@ export async function dispatchReviewingDiscoveryQueue(maxCount = 5): Promise<num
       request: [
         'Central Research & Intelligence: re-assess this existing queue record because the previous workflow left it in reviewing.',
         'Use only the supplied record and its listed source URLs; do not run broad discovery and do not contact the organisation.',
-        'Return the exact organisation name, queue record ID, supported service fit, public organisational contact evidence, remaining verification gaps, and QUALIFY / INVESTIGATE / REJECT.',
+        'Return the exact organisation name and queue record ID, then use these explicit headings: Service-Fit Evidence (facts tied to supplied source URLs); Public Organisational Contact Evidence (reproduce at least one supplied public email or phone and its source, or explicitly state none was supplied); Remaining Verification Gaps; Recommendation (QUALIFY / INVESTIGATE / REJECT).',
         'A named decision-maker is optional. Do not invent facts or upgrade partial verification without explicit evidence. If the supplied record is insufficient, state the exact missing evidence.',
         marker,
       ].join(' '),
