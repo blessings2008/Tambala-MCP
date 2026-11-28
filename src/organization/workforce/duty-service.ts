@@ -19,6 +19,7 @@ import { signWork, signatureStore } from './sign-work.js';
 import { describeResults, executeActions, type ActionExecDeps } from './actions-exec.js';
 import type { Action } from './actions.js';
 import { founderNumber, productionOutboxDeps, runOutbox } from '../../channels/service.js';
+import { normalizePhoneFromLabel } from '../../channels/phone.js';
 import type { SendOutcome } from '../../channels/outbox.js';
 import { createDocument } from '../../documents/service.js';
 import { documentStore } from '../../documents/store.js';
@@ -423,13 +424,16 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
   );
   const lead = leads[0];
   if (!lead || String(lead.status ?? '').toLowerCase() !== 'new') return false;
-  const phone = [lead.whatsapp, lead.phone].find((value) => typeof value === 'string' && value.trim()) as string | undefined;
-  if (!phone) return false;
+  const rawPhone = [lead.whatsapp, lead.phone].find((value) => typeof value === 'string' && value.trim()) as string | undefined;
+  if (!rawPhone) return false;
+  // A CRM phone field can contain several branches or switchboard numbers. Never
+  // concatenate them or silently choose the first; only dispatch a single, normalised
+  // destination that exactly matches one number in the verified public record.
+  const phone = normalizePhoneFromLabel(rawPhone);
+  const publishedPhone = normalizePhoneFromLabel(prospect.public_phone);
+  if (!phone || !publishedPhone || phone !== publishedPhone) return false;
 
-  const publishedPhone = prospect.public_phone.split(/[;,]/)[0]?.replace(/\D/g, '') ?? '';
-  if (!publishedPhone || phone.replace(/\D/g, '') !== publishedPhone) return false;
-
-  const phoneDigits = phone.replace(/\D/g, '');
+  const phoneDigits = phone;
   const sentMessages = await supabaseSelect<{ number: string; status: string }>(
     'organization_messages',
     'select=number,status&direction=eq.out&audience=eq.client&status=in.(queued,sending,sent,blocked,failed,pending_approval)&limit=1000',
@@ -457,7 +461,7 @@ async function queueApprovedProspectForSales(prospect: DiscoveryQueueRow, leadId
       first_contact_message: prospect.first_contact_message,
       verification_status: prospect.verification_status,
     },
-    crm_lead: { id: leadId, name: lead.name, business_name: lead.business_name, phone: lead.phone, whatsapp: lead.whatsapp, status: lead.status },
+    crm_lead: { id: leadId, name: lead.name, business_name: lead.business_name, phone, whatsapp: lead.whatsapp ? normalizePhoneFromLabel(lead.whatsapp) : null, status: lead.status },
   });
 
   await queueHandoff(handoffStore(), {
