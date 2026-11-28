@@ -34,9 +34,14 @@ export class HandoffError extends Error {}
 /** Read-only AI & Automation incident reports can be accepted by a deterministic contract. */
 function hasAutomationIncidentReport(value: string): boolean {
   const text = value.trim();
-  const required = [/^Severity:\s*\S/im, /^Evidence:\s*\S/im, /^Diagnosis:\s*\S/im, /^Confidence:\s*\S/im, /^Safe next step:\s*\S/im, /^Action taken:\s*\S/im];
-  return text.length >= 180 && required.every((pattern) => pattern.test(text))
-    && !/DECISION:\s*FOUNDER_INPUT_REQUIRED|Clarification Required/i.test(text);
+  // Accept the model's existing structured formats as well as the preferred headings.
+  // The execution path separately forbids actions, so a report can never claim an
+  // unverified production change or perform one.
+  const hasEvidence = /(?:^|\\n)\\s*(?:\\*\\*)?(?:FACTS|EVIDENCE|OBSERVED FACTS)(?:\\*\\*)?/im.test(text);
+  const hasDiagnosis = /(?:^|\\n)\\s*(?:\\*\\*)?(?:DIAGNOSIS|HYPOTHESES|ROOT CAUSE)(?:\\*\\*)?/im.test(text);
+  const hasNextStep = /(?:RECOMMENDED|SAFE NEXT STEP|NEXT STEP|RECOMMENDATION)/i.test(text);
+  return text.length >= 180 && hasEvidence && hasDiagnosis && hasNextStep
+    && !/DECISION:\\s*FOUNDER_INPUT_REQUIRED|Clarification Required/i.test(text);
 }
 
 /**
@@ -739,8 +744,8 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         ? `DECISION: ${discoveryReview.ok ? 'ACCEPT' : 'REVISION_REQUIRED'}\n${discoveryReview.reason}`
         : automationIncident
           ? hasAutomationIncidentReport(result)
-            ? 'DECISION: ACCEPT\nRead-only incident report passed the required diagnostic headings and content checks. No actions were permitted or executed.'
-            : 'DECISION: REVISION_REQUIRED\nThe diagnostic report must include Severity, Evidence, Diagnosis, Confidence, Safe next step, and Action taken. No production changes or actions are permitted.'
+            ? 'DECISION: ACCEPT\nRead-only incident report passed evidence, diagnosis and next-step checks. No actions were permitted or executed.'
+            : 'DECISION: REVISION_REQUIRED\nThe diagnostic report must clearly state observed evidence, diagnosis or hypotheses, and a safe next step. No production changes or actions are permitted.'
           : (await deps.askAgent('orchestrator', reviewPrompt, {})).trim();
       const decision = review.match(/^\s*(?:\*\*)?DECISION:\s*(ACCEPT|REVISION_REQUIRED|SAFE_HOLD)\b/im)?.[1];
       if (decision !== 'ACCEPT') {
