@@ -222,8 +222,8 @@ async function resolveInternalChatActor(req: import('node:http').IncomingMessage
 }
 
 function internalChatAllowedChannels(agent: AgentName | null): string[] {
-  if (agent === null) return ['executive', 'board', 'research', 'sales', 'customer', 'technology', 'finance', 'founder'];
-  if (agent === 'orchestrator') return ['executive', 'board', 'research', 'sales', 'customer', 'technology', 'finance'];
+  if (agent === null) return ['executive', 'board', 'research', 'sales', 'customer', 'technology', 'automation', 'finance', 'founder'];
+  if (agent === 'orchestrator') return ['executive', 'board', 'research', 'sales', 'customer', 'technology', 'automation', 'finance'];
   const channel = internalChatChannelForAgent(agent);
   return channel && channel !== 'founder' ? [channel] : [];
 }
