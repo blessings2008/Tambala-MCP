@@ -115,7 +115,7 @@ export function authorizeOrganizationalAction(
   }
 
   const requiredAuthority = RESTRICTED_ACTIONS[action];
-  if (requiredAuthority && actorRole.id !== requiredAuthority) {
+  if (requiredAuthority && actorRole.id !== requiredAuthority && actorRole.id !== 'founder') {
     const validApproval =
       approval?.approved === true &&
       approval.authority === requiredAuthority &&
