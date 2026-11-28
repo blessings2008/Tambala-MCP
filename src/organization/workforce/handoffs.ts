@@ -651,9 +651,13 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
         const selfReviewedBody = raw.replace(/^\s*SELF_REVIEW:\s*(?:PASS|BLOCKED)\s*(?:\r?\n|$)/i, '').trim();
         acted = parseActions(selfReviewedBody);
         result = acted.clean.trim();
-        if (automationIncident) {
-          if (acted.actions.length || acted.rejected.length) throw new Error('AI & Automation incident reviews are read-only; no actions are permitted.');
-          if (result.length < 120) throw new Error('AI & Automation returned no usable incident diagnosis.');
+        if (automationIncident || discoveryQueueTask) {
+          if (acted.actions.length || acted.rejected.length) throw new Error(automationIncident
+            ? 'AI & Automation incident reviews are read-only; no actions are permitted.'
+            : 'Discovery-queue research is read-only; no actions are permitted.');
+          if (automationIncident && result.length < 120) throw new Error('AI & Automation returned no usable incident diagnosis.');
+          // Discovery reports have a stricter deterministic field/source validator below;
+          // a model-generated SELF_REVIEW prefix is redundant and was causing false failures.
         } else if (selfReview?.[1]?.toUpperCase() !== 'PASS' && !isFounderClarificationRequest(result)) {
           throw new Error(selfReview?.[1]?.toUpperCase() === 'BLOCKED'
             ? `Employee self-review blocked the deliverable: ${result.slice(0, 400)}`
