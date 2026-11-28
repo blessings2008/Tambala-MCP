@@ -6,6 +6,7 @@ import { authorizeOrganizationalAction } from '../src/organization/policy.js';
 import { getOrganizationSummary } from '../src/organization/service.js';
 import { getRequestPrincipal, runWithRequestPrincipal } from '../src/organization/request-context.js';
 import { isAllowedOrganizationTaskTransition } from '../src/organization/task-transition-rules.js';
+import { HANDOFF_HEARTBEAT_INTERVAL_MS, HANDOFF_LEASE_TIMEOUT_MS } from '../src/organization/workforce/handoffs.js';
 
 const role = (id: string) => {
   const found = initialOrganization.roles.find((candidate) => candidate.id === id);
@@ -291,4 +292,11 @@ test('every department has an accountable lead connected to its reporting struct
 
 test('a retried department task may return to CEO analysis', () => {
   assert.equal(isAllowedOrganizationTaskTransition('executing', 'ceo_analyzing'), true);
+});
+
+
+test('stale handoffs recover promptly after a worker restart', () => {
+  assert.equal(HANDOFF_HEARTBEAT_INTERVAL_MS, 30_000);
+  assert.equal(HANDOFF_LEASE_TIMEOUT_MS, 5 * 60_000);
+  assert.ok(HANDOFF_LEASE_TIMEOUT_MS > HANDOFF_HEARTBEAT_INTERVAL_MS * 5);
 });
