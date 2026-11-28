@@ -501,7 +501,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
           reason, previousAttempt: stale.attempts, maxAttempts: MAX_HANDOFF_ATTEMPTS,
         });
       }
-      outcomes.push({ handoffId: stale.id, toAgent: stale.to_agent, status: 'queued', reason, taskId: stale.task_id ?? undefined, roomId: stale.room_id ?? undefined });
+      outcomes.push({ handoffId: stale.id, toAgent: stale.to_agent, status: 'retry', reason, taskId: stale.task_id ?? undefined, roomId: stale.room_id ?? undefined });
       continue;
     }
     const reason = 'The handoff worker lease expired. The task is marked failed and will not be retried automatically because external side effects may be uncertain. The CEO must verify the recorded outcome before issuing any new attempt; no Founder input is required.';
