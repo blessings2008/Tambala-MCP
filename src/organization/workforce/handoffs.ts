@@ -93,7 +93,7 @@ export function validateDiscoveryQueueDeliverable(contextSummary: string | null,
     }
     const unsupportedPublishedClaims = fits.filter((fit) =>
       normalized(publishedSection).includes(normalized(fit)) &&
-      !publishedServices.some((service) => normalized(service).includes(normalized(fit)),
+      !publishedServices.some((service) => normalized(service).includes(normalized(fit))),
     );
     if (unsupportedPublishedClaims.length) {
       return { ok: false, reason: 'A proposed Tambala service was incorrectly presented as a service the prospect publishes. Keep published services and potential Tambala fit separate.' };
