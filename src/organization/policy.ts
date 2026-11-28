@@ -59,12 +59,12 @@ const ACTION_CAPABILITY: Record<OrganizationalAction, string | null> = {
 };
 
 const RESTRICTED_ACTIONS: Partial<Record<OrganizationalAction, ApprovalAuthority>> = {
-  launch_major_venture: 'founder',
-  commit_material_funds: 'founder',
-  change_mission: 'founder',
-  close_major_business_unit: 'founder',
-  send_sensitive_external_communication: 'founder',
-  execute_financial_transaction: 'founder',
+  launch_major_venture: 'ceo',
+  commit_material_funds: 'ceo',
+  change_mission: 'ceo',
+  close_major_business_unit: 'ceo',
+  send_sensitive_external_communication: 'ceo',
+  execute_financial_transaction: 'ceo',
 };
 
 /**
