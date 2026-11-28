@@ -631,6 +631,7 @@ export async function processHandoffs(deps: HandoffDeps, limit = 5): Promise<Han
       const discoveryQueueFormat = discoveryQueueTask
         ? [
             'MANDATORY DISCOVERY QUEUE REPORT FORMAT — use these exact headings and keep the Recommendation section last:',
+            'The first two lines are mandatory and must appear first, with no preamble. Copy both values verbatim from prospect.organisation_name and prospect.id in the supplied context. A report without these two lines is invalid:',
             'Organisation Name: [exact name from the supplied record]',
             'Queue Record ID: [exact UUID from the supplied record]',
             'Service-Fit Evidence: [supported Tambala services and the supplied evidence]',
