@@ -14,7 +14,6 @@ const NON_SECURITY_WORKFLOW_BLOCKS: RegExp[] = [
   /exists["']?\s*:\s*false/i,
   /not a valid phone number/i,
   /AI request blocked by Tambala(?:'s|’s) free-only policy/i,
-  /(?:HTTP\s*429|status(?:\s+code)?\s*429|free-models-per-day|rate limit exceeded|too many requests)/i,
   /model.{0,80}not verified as free/i,
   /missing its CRM destination or verified organisation name/i,
   /no customer message was queued/i,
