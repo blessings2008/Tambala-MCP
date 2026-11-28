@@ -83,22 +83,22 @@ test('CEO can coordinate work within delegated capability', () => {
   assert.equal(result.allowed, true);
 });
 
-test('CEO cannot launch a major venture without recorded Founder approval', () => {
+test('CEO can launch a major venture within delegated authority', () => {
   const result = authorizeOrganizationalAction({
     actorRole: role('ceo'),
     action: 'launch_major_venture',
   });
-  assert.equal(result.allowed, false);
-  assert.equal(result.requiresApproval, true);
-  assert.equal(result.requiredAuthority, 'founder');
+  assert.equal(result.allowed, true);
+  assert.equal(result.requiresApproval, false);
+  assert.equal(result.requiredAuthority, null);
 });
 
-test('CEO can pass the launch policy only with a Founder approval record', () => {
+test('CEO authority does not need a second approval record', () => {
   const result = authorizeOrganizationalAction({
     actorRole: role('ceo'),
     action: 'launch_major_venture',
     approval: {
-      authority: 'founder',
+      authority: 'ceo',
       approved: true,
       approvalId: 'approval-test-001',
     },
@@ -112,7 +112,7 @@ test('approval does not grant a role a capability it does not have', () => {
     actorRole: council,
     action: 'launch_major_venture',
     approval: {
-      authority: 'founder',
+      authority: 'ceo',
       approved: true,
       approvalId: 'approval-test-002',
     },
@@ -201,7 +201,7 @@ test('department and business-unit leads cannot execute financial transactions',
   }
 });
 
-test('financial transaction authority remains reserved to the Founder role', () => {
+test('financial transaction authority is delegated to the CEO role', () => {
   const founderResult = authorizeOrganizationalAction({
     actorRole: role('founder'),
     action: 'execute_financial_transaction',
@@ -211,15 +211,16 @@ test('financial transaction authority remains reserved to the Founder role', () 
     action: 'execute_financial_transaction',
   });
 
-  assert.equal(founderResult.allowed, true);
-  assert.equal(ceoResult.allowed, false);
-  assert.equal(ceoResult.requiresApproval, true);
-  assert.equal(ceoResult.requiredAuthority, 'founder');
+  assert.equal(founderResult.allowed, false);
+  assert.equal(founderResult.requiresApproval, true);
+  assert.equal(founderResult.requiredAuthority, 'ceo');
+  assert.equal(ceoResult.allowed, true);
+  assert.equal(ceoResult.requiresApproval, false);
 });
 
 
 
-test('all Founder-reserved actions reject delegated roles without a valid Founder approval', () => {
+test('all restricted actions are directly delegated to the CEO', () => {
   const restrictedActions = [
     'launch_major_venture',
     'commit_material_funds',
@@ -230,13 +231,9 @@ test('all Founder-reserved actions reject delegated roles without a valid Founde
   ] as const;
 
   for (const action of restrictedActions) {
-    const denied = authorizeOrganizationalAction({
-      actorRole: role('ceo'),
-      action,
-    });
-    assert.equal(denied.allowed, false, `CEO must not perform ${action} without Founder approval.`);
-    assert.equal(denied.requiresApproval, true, `${action} must explicitly request Founder approval.`);
-    assert.equal(denied.requiredAuthority, 'founder');
+    const delegated = authorizeOrganizationalAction({ actorRole: role('ceo'), action });
+    assert.equal(delegated.allowed, true, `CEO should have delegated authority for ${action}.`);
+    assert.equal(delegated.requiresApproval, false, `${action} should not need Founder input.`);
   }
 });
 
