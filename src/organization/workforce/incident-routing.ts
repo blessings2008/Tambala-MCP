@@ -7,7 +7,7 @@
  */
 const NON_SECURITY_WORKFLOW_BLOCKS: RegExp[] = [
   /DISCOVERED_PROSPECTS JSON block/i,
-  /autonomous first-contact outreach requires a matching CRM lead with a verified WhatsApp number/i,
+  /(?:autonomous )?first-contact outreach requires a matching CRM lead with a verified WhatsApp number/i,
   /no matching CRM lead with a verified WhatsApp number/i,
   /could not verify this CRM number as a WhatsApp-registered lead/i,
   /not registered on WhatsApp/i,
