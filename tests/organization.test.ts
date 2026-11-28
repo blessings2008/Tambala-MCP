@@ -348,6 +348,6 @@ test('discovery validation accepts Unicode hyphens and requires contact evidence
     'Remaining Verification Gaps:',
     '- AMG Global has no publicly confirmed project budget.',
     'Recommendation: INVESTIGATE',
-  ].join('\\n');
+  ].join('\n');
   assert.equal(validateDiscoveryQueueDeliverable(relaxedContext, identityByContact).ok, true);
 });
