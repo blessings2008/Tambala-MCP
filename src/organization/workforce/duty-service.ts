@@ -822,8 +822,7 @@ async function dispatchIncidentToIT(input: RuntimeIncident & {
   const diagnosticText = [input.source, input.agent, input.provider, input.model, message].filter(Boolean).join(' ');
   const automationIncident = /AI provider request|provider request|openrouter|groq|tool choice|free-models-per-day|rate limit|request timed out|provider returned error|token budget|TPM/i.test(diagnosticText);
   const incidentAgent: AgentName = automationIncident ? 'automation' : 'security';
-  const incidentRole = automationIncident ? 'director-ai-automation' : 'director-cybersecurity-it';
-  const key = `${incidentAgent}|${input.source}|${input.agent ?? 'unknown'}|${input.provider ?? 'unknown'}|${input.model ?? 'unknown'}|${message.toLowerCase().replace(/\\s+/g, ' ').slice(0, 240)}`;
+  const key = `${incidentAgent}|${input.source}|${input.agent ?? 'unknown'}|${input.provider ?? 'unknown'}|${input.model ?? 'unknown'}|${message.toLowerCase().replace(/\s+/g, ' ').slice(0, 240)}`;
   const now = Date.now();
   for (const [known, at] of incidentDispatchKeys) if (now - at > 10 * 60_000) incidentDispatchKeys.delete(known);
   if (incidentDispatchKeys.has(key)) return;
@@ -852,7 +851,7 @@ async function dispatchIncidentToIT(input: RuntimeIncident & {
       ? 'Diagnose the provider/model/tool-routing failure using only this error and available operational records. Do not ask the Founder for logs, credentials, token budgets or clarification. If deeper logs are unavailable, separate confirmed facts from hypotheses, state what remains unknown, and recommend one safe diagnostic or reversible fix. Do not change credentials, models, production settings or spend money.'
       : 'Assess only the supplied security evidence. Do not ask the Founder to provide logs or clarification. If evidence is unavailable, state the limitation and use SAFE_HOLD. Do not expose secrets or make privileged production changes.',
     'Return a concise incident report to the CEO with severity, evidence, confidence, safe next step and whether any action was actually taken. Do not claim a fix was applied unless verified.',
-  ].join('\\n');
+  ].join('\n');
   const handoff = await queueHandoff(store, {
     fromRoleId: 'ceo', toAgent: incidentAgent, request,
     contextSummary: [
