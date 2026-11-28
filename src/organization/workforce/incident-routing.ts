@@ -17,6 +17,10 @@ const NON_SECURITY_WORKFLOW_BLOCKS: RegExp[] = [
   /model.{0,80}not verified as free/i,
   /missing its CRM destination or verified organisation name/i,
   /no customer message was queued/i,
+  /DECISION:\\s*(?:REVISION_REQUIRED|FOUNDER_INPUT_REQUIRED)/i,
+  /employee omitted the required SELF_REVIEW/i,
+  /maximum of \\d+ attempts reached/i,
+  /handoff worker lease expired|worker stopped reporting heartbeats/i,
   /same message was already prepared or sent to this number/i,
 ];
 
