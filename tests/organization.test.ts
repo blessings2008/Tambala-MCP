@@ -334,6 +334,13 @@ test('discovery validation accepts Unicode hyphens and requires contact evidence
     '- **INVESTIGATE**: Further confirmation is required.',
   ].join('\n');
   assert.equal(validateDiscoveryQueueDeliverable(context, report).ok, true);
+  const qualifyWithoutNeed = report.replace('**Recommendation**', '**Recommendation**').replace('- **INVESTIGATE**: Further confirmation is required.', '- **QUALIFY**: The prospect is a good fit.');
+  assert.equal(validateDiscoveryQueueDeliverable(context, qualifyWithoutNeed).ok, false);
+  const qualifyWithNeed = report.replace(
+    '**Recommendation**',
+    '**Direct Need Evidence**\\n- The official source documents a current digital workflow need: https://example.mw/services/\\n**Recommendation**',
+  ).replace('- **INVESTIGATE**: Further confirmation is required.', '- **QUALIFY**: The need is directly supported.');
+  assert.equal(validateDiscoveryQueueDeliverable(context, qualifyWithNeed).ok, true);
   assert.equal(validateDiscoveryQueueDeliverable(context, report.replace('info@example.mw', '')).ok, false);
   const relaxedContext = JSON.stringify({ prospect: {
     id: 'queue-456', organisation_name: 'AMG Global - Malawi', service_fit: ['Web Development'],
