@@ -333,5 +333,21 @@ test('discovery validation accepts Unicode hyphens and requires contact evidence
     'Recommendation: INVESTIGATE',
   ].join('\n');
   assert.equal(validateDiscoveryQueueDeliverable(context, report).ok, true);
-  assert.equal(validateDiscoveryQueueDeliverable(context, report.replace('info@example.mw', '')) .ok, false);
+  assert.equal(validateDiscoveryQueueDeliverable(context, report.replace('info@example.mw', '')).ok, false);
+  const relaxedContext = JSON.stringify({ prospect: {
+    id: 'queue-456', organisation_name: 'AMG Global - Malawi', service_fit: ['Web Development'],
+    source_urls: ['https://www.amgglobal.co.mw/contact/'], public_email: 'rharawa@amgglobal.co.mw',
+    public_phone: '+265 1 873 349', verification_status: 'verified',
+  } });
+  const identityByContact = [
+    'Service‑Fit Evidence:',
+    '- Web Development is a possible fit based on the supplied services page.',
+    'Public Organisational Contact Evidence:',
+    '- Email: rharawa@amgglobal.co.mw',
+    '- Source URL: https://www.amgglobal.co.mw/contact/',
+    'Remaining Verification Gaps:',
+    '- AMG Global has no publicly confirmed project budget.',
+    'Recommendation: INVESTIGATE',
+  ].join('\\n');
+  assert.equal(validateDiscoveryQueueDeliverable(relaxedContext, identityByContact).ok, true);
 });
